@@ -18,12 +18,25 @@ function doLogin() {
     });
 }
 
+// ── Toolbar Toggle ──
+
+function toggleToolbar() {
+  const toolbar = document.getElementById('spawn-toolbar');
+  const isOpen = toolbar.style.display !== 'none';
+  toolbar.style.display = isOpen ? 'none' : 'flex';
+  if (!isOpen) document.getElementById('cwd-input').focus();
+}
+
 // ── Event Binding ──
 
 document.getElementById('login-btn').addEventListener('click', doLogin);
 document.getElementById('pw').addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
+document.getElementById('toggle-toolbar-btn').addEventListener('click', toggleToolbar);
 document.getElementById('dir-btn').addEventListener('click', toggleDropdown);
-document.getElementById('spawn-btn').addEventListener('click', spawnSession);
+document.getElementById('spawn-btn').addEventListener('click', () => {
+  spawnSession();
+  document.getElementById('spawn-toolbar').style.display = 'none';
+});
 document.getElementById('scan-btn').addEventListener('click', scanSessions);
 document.getElementById('add-fav-btn').addEventListener('click', addFavorite);
 document.getElementById('layout-tab-btn').addEventListener('click', () => setLayout('tab'));

@@ -47,6 +47,47 @@ header h1 {
   background: #f85149;
 }
 
+/* ── Header Buttons ────────────────────────────────── */
+
+.header-btn {
+  height: 28px;
+  font-size: 12px;
+  padding: 0 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  background: #21262d;
+  border: 1px solid #30363d;
+  color: #8b949e;
+  transition: all 0.15s;
+  box-sizing: border-box;
+}
+
+.header-btn:hover {
+  background: #30363d;
+  color: #e6edf3;
+}
+
+.header-btn.accent {
+  background: #238636;
+  border-color: #238636;
+  color: #fff;
+  font-size: 18px;
+  font-weight: 300;
+  padding: 0 9px;
+  margin-left: auto;
+}
+
+.header-btn.accent:hover {
+  background: #2ea043;
+  border-color: #2ea043;
+}
+
+.header-btn.layout-active {
+  background: #1f6feb;
+  border-color: #1f6feb;
+  color: #fff;
+}
+
 /* ── Toolbar ───────────────────────────────────────── */
 
 .toolbar {
@@ -513,6 +554,7 @@ header h1 {
 /* ── Mobile ────────────────────────────────────────── */
 
 @media (max-width: 768px) {
+  #layout-tab-btn,
   #layout-split-btn {
     display: none;
   }

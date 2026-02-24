@@ -19,11 +19,13 @@
   <header>
     <div id="status-dot" class="off"></div>
     <h1>TermHub</h1>
-    <button id="layout-tab-btn" class="toolbar button active" style="font-size:12px;padding:4px 10px;border-radius:5px;cursor:pointer;background:#1f6feb;border:1px solid #1f6feb;color:#fff">Tab</button>
-    <button id="layout-split-btn" class="toolbar button" style="font-size:12px;padding:4px 10px;border-radius:5px;cursor:pointer;background:#21262d;border:1px solid #30363d;color:#e6edf3">Split</button>
+    <button id="scan-btn" class="header-btn">🔍</button>
+    <button id="layout-tab-btn" class="header-btn layout-active">Tab</button>
+    <button id="layout-split-btn" class="header-btn">Split</button>
+    <button id="toggle-toolbar-btn" class="header-btn accent">+</button>
   </header>
 
-  <div class="toolbar">
+  <div class="toolbar" id="spawn-toolbar" style="display:none">
     <input id="cmd-input" placeholder="Command" value="claude" />
     <div class="dir-wrap">
       <input id="cwd-input" placeholder="Working directory" />
@@ -37,7 +39,6 @@
     </div>
     <button id="dir-btn">📁</button>
     <button id="spawn-btn" class="primary">+ New</button>
-    <button id="scan-btn">🔍</button>
   </div>
 
   <!-- Tab mode -->

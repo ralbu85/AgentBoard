@@ -9,10 +9,8 @@ function setLayout(mode) {
   document.getElementById('tab-mode').style.display = mode === 'tab' ? 'flex' : 'none';
   document.getElementById('split-mode').style.display = mode === 'split' ? 'block' : 'none';
   document.getElementById('split-content').style.display = mode === 'split' ? 'grid' : 'none';
-  document.getElementById('layout-tab-btn').style.background = mode === 'tab' ? '#1f6feb' : '#21262d';
-  document.getElementById('layout-tab-btn').style.borderColor = mode === 'tab' ? '#1f6feb' : '#30363d';
-  document.getElementById('layout-split-btn').style.background = mode === 'split' ? '#1f6feb' : '#21262d';
-  document.getElementById('layout-split-btn').style.borderColor = mode === 'split' ? '#1f6feb' : '#30363d';
+  document.getElementById('layout-tab-btn').classList.toggle('layout-active', mode === 'tab');
+  document.getElementById('layout-split-btn').classList.toggle('layout-active', mode === 'split');
   updateSplitGrid();
 }
 

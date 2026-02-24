@@ -26,63 +26,88 @@ A web dashboard for managing multiple terminal sessions via tmux. Run any comman
 - [tmux](https://github.com/tmux/tmux) (`brew install tmux`)
 - [ngrok](https://ngrok.com) (optional, for external access — `brew install ngrok`)
 
-## Installation
+## Quick Setup
+
+Run the setup script to install dependencies, create config files, and register TermHub as a background service:
 
 ```bash
 git clone https://github.com/yourname/termhub.git
 cd termhub
+npm run setup
+```
+
+The setup script will:
+1. Check for Node.js and tmux (installs tmux via Homebrew if missing)
+2. Run `npm install`
+3. Create `.env` — prompts for password and port
+4. Create `config.json` — prompts for base path and default command
+5. Register as a macOS launchd service — starts automatically on boot, restarts on crash
+
+After setup, TermHub is running in the background. Manage the service with:
+
+```bash
+launchctl unload ~/Library/LaunchAgents/com.termhub.server.plist   # Stop
+launchctl load ~/Library/LaunchAgents/com.termhub.server.plist     # Start
+cat /tmp/termhub.log                                                # View logs
+```
+
+## Manual Installation
+
+If you prefer to set up manually instead of using the setup script:
+
+```bash
 npm install
-```
-
-## Configuration
-
-```bash
-cp config.example.json config.json
-```
-
-Edit `config.json` to match your environment:
-
-```json
-{
-  "basePath": "/Users/yourname/Desktop/",
-  "favorites": [
-    "/Users/yourname/Desktop/my-project-1",
-    "/Users/yourname/Desktop/my-project-2"
-  ],
-  "defaultCommand": "claude"
-}
-```
-
-Create a `.env` file to set your password and port:
-
-```bash
-PORT=8080
-DASHBOARD_PASSWORD=your-password-here
-```
-
-## Running
-
-```bash
+cp config.example.json config.json   # Edit basePath, favorites, defaultCommand
+echo -e "PORT=8080\nDASHBOARD_PASSWORD=yourpass" > .env
 node server.js
 ```
 
 ## External Access (ngrok)
 
+To access TermHub from outside your local network (mobile, another PC, etc.), use [ngrok](https://ngrok.com).
+
+### 1. Install ngrok
+
+```bash
+brew install ngrok
+```
+
+### 2. Connect your account
+
+Create a free account at the [ngrok dashboard](https://dashboard.ngrok.com), then register your authtoken:
+
+```bash
+ngrok config add-authtoken <your-token>
+```
+
+### 3. Start the tunnel
+
 ```bash
 ngrok http 8080
 ```
 
-Open the `https://xxxx.ngrok-free.app` URL in your phone's browser.
+You'll see a forwarding URL like:
+
+```
+Forwarding  https://xxxx-xxxx.ngrok-free.app -> http://localhost:8080
+```
+
+### 4. Connect
+
+Open the `https://xxxx-xxxx.ngrok-free.app` URL in your browser. If `DASHBOARD_PASSWORD` is set in `.env`, you'll see a login screen.
+
+> **Note:** The free plan generates a new URL each time you start ngrok. For a fixed domain, use `ngrok http --url=your-domain.ngrok-free.app 8080`.
 
 ## Usage
 
 ### Start a new session
-1. Click 📁 to select a project path (favorites and recent paths supported)
-2. Optionally change the command in the command input (default: `claude`)
-3. Click **+ New** — a session starts in a new tmux session
+1. Click the **+** button in the top-right corner to open the spawn toolbar
+2. Click 📁 to select a project path (favorites and recent paths supported)
+3. Optionally change the command (default: `claude`)
+4. Click **+ New** to start the session
 
 ### Attach existing tmux sessions
-1. Click 🔍 to scan for running tmux sessions
+1. Click 🔍 in the header to scan for running tmux sessions
 2. Confirm to add them to the dashboard
 
 ### View sessions from your local terminal
@@ -92,7 +117,7 @@ tmux attach -t term-2   # Worker #2
 ```
 
 ### Switch layouts
-Use the **Tab / Split** buttons in the top-right corner. Your choice is saved in the browser.
+Use the **Tab / Split** buttons in the header. Your choice is saved in the browser.
 
 ### Stop and remove workers
 - Running: **Stop** button — terminates the tmux session
@@ -104,6 +129,7 @@ Use the **Tab / Split** buttons in the top-right corner. Your choice is saved in
 termhub/
 ├── server.js              # Node.js server (tmux management, WebSocket)
 ├── index.html             # Web UI entry point
+├── setup.sh               # One-step setup script
 ├── public/
 │   ├── style.css          # Styles
 │   └── js/
