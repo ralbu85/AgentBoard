@@ -47,7 +47,7 @@ function spawnWorker(cwd, cmd) {
   cmd = cmd || config.defaultCommand || "claude";
   const id = String(nextId++);
   const sessionName = "term-" + id;
-  tmux(`new-session -d -s ${sessionName} -c "${cwd}"`);
+  tmux(`new-session -d -s ${sessionName} -c "${cwd}" -e CLAUDECODE=`);
   tmux(`send-keys -t ${sessionName} ${JSON.stringify(cmd)} Enter`);
   const logs = [];
   workers.set(id, { sessionName, cwd, cmd, logs });
