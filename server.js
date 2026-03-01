@@ -386,10 +386,21 @@ function startTunnel() {
   tunnelProcess.stdout.on("data", handleData);
   tunnelProcess.stderr.on("data", handleData);
   tunnelProcess.on("close", (code) => {
-    console.log(`☁️  cloudflared exited (code ${code})`);
+    console.log(`☁️  cloudflared exited (code ${code}), restarting in 5s...`);
     tunnelUrl = null;
     tunnelProcess = null;
+    setTimeout(startTunnel, 5000);
   });
+}
+
+function checkTunnel() {
+  if (!tunnelUrl) return;
+  fetch(tunnelUrl, { signal: AbortSignal.timeout(10000) })
+    .then(r => { if (!r.ok) throw new Error(r.status); })
+    .catch(() => {
+      console.log("☁️  Tunnel health check failed, restarting...");
+      if (tunnelProcess) tunnelProcess.kill();
+    });
 }
 
 server.listen(PORT, () => {
@@ -398,6 +409,7 @@ server.listen(PORT, () => {
   console.log(`🔑 Password: ${PASSWORD}`);
   console.log(`📺 View tmux session: tmux attach -t term-1`);
   startTunnel();
+  setInterval(checkTunnel, 60000);
 });
 
 process.on("SIGINT", () => {
