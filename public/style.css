@@ -476,6 +476,11 @@ header h1 {
   border-radius: 2px;
 }
 
+.prompt-mark {
+  color: #79c0ff;
+  font-weight: bold;
+}
+
 /* ── Input Row ─────────────────────────────────────── */
 
 .input-row {

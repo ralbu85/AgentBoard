@@ -200,6 +200,22 @@ function appendLog(id, src, text) {
   });
 }
 
+function markPrompt(line, text) {
+  const trimmed = text.trim();
+  if (!/^[❯>›]/.test(trimmed)) { line.textContent = text; return; }
+  const idx = text.indexOf(trimmed[0]);
+  const before = text.slice(0, idx);
+  const symbol = trimmed[0];
+  const after = text.slice(idx + symbol.length);
+  const mark = document.createElement('span');
+  mark.className = 'prompt-mark';
+  mark.textContent = symbol;
+  line.textContent = '';
+  if (before) line.appendChild(document.createTextNode(before));
+  line.appendChild(mark);
+  line.appendChild(document.createTextNode(after));
+}
+
 function updateStatus(id, status) {
   var isStopped = status === 'stopped' || status === 'completed';
   document.querySelectorAll('#badge-' + id).forEach(el => {
@@ -319,6 +335,8 @@ function sendInput(id) {
   let text = '';
   const inps = document.querySelectorAll('#inp-' + id);
   inps.forEach(inp => { if (!text && inp.value.trim()) text = inp.value.trim(); });
+  if (!text) return;
+  text = text.split('\n').filter(l => l.trim() !== '').join('\n');
   if (!text) return;
   inps.forEach(inp => { inp.value = ''; inp.style.height = 'auto'; });
   notifyActive();

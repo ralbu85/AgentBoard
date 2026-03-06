@@ -28,8 +28,8 @@ function handleMsg(d) {
       box.innerHTML = '';
       d.lines.forEach(text => {
         const line = document.createElement('div');
-        const isUser = /^[❯>›]/.test(text.trim());
-        line.className = 'log-line ' + (isUser ? 'stdin' : 'stdout');
+        line.className = 'log-line stdout';
+        markPrompt(line, text);
         line.textContent = text;
         box.appendChild(line);
       });
