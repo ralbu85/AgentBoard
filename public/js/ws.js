@@ -29,8 +29,7 @@ function handleMsg(d) {
       d.lines.forEach(text => {
         const line = document.createElement('div');
         line.className = 'log-line stdout';
-        markPrompt(line, text);
-        line.textContent = text;
+        line.innerHTML = ansiToHtml(text);
         box.appendChild(line);
       });
       if (wasAtBottom) box.scrollTop = box.scrollHeight;

@@ -47,19 +47,23 @@ function spawnWorker(cwd, cmd) {
   cmd = cmd || config.defaultCommand || "claude";
   const id = String(nextId++);
   const sessionName = "term-" + id;
-  tmux(`new-session -d -s ${sessionName} -c "${cwd}" -e CLAUDECODE=`);
+  tmux(`new-session -d -s ${sessionName} -c "${cwd}" -e CLAUDECODE= -e TMUX=`);
   tmux(`send-keys -t ${sessionName} ${JSON.stringify(cmd)} Enter`);
   const logs = [];
   workers.set(id, { sessionName, cwd, cmd, logs });
-  const pollTimer = setInterval(() => pollOutput(id), 1000);
+  const pollTimer = setInterval(() => pollOutput(id), 300);
   workers.get(id).pollTimer = pollTimer;
   broadcast({ type: "spawned", id, cwd, cmd, status: "running", sessionName });
   return id;
 }
 
+function stripAnsi(str) {
+  return str.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '');
+}
+
 function detectWaiting(output) {
   const lines = output.split("\n");
-  const recent = lines.slice(-10).join("\n");
+  const recent = stripAnsi(lines.slice(-10).join("\n"));
   // Common permission/decision patterns across AI CLIs
   if (/Esc to cancel/.test(recent)) return true;
   if (/Do you want to proceed\?/.test(recent)) return true;
@@ -87,7 +91,7 @@ function pollOutput(id) {
   const cols = w.cols || 80;
   const rows = w.rows || 50;
   tmux(`resize-window -t ${w.sessionName} -x ${cols} -y ${rows}`);
-  const output = tmux(`capture-pane -t ${w.sessionName} -p -S -500 -J`);
+  const output = tmux(`capture-pane -t ${w.sessionName} -p -e -S -500 -J`);
 
   // Track actual working directory
   const currentCwd = tmux(`display-message -t ${w.sessionName} -p "#{pane_current_path}"`).trim();
@@ -246,7 +250,7 @@ const server = http.createServer(async (req, res) => {
     const { sessionName, cwd } = JSON.parse(await readBody(req));
     const id = String(nextId++);
     workers.set(id, { sessionName, cwd, logs: [] });
-    const pollTimer = setInterval(() => pollOutput(id), 1000);
+    const pollTimer = setInterval(() => pollOutput(id), 300);
     workers.get(id).pollTimer = pollTimer;
     broadcast({ type: "spawned", id, cwd, status: "running", sessionName });
     return json(res, 200, { id });
@@ -294,7 +298,7 @@ const server = http.createServer(async (req, res) => {
     if (!w) return json(res, 404, { ok: false });
     if (isAlive(w.sessionName)) {
       clearInterval(w.pollTimer);
-      w.pollTimer = setInterval(() => pollOutput(id), 1000);
+      w.pollTimer = setInterval(() => pollOutput(id), 300);
       broadcast({ type: "status", id, status: "running" });
       return json(res, 200, { ok: true });
     }
@@ -327,6 +331,25 @@ wss.on('connection', ws => {
         const size = clientSizes.get(ws);
         if (size) workers.forEach(w => { w.cols = size.cols; w.rows = size.rows; });
       }
+      if (msg.type === 'key') {
+        const w = workers.get(msg.id);
+        if (w) {
+          tmux(`send-keys -t ${w.sessionName} ${msg.key}`);
+          setTimeout(() => pollOutput(msg.id), 50);
+        }
+      }
+      if (msg.type === 'input') {
+        const w = workers.get(msg.id);
+        if (w) {
+          const lines = msg.text.split("\n");
+          for (const line of lines) {
+            tmux(`send-keys -t ${w.sessionName} "${line.replace(/"/g, '\\"')}" ""`);
+            tmux(`send-keys -t ${w.sessionName} "" Enter`);
+          }
+          broadcast({ type: "log", id: msg.id, src: "stdin", text: msg.text, ts: Date.now() });
+          setTimeout(() => pollOutput(msg.id), 50);
+        }
+      }
     } catch (e) {}
   });
   ws.on('close', () => clientSizes.delete(ws));
@@ -348,7 +371,7 @@ function recoverSessions() {
     if (isNaN(numId)) continue;
     if (workers.has(id)) continue;
     workers.set(id, { sessionName, cwd, cmd, logs: [] });
-    const pollTimer = setInterval(() => pollOutput(id), 1000);
+    const pollTimer = setInterval(() => pollOutput(id), 300);
     workers.get(id).pollTimer = pollTimer;
     if (numId >= nextId) nextId = numId + 1;
   }

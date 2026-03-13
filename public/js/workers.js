@@ -194,7 +194,11 @@ function appendLog(id, src, text) {
     var wasAtBottom = isNearBottom(box);
     const line = document.createElement('div');
     line.className = 'log-line ' + src;
-    line.textContent = text;
+    if (src === 'stdout') {
+      line.innerHTML = ansiToHtml(text);
+    } else {
+      line.textContent = text;
+    }
     box.appendChild(line);
     if (wasAtBottom) box.scrollTop = box.scrollHeight;
   });
@@ -328,7 +332,11 @@ function reconnectWorker(id) {
 
 function sendSpecialKey(id, key) {
   notifyActive();
-  apiPost('/api/key', { id, key });
+  if (ws && ws.readyState === 1) {
+    ws.send(JSON.stringify({ type: 'key', id, key }));
+  } else {
+    apiPost('/api/key', { id, key });
+  }
 }
 
 function sendInput(id) {
@@ -340,7 +348,11 @@ function sendInput(id) {
   if (!text) return;
   inps.forEach(inp => { inp.value = ''; inp.style.height = 'auto'; });
   notifyActive();
-  apiPost('/api/input', { id, text });
+  if (ws && ws.readyState === 1) {
+    ws.send(JSON.stringify({ type: 'input', id, text }));
+  } else {
+    apiPost('/api/input', { id, text });
+  }
 }
 
 function killWorker(id) {
