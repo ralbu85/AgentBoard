@@ -107,7 +107,8 @@ function measureChar(box) {
   return { w: rect.width, h: rect.height };
 }
 
-function sendResize() {
+var _resizeTimer = null;
+function _doResize() {
   if (!ws || ws.readyState !== 1) return;
   const box = document.querySelector('.logs');
   if (!box || !box.clientWidth) return;
@@ -118,6 +119,10 @@ function sendResize() {
   document.querySelectorAll('.tab').forEach(t => {
     ws.send(JSON.stringify({ type: 'resize', id: t.dataset.id, cols, rows }));
   });
+}
+function sendResize() {
+  clearTimeout(_resizeTimer);
+  _resizeTimer = setTimeout(_doResize, 200);
 }
 
 // ── API Calls ──

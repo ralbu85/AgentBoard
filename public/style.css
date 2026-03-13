@@ -113,133 +113,170 @@ header h1 {
   color: #fff;
 }
 
-/* ── Toolbar ───────────────────────────────────────── */
+/* ── Spawn Panel ───────────────────────────────────── */
 
-.toolbar {
+#spawn-panel {
   background: #161b22;
-  padding: 8px 12px;
   border-bottom: 1px solid #30363d;
-  display: flex;
-  gap: 8px;
-  align-items: center;
   flex-shrink: 0;
+  padding: 10px 12px;
 }
 
-.toolbar input,
-.toolbar button {
-  height: 34px;
+.spawn-panel-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+
+.spawn-panel-actions {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.browse-path {
+  font-family: "Cascadia Code", monospace;
+  font-size: 13px;
+  padding: 8px 12px;
+  background: #0d1117;
+  border: 1px solid #30363d;
+  border-radius: 6px 6px 0 0;
+  color: #8b949e;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-wrap: wrap;
+}
+
+.crumb {
+  color: #79c0ff;
+  cursor: pointer;
+  padding: 1px 2px;
+  border-radius: 3px;
+}
+
+.crumb:hover {
+  background: #21262d;
+  color: #fff;
+}
+
+.browse-list {
+  max-height: 220px;
+  overflow-y: auto;
+  border: 1px solid #30363d;
+  border-top: none;
+  border-radius: 0 0 6px 6px;
+  background: #0d1117;
+}
+
+.browse-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  font-size: 13px;
+  cursor: pointer;
+  color: #e6edf3;
+  border-bottom: 1px solid #161b2208;
+}
+
+.browse-item:hover {
+  background: #21262d;
+}
+
+.browse-item:last-child {
+  border-bottom: none;
+}
+
+.browse-item.parent {
+  color: #8b949e;
+  font-style: italic;
+}
+
+.browse-item-icon {
+  color: #8b949e;
+  font-size: 14px;
+  flex-shrink: 0;
+  width: 18px;
+  text-align: center;
+}
+
+.bookmark-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.bookmark-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  background: #21262d;
+  border: 1px solid #30363d;
+  border-radius: 16px;
+  font-size: 12px;
+  cursor: pointer;
+  color: #e6edf3;
+  transition: all 0.15s;
+}
+
+.bookmark-chip:hover {
+  background: #30363d;
+  border-color: #1f6feb;
+}
+
+.bookmark-chip.recent {
+  border-style: dashed;
+  color: #8b949e;
+}
+
+.bookmark-chip .del {
+  color: #f85149;
+  font-size: 11px;
+  margin-left: 2px;
+  cursor: pointer;
+}
+
+.bookmark-chip .del:hover {
+  color: #ff7b72;
+}
+
+.bookmark-add {
+  height: 30px;
   background: #21262d;
   border: 1px solid #30363d;
   border-radius: 6px;
-  padding: 0 10px;
-  color: #e6edf3;
-  font-size: 13px;
-  box-sizing: border-box;
-}
-
-.toolbar input {
-  flex: 1;
-}
-
-.toolbar button {
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.toolbar button.primary {
-  background: #238636;
-  border-color: #238636;
-  color: #fff;
-}
-
-.toolbar button.active {
-  background: #1f6feb;
-  border-color: #1f6feb;
-  color: #fff;
-}
-
-#cmd-input {
-  flex: 0 0 120px;
-  width: 120px;
-}
-
-/* ── Directory Dropdown ────────────────────────────── */
-
-.dir-wrap {
-  position: relative;
-  flex: 2;
-  display: flex;
-}
-
-.dir-wrap input {
-  flex: 1;
-}
-
-.dir-dropdown {
-  display: none;
-  position: absolute;
-  top: 38px;
-  left: 0;
-  right: 0;
-  background: #1c2128;
-  border: 1px solid #30363d;
-  border-radius: 8px;
-  z-index: 200;
-  overflow: hidden;
-  box-shadow: 0 8px 24px #0008;
-}
-
-.dir-dropdown.open {
-  display: block;
-}
-
-.dir-section {
-  padding: 5px 10px;
-  font-size: 11px;
-  color: #8b949e;
-  border-bottom: 1px solid #30363d;
-}
-
-.dir-item {
-  display: flex;
-  align-items: center;
-  padding: 7px 10px;
-  cursor: pointer;
-  gap: 8px;
-  font-size: 13px;
-}
-
-.dir-item:hover {
-  background: #21262d;
-}
-
-.dir-item span {
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.dir-item .del {
-  color: #f85149;
-  font-size: 12px;
-  flex-shrink: 0;
-  padding: 0 4px;
-}
-
-.add-fav {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 7px 10px;
-  border-top: 1px solid #30363d;
-  font-size: 12px;
   color: #79c0ff;
+  font-size: 12px;
   cursor: pointer;
+  padding: 0 10px;
 }
 
-.add-fav:hover {
-  background: #21262d;
+.bookmark-add:hover {
+  background: #30363d;
+  color: #fff;
+}
+
+.spawn-create-btn {
+  height: 30px;
+  font-size: 13px;
+  border-radius: 6px;
+  padding: 0 14px;
+  background: #238636;
+  border: none;
+  border-radius: 6px;
+  color: #fff;
+  font-size: 14px;
+  padding: 8px 20px;
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.spawn-create-btn:hover {
+  background: #2ea043;
 }
 
 /* ── Tab Bar ───────────────────────────────────────── */

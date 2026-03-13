@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cascadia+Code&display=swap">
-<link rel="stylesheet" href="/style.css?v=8">
+<link rel="stylesheet" href="/style.css?v=18">
 </head>
 <body>
 
@@ -31,20 +31,16 @@
     <button id="toggle-toolbar-btn" class="header-btn accent">+</button>
   </header>
 
-  <div class="toolbar" id="spawn-toolbar" style="display:none">
-    <input id="cmd-input" placeholder="Command" value="claude" />
-    <div class="dir-wrap">
-      <input id="cwd-input" placeholder="Working directory" />
-      <div class="dir-dropdown" id="dir-dropdown">
-        <div class="dir-section">⭐ Favorites</div>
-        <div id="fav-list"></div>
-        <div class="add-fav" id="add-fav-btn">+ Add current path to favorites</div>
-        <div class="dir-section">🕐 Recent</div>
-        <div id="recent-list"></div>
+  <div id="spawn-panel" style="display:none">
+    <div class="browse-path" id="browse-path">/</div>
+    <div class="browse-list" id="browse-list"></div>
+    <div class="spawn-panel-footer">
+      <div class="bookmark-list" id="bookmark-list"></div>
+      <div class="spawn-panel-actions">
+        <button class="bookmark-add" onclick="addBookmark()">+ Bookmark</button>
+        <button class="spawn-create-btn" onclick="spawnFromBrowser()">Open here</button>
       </div>
     </div>
-    <button id="dir-btn">📁</button>
-    <button id="spawn-btn" class="primary">+ New</button>
   </div>
 
   <!-- Tab mode -->
@@ -59,11 +55,11 @@
   </div>
 </div>
 
-<script src="/js/ansi.js?v=8"></script>
-<script src="/js/layout.js?v=8"></script>
-<script src="/js/favorites.js?v=8"></script>
-<script src="/js/ws.js?v=8"></script>
-<script src="/js/workers.js?v=8"></script>
-<script src="/js/app.js?v=8"></script>
+<script src="/js/ansi.js?v=18"></script>
+<script src="/js/layout.js?v=18"></script>
+<script src="/js/favorites.js?v=18"></script>
+<script src="/js/ws.js?v=18"></script>
+<script src="/js/workers.js?v=18"></script>
+<script src="/js/app.js?v=18"></script>
 </body>
 </html>

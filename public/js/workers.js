@@ -167,8 +167,13 @@ function bindCard(id, root) {
       }
     });
     inp.addEventListener('input', () => {
-      inp.style.height = 'auto';
-      inp.style.height = Math.min(inp.scrollHeight, 120) + 'px';
+      if (!inp._resizeRaf) {
+        inp._resizeRaf = requestAnimationFrame(() => {
+          inp.style.height = 'auto';
+          inp.style.height = Math.min(inp.scrollHeight, 120) + 'px';
+          inp._resizeRaf = null;
+        });
+      }
     });
   }
 

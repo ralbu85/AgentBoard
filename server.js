@@ -56,12 +56,12 @@ function loadConfig() {
 }
 
 function spawnWorker(cwd, cmd) {
-  const config = loadConfig();
-  cmd = cmd || config.defaultCommand || "claude";
   const id = String(nextId++);
   const sessionName = "term-" + id;
   tmux(`new-session -d -s ${sessionName} -c "${cwd}"`);
-  tmux(`send-keys -t ${sessionName} ${JSON.stringify(cmd)} Enter`);
+  if (cmd) {
+    tmux(`send-keys -t ${sessionName} ${JSON.stringify(cmd)} Enter`);
+  }
   const logs = [];
   workers.set(id, { sessionName, cwd, cmd, logs });
   broadcast({ type: "spawned", id, cwd, cmd, status: "running", sessionName });
@@ -93,7 +93,10 @@ async function pollOutput(id) {
   const w = workers.get(id);
   if (!w) return;
 
-  if (!isAlive(w.sessionName)) {
+  const alive = await new Promise(resolve => {
+    execFile("tmux", ["has-session", "-t", w.sessionName], (err) => resolve(!err));
+  });
+  if (!alive) {
     w.status = 'completed';
     w.aiState = null;
     broadcast({ type: "status", id, status: "completed" });
@@ -154,13 +157,13 @@ async function pollAll() {
   setTimeout(pollAll, POLL_INTERVAL);
 }
 
-function sendInput(id, text) {
+async function sendInput(id, text) {
   const w = workers.get(id);
   if (!w) return false;
   const lines = text.split("\n");
   for (const line of lines) {
-    tmux(`send-keys -t ${w.sessionName} "${line.replace(/"/g, '\\"')}" ""`);
-    tmux(`send-keys -t ${w.sessionName} "" Enter`);
+    await tmuxAsyncRaw(["send-keys", "-t", w.sessionName, line.replace(/"/g, '\\"'), ""]);
+    await tmuxAsyncRaw(["send-keys", "-t", w.sessionName, "", "Enter"]);
   }
   broadcast({ type: "log", id, src: "stdin", text, ts: Date.now() });
   setTimeout(() => pollOutput(id), 100);
@@ -252,6 +255,23 @@ const server = http.createServer(async (req, res) => {
       id, cwd: w.cwd, cmd: w.cmd || "claude", status: isAlive(w.sessionName) ? "running" : (w.status || "stopped"), sessionName: w.sessionName, logs: w.logs, aiState: w.aiState || null
     }));
     return json(res, 200, list);
+  }
+
+  if (method === "GET" && url.startsWith("/api/browse")) {
+    const qs = req.url.split("?")[1] || "";
+    const params = new URLSearchParams(qs);
+    const dir = params.get("path") || "/";
+    const resolved = path.resolve(dir);
+    try {
+      const entries = fs.readdirSync(resolved, { withFileTypes: true });
+      const dirs = entries
+        .filter(e => e.isDirectory() && !e.name.startsWith('.'))
+        .map(e => e.name)
+        .sort();
+      return json(res, 200, { path: resolved, dirs });
+    } catch (e) {
+      return json(res, 400, { error: "Cannot read directory" });
+    }
   }
 
   if (method === "GET" && url === "/api/scan") {
@@ -358,20 +378,23 @@ wss.on('connection', ws => {
       if (msg.type === 'key') {
         const w = workers.get(msg.id);
         if (w) {
-          tmux(`send-keys -t ${w.sessionName} ${msg.key}`);
-          setTimeout(() => pollOutput(msg.id), 100);
+          tmuxAsyncRaw(["send-keys", "-t", w.sessionName, msg.key]).then(() => {
+            setTimeout(() => pollOutput(msg.id), 100);
+          });
         }
       }
       if (msg.type === 'input') {
         const w = workers.get(msg.id);
         if (w) {
-          const lines = msg.text.split("\n");
-          for (const line of lines) {
-            tmux(`send-keys -t ${w.sessionName} "${line.replace(/"/g, '\\"')}" ""`);
-            tmux(`send-keys -t ${w.sessionName} "" Enter`);
-          }
-          broadcast({ type: "log", id: msg.id, src: "stdin", text: msg.text, ts: Date.now() });
-          setTimeout(() => pollOutput(msg.id), 100);
+          (async () => {
+            const lines = msg.text.split("\n");
+            for (const line of lines) {
+              await tmuxAsyncRaw(["send-keys", "-t", w.sessionName, line.replace(/"/g, '\\"'), ""]);
+              await tmuxAsyncRaw(["send-keys", "-t", w.sessionName, "", "Enter"]);
+            }
+            broadcast({ type: "log", id: msg.id, src: "stdin", text: msg.text, ts: Date.now() });
+            setTimeout(() => pollOutput(msg.id), 100);
+          })();
         }
       }
     } catch (e) {}
