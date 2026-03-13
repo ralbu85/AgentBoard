@@ -63,22 +63,15 @@ function ensureCard(id, cwd, status, logs, cmd) {
     '<div class="logs" id="logs-' + id + '"></div>' +
     '<div class="input-row" id="input-row-' + id + '"' + (status === 'stopped' || status === 'completed' ? ' style="display:none"' : '') + '>' +
       '<textarea id="inp-' + id + '" placeholder="Enter command..." rows="1"></textarea>' +
-      '<button id="send-' + id + '">Send</button>' +
-      '<div class="toolkit-wrap">' +
-        '<button class="toolkit-toggle" id="tk-btn-' + id + '">⌨</button>' +
-        '<div class="toolkit-popup" id="tk-popup-' + id + '">' +
-          '<div class="tk-label">Keys</div>' +
-          '<div class="key-grid">' +
-            '<button class="key-btn" id="key-esc-' + id + '">esc</button>' +
-            '<button class="key-btn" id="key-up-' + id + '">↑</button>' +
-            '<button class="key-btn" id="key-down-' + id + '">↓</button>' +
-            '<button class="key-btn key-enter" id="key-enter-' + id + '">↵</button>' +
-            '<button class="key-btn" id="key-tab-' + id + '">tab</button>' +
-            '<button class="key-btn" id="key-stab-' + id + '">⇧tab</button>' +
-            '<button class="key-btn" id="key-ctrlc-' + id + '">⌃c</button>' +
-          '</div>' +
-        '</div>' +
+      '<div class="quick-keys">' +
+        '<button class="qk-btn" id="key-esc-' + id + '">Esc</button>' +
+        '<button class="qk-btn" id="key-up-' + id + '">↑</button>' +
+        '<button class="qk-btn" id="key-down-' + id + '">↓</button>' +
+        '<button class="qk-btn" id="key-enter-' + id + '">↵</button>' +
+        '<button class="qk-btn" id="key-tab-' + id + '">Tab</button>' +
+        '<button class="qk-btn" id="key-ctrlc-' + id + '">⌃C</button>' +
       '</div>' +
+      '<button class="send-btn" id="send-' + id + '">Send</button>' +
     '</div>';
 
   const panel = document.createElement('div');
@@ -144,9 +137,33 @@ function bindCard(id, root) {
   if (sendBtn) sendBtn.addEventListener('click', () => sendInput(id));
   if (inp) {
     inp.addEventListener('keydown', e => {
-      if (e.key === 'Enter' && !e.shiftKey) {
+      if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey) {
         e.preventDefault();
         if (inp.value.trim()) { sendInput(id); } else { sendSpecialKey(id, 'Enter'); }
+      }
+      // Ctrl+Enter → send Enter to tmux
+      if (e.key === 'Enter' && e.ctrlKey) {
+        e.preventDefault();
+        sendSpecialKey(id, 'Enter');
+      }
+      // Escape → send Escape to tmux
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        sendSpecialKey(id, 'Escape');
+      }
+      // Ctrl+[ → send Escape to tmux (alternative)
+      if (e.key === '[' && e.ctrlKey) {
+        e.preventDefault();
+        sendSpecialKey(id, 'Escape');
+      }
+      // Ctrl+↑/↓ → send Up/Down to tmux
+      if (e.key === 'ArrowUp' && e.ctrlKey) {
+        e.preventDefault();
+        sendSpecialKey(id, 'Up');
+      }
+      if (e.key === 'ArrowDown' && e.ctrlKey) {
+        e.preventDefault();
+        sendSpecialKey(id, 'Down');
       }
     });
     inp.addEventListener('input', () => {
@@ -155,27 +172,10 @@ function bindCard(id, root) {
     });
   }
 
-  // Toolkit toggle
-  const tkBtn = q('#tk-btn-' + id);
-  const tkPopup = q('#tk-popup-' + id);
-  if (tkBtn && tkPopup) {
-    tkBtn.addEventListener('click', e => {
-      e.stopPropagation();
-      const isOpen = tkPopup.classList.toggle('open');
-      tkBtn.classList.toggle('open', isOpen);
-      document.querySelectorAll('.toolkit-popup.open').forEach(p => {
-        if (p !== tkPopup) {
-          p.classList.remove('open');
-          p.previousElementSibling.classList.remove('open');
-        }
-      });
-    });
-  }
-
-  // Key buttons
+  // Quick key buttons
   const keyMap = {
     up: 'Up', down: 'Down', enter: 'Enter', esc: 'Escape',
-    tab: 'Tab', stab: 'BTab', ctrlc: 'C-c'
+    tab: 'Tab', ctrlc: 'C-c'
   };
   Object.entries(keyMap).forEach(([btnId, tmuxKey]) => {
     const btn = q('#key-' + btnId + '-' + id);

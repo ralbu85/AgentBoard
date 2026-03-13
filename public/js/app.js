@@ -44,12 +44,6 @@ document.getElementById('layout-split-btn').addEventListener('click', () => setL
 
 document.addEventListener('click', e => {
   closeDropdown();
-  if (!e.target.closest('.toolkit-wrap')) {
-    document.querySelectorAll('.toolkit-popup.open').forEach(p => {
-      p.classList.remove('open');
-      p.previousElementSibling.classList.remove('open');
-    });
-  }
 });
 
 window.addEventListener('resize', sendResize);

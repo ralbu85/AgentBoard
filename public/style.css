@@ -446,7 +446,7 @@ header h1 {
 /* ── Log Output ────────────────────────────────────── */
 
 .logs {
-  font-family: "SF Mono", monospace;
+  font-family: "Cascadia Code", "Cascadia Mono", "Consolas", monospace;
   font-size: 12px;
   padding: 8px;
   overflow-y: auto;
@@ -509,7 +509,7 @@ header h1 {
   max-height: 120px;
 }
 
-.input-row button {
+.input-row .send-btn {
   background: #1f6feb;
   border: none;
   border-radius: 5px;
@@ -519,101 +519,39 @@ header h1 {
   cursor: pointer;
 }
 
-/* ── Toolkit Popup ─────────────────────────────────── */
+/* ── Quick Keys Bar ────────────────────────────────── */
 
-.toolkit-wrap {
-  position: relative;
-}
-
-.toolkit-toggle {
-  background: #21262d;
-  border: 1px solid #30363d;
-  border-radius: 5px;
-  color: #8b949e;
-  font-size: 13px;
-  padding: 6px 10px;
-  cursor: pointer;
-  transition: all 0.15s;
-}
-
-.toolkit-toggle:hover {
-  color: #e6edf3;
-  border-color: #444c56;
-}
-
-.toolkit-toggle.open {
-  color: #e6edf3;
-  background: #30363d;
-}
-
-.toolkit-popup {
-  display: none;
-  position: absolute;
-  bottom: calc(100% + 6px);
-  right: 0;
-  background: #1c2128;
-  border: 1px solid #30363d;
-  border-radius: 8px;
-  padding: 8px;
-  box-shadow: 0 8px 24px #0008;
-  z-index: 100;
-  min-width: 180px;
-}
-
-.toolkit-popup.open {
-  display: block;
-}
-
-.toolkit-popup .tk-label {
-  font-size: 10px;
-  color: #8b949e;
-  padding: 2px 4px 6px;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-.key-btns {
+.quick-keys {
   display: flex;
-  gap: 4px;
-  flex-wrap: wrap;
+  gap: 2px;
+  align-items: center;
+  flex-shrink: 0;
 }
 
-.key-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 4px;
-  width: 200px;
-}
-
-.key-grid .key-btn {
-  text-align: center;
-  padding: 4px 0;
-}
-
-.key-grid .key-enter {
-  font-size: 14px;
-}
-
-.key-btn {
+.input-row .qk-btn {
   background: #161b22;
   border: 1px solid #30363d;
   border-bottom: 2px solid #21262d;
   border-radius: 4px;
   color: #8b949e;
   font-size: 11px;
-  padding: 4px 10px;
+  min-width: 28px;
+  height: 26px;
+  padding: 0 5px;
   cursor: pointer;
   white-space: nowrap;
   transition: all 0.15s;
+  text-align: center;
+  line-height: 1;
 }
 
-.key-btn:hover {
+.input-row .qk-btn:hover {
   background: #21262d;
   color: #e6edf3;
   border-color: #444c56;
 }
 
-.key-btn:active {
+.input-row .qk-btn:active {
   border-bottom: 1px solid #21262d;
   transform: translateY(1px);
 }

@@ -51,7 +51,7 @@ function spawnWorker(cwd, cmd) {
   tmux(`send-keys -t ${sessionName} ${JSON.stringify(cmd)} Enter`);
   const logs = [];
   workers.set(id, { sessionName, cwd, cmd, logs });
-  const pollTimer = setInterval(() => pollOutput(id), 300);
+  const pollTimer = setInterval(() => pollOutput(id), 1000);
   workers.get(id).pollTimer = pollTimer;
   broadcast({ type: "spawned", id, cwd, cmd, status: "running", sessionName });
   return id;
@@ -77,6 +77,7 @@ function detectWaiting(output) {
 const IDLE_THRESHOLD = 5000; // 5 seconds of no output change → idle
 
 let lastCapture = {};
+let lastLines = {};  // id → string[] for line-level diffing
 
 function pollOutput(id) {
   const w = workers.get(id);
@@ -120,7 +121,22 @@ function pollOutput(id) {
   w.lastChangeTime = Date.now();
   const lines = output.split("\n");
   w.logs = lines.slice(-200).map(text => ({ src: "stdout", text, ts: Date.now() }));
-  broadcast({ type: "snapshot", id, lines });
+
+  // Send delta instead of full snapshot
+  const prev = lastLines[id];
+  if (!prev) {
+    broadcast({ type: "snapshot", id, lines });
+  } else {
+    const changed = {};
+    const maxLen = Math.max(lines.length, prev.length);
+    for (let i = 0; i < maxLen; i++) {
+      if (i >= prev.length || i >= lines.length || lines[i] !== prev[i]) {
+        changed[i] = i < lines.length ? lines[i] : null;
+      }
+    }
+    broadcast({ type: "delta", id, len: lines.length, changed });
+  }
+  lastLines[id] = lines;
 
   // Output just changed — check for waiting, otherwise working
   const waiting = detectWaiting(output);
@@ -131,15 +147,30 @@ function pollOutput(id) {
   }
 }
 
+function pausePoll(id) {
+  const w = workers.get(id);
+  if (w && w.pollTimer) { clearInterval(w.pollTimer); w.pollTimer = null; }
+}
+
+function resumePoll(id, delay) {
+  const w = workers.get(id);
+  if (w && !w.pollTimer) {
+    w.pollTimer = setInterval(() => pollOutput(id), 1000);
+    if (delay) setTimeout(() => pollOutput(id), delay);
+  }
+}
+
 function sendInput(id, text) {
   const w = workers.get(id);
   if (!w) return false;
+  pausePoll(id);
   const lines = text.split("\n");
   for (const line of lines) {
     tmux(`send-keys -t ${w.sessionName} "${line.replace(/"/g, '\\"')}" ""`);
     tmux(`send-keys -t ${w.sessionName} "" Enter`);
   }
   broadcast({ type: "log", id, src: "stdin", text, ts: Date.now() });
+  resumePoll(id, 100);
   return true;
 }
 
@@ -250,7 +281,7 @@ const server = http.createServer(async (req, res) => {
     const { sessionName, cwd } = JSON.parse(await readBody(req));
     const id = String(nextId++);
     workers.set(id, { sessionName, cwd, logs: [] });
-    const pollTimer = setInterval(() => pollOutput(id), 300);
+    const pollTimer = setInterval(() => pollOutput(id), 1000);
     workers.get(id).pollTimer = pollTimer;
     broadcast({ type: "spawned", id, cwd, status: "running", sessionName });
     return json(res, 200, { id });
@@ -298,7 +329,7 @@ const server = http.createServer(async (req, res) => {
     if (!w) return json(res, 404, { ok: false });
     if (isAlive(w.sessionName)) {
       clearInterval(w.pollTimer);
-      w.pollTimer = setInterval(() => pollOutput(id), 300);
+      w.pollTimer = setInterval(() => pollOutput(id), 1000);
       broadcast({ type: "status", id, status: "running" });
       return json(res, 200, { ok: true });
     }
@@ -334,20 +365,22 @@ wss.on('connection', ws => {
       if (msg.type === 'key') {
         const w = workers.get(msg.id);
         if (w) {
+          pausePoll(msg.id);
           tmux(`send-keys -t ${w.sessionName} ${msg.key}`);
-          setTimeout(() => pollOutput(msg.id), 50);
+          resumePoll(msg.id, 100);
         }
       }
       if (msg.type === 'input') {
         const w = workers.get(msg.id);
         if (w) {
+          pausePoll(msg.id);
           const lines = msg.text.split("\n");
           for (const line of lines) {
             tmux(`send-keys -t ${w.sessionName} "${line.replace(/"/g, '\\"')}" ""`);
             tmux(`send-keys -t ${w.sessionName} "" Enter`);
           }
           broadcast({ type: "log", id: msg.id, src: "stdin", text: msg.text, ts: Date.now() });
-          setTimeout(() => pollOutput(msg.id), 50);
+          resumePoll(msg.id, 100);
         }
       }
     } catch (e) {}
@@ -371,7 +404,7 @@ function recoverSessions() {
     if (isNaN(numId)) continue;
     if (workers.has(id)) continue;
     workers.set(id, { sessionName, cwd, cmd, logs: [] });
-    const pollTimer = setInterval(() => pollOutput(id), 300);
+    const pollTimer = setInterval(() => pollOutput(id), 1000);
     workers.get(id).pollTimer = pollTimer;
     if (numId >= nextId) nextId = numId + 1;
   }
