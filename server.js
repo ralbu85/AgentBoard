@@ -352,6 +352,13 @@ const server = http.createServer(async (req, res) => {
 wss = new WebSocketServer({ server });
 const clientSizes = new Map();
 wss.on('connection', ws => {
+  // Send full snapshots for all active workers so client has initial cache
+  workers.forEach((w, id) => {
+    if (lastCapture[id]) {
+      const lines = lastCapture[id].split("\n");
+      ws.send(JSON.stringify({ type: "snapshot", id, lines }));
+    }
+  });
   ws.on('message', raw => {
     try {
       const msg = JSON.parse(raw);

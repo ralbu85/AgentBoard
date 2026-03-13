@@ -68,7 +68,15 @@ function applyDelta(id, len, changed) {
   if (keys.length === 0) return;
   // Update cache
   var cache = _snapshotCache[id];
-  if (!cache) { return; } // no cache yet, need full snapshot
+  if (!cache) {
+    // No cache — rebuild full lines from delta and apply as snapshot
+    var lines = [];
+    for (var i = 0; i < len; i++) {
+      lines[i] = (changed[i] !== undefined && changed[i] !== null) ? changed[i] : '';
+    }
+    scheduleSnapshot(id, lines);
+    return;
+  }
   // Apply changes to cache
   for (var k = 0; k < keys.length; k++) {
     var idx = parseInt(keys[k]);
