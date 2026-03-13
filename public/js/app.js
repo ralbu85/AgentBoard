@@ -1,20 +1,37 @@
 // ── Init & Event Binding ──
 
+// Auto-login: check if existing cookie is still valid
+function enterApp(workerList) {
+  document.getElementById('login').style.display = 'none';
+  document.getElementById('app').style.display = 'flex';
+  loadConfig();
+  initWS();
+  if (workerList) {
+    workerList.forEach(w => {
+      ensureCard(w.id, w.cwd, w.status, w.logs, w.cmd);
+      if (w.aiState) updateAIState(w.id, w.aiState);
+    });
+  } else {
+    loadAll();
+  }
+  setLayout(layout);
+}
+
+fetch('/api/workers', { credentials: 'include' })
+  .then(r => { if (r.ok) return r.json(); throw new Error(); })
+  .then(list => enterApp(list))
+  .catch(() => {
+    // No valid session — show login screen
+    document.getElementById('login').style.display = '';
+  });
+
 function doLogin() {
   const pw = document.getElementById('pw').value;
   apiPost('/api/login', { pw })
     .then(r => r.json())
     .then(d => {
-      if (d.ok) {
-        document.getElementById('login').style.display = 'none';
-        document.getElementById('app').style.display = 'flex';
-        loadConfig();
-        initWS();
-        loadAll();
-        setLayout(layout);
-      } else {
-        document.getElementById('login-err').style.display = 'block';
-      }
+      if (d.ok) enterApp();
+      else document.getElementById('login-err').style.display = 'block';
     });
 }
 

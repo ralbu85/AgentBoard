@@ -1,8 +1,9 @@
 require("dotenv").config();
 const http = require("http");
-const { execSync, spawn } = require("child_process");
+const { execSync, execFile, spawn } = require("child_process");
 const fs = require("fs");
 const path = require("path");
+const crypto = require("crypto");
 const { WebSocketServer } = require("ws");
 
 const PORT = process.env.PORT || 8081;
@@ -13,15 +14,11 @@ if (PASSWORD === "changeme") {
   console.warn("⚠️  Using default password. Please set DASHBOARD_PASSWORD environment variable.");
 }
 
-const sessions = new Map();
+const AUTH_TOKEN = crypto.createHmac("sha256", "termhub").update(PASSWORD).digest("hex");
 const workers = new Map();
 let nextId = 1;
 let tunnelUrl = null;
 let tunnelProcess = null;
-
-function createToken() {
-  return Math.random().toString(36).slice(2) + Date.now().toString(36);
-}
 
 function isAlive(sessionName) {
   try {
@@ -37,6 +34,22 @@ function tmux(cmd) {
   catch (e) { return ""; }
 }
 
+function tmuxAsync(cmd) {
+  return new Promise(resolve => {
+    execFile("tmux", cmd.split(/\s+/), { encoding: "utf8", timeout: 5000 }, (err, stdout) => {
+      resolve(err ? "" : stdout);
+    });
+  });
+}
+
+function tmuxAsyncRaw(args) {
+  return new Promise(resolve => {
+    execFile("tmux", args, { encoding: "utf8", timeout: 5000 }, (err, stdout) => {
+      resolve(err ? "" : stdout);
+    });
+  });
+}
+
 function loadConfig() {
   const configPath = path.join(__dirname, "config.json");
   return fs.existsSync(configPath) ? JSON.parse(fs.readFileSync(configPath, "utf8")) : {};
@@ -47,12 +60,10 @@ function spawnWorker(cwd, cmd) {
   cmd = cmd || config.defaultCommand || "claude";
   const id = String(nextId++);
   const sessionName = "term-" + id;
-  tmux(`new-session -d -s ${sessionName} -c "${cwd}" -e CLAUDECODE= -e TMUX=`);
+  tmux(`new-session -d -s ${sessionName} -c "${cwd}"`);
   tmux(`send-keys -t ${sessionName} ${JSON.stringify(cmd)} Enter`);
   const logs = [];
   workers.set(id, { sessionName, cwd, cmd, logs });
-  const pollTimer = setInterval(() => pollOutput(id), 1000);
-  workers.get(id).pollTimer = pollTimer;
   broadcast({ type: "spawned", id, cwd, cmd, status: "running", sessionName });
   return id;
 }
@@ -77,32 +88,35 @@ function detectWaiting(output) {
 const IDLE_THRESHOLD = 5000; // 5 seconds of no output change → idle
 
 let lastCapture = {};
-let lastLines = {};  // id → string[] for line-level diffing
 
-function pollOutput(id) {
+async function pollOutput(id) {
   const w = workers.get(id);
   if (!w) return;
+
   if (!isAlive(w.sessionName)) {
-    clearInterval(w.pollTimer);
     w.status = 'completed';
     w.aiState = null;
     broadcast({ type: "status", id, status: "completed" });
     return;
   }
+
   const cols = w.cols || 80;
   const rows = w.rows || 50;
-  tmux(`resize-window -t ${w.sessionName} -x ${cols} -y ${rows}`);
-  const output = tmux(`capture-pane -t ${w.sessionName} -p -e -S -500 -J`);
 
-  // Track actual working directory
-  const currentCwd = tmux(`display-message -t ${w.sessionName} -p "#{pane_current_path}"`).trim();
-  if (currentCwd && currentCwd !== w.cwd) {
-    w.cwd = currentCwd;
-    broadcast({ type: "cwd", id, cwd: currentCwd });
+  // Run resize, capture, and cwd in parallel — non-blocking
+  const [, output, currentCwd] = await Promise.all([
+    tmuxAsyncRaw(["resize-window", "-t", w.sessionName, "-x", String(cols), "-y", String(rows)]),
+    tmuxAsyncRaw(["capture-pane", "-t", w.sessionName, "-p", "-e", "-S", "-500", "-J"]),
+    tmuxAsyncRaw(["display-message", "-t", w.sessionName, "-p", "#{pane_current_path}"]),
+  ]);
+
+  const trimmedCwd = currentCwd.trim();
+  if (trimmedCwd && trimmedCwd !== w.cwd) {
+    w.cwd = trimmedCwd;
+    broadcast({ type: "cwd", id, cwd: trimmedCwd });
   }
 
   if (output === lastCapture[id]) {
-    // Output unchanged — check if idle threshold reached
     if (w.aiState !== 'idle' && w.aiState !== 'waiting' && w.lastChangeTime) {
       const elapsed = Date.now() - w.lastChangeTime;
       if (elapsed >= IDLE_THRESHOLD) {
@@ -122,23 +136,8 @@ function pollOutput(id) {
   const lines = output.split("\n");
   w.logs = lines.slice(-200).map(text => ({ src: "stdout", text, ts: Date.now() }));
 
-  // Send delta instead of full snapshot
-  const prev = lastLines[id];
-  if (!prev) {
-    broadcast({ type: "snapshot", id, lines });
-  } else {
-    const changed = {};
-    const maxLen = Math.max(lines.length, prev.length);
-    for (let i = 0; i < maxLen; i++) {
-      if (i >= prev.length || i >= lines.length || lines[i] !== prev[i]) {
-        changed[i] = i < lines.length ? lines[i] : null;
-      }
-    }
-    broadcast({ type: "delta", id, len: lines.length, changed });
-  }
-  lastLines[id] = lines;
+  broadcast({ type: "snapshot", id, lines });
 
-  // Output just changed — check for waiting, otherwise working
   const waiting = detectWaiting(output);
   const aiState = waiting ? 'waiting' : 'working';
   if (aiState !== w.aiState) {
@@ -147,37 +146,30 @@ function pollOutput(id) {
   }
 }
 
-function pausePoll(id) {
-  const w = workers.get(id);
-  if (w && w.pollTimer) { clearInterval(w.pollTimer); w.pollTimer = null; }
-}
-
-function resumePoll(id, delay) {
-  const w = workers.get(id);
-  if (w && !w.pollTimer) {
-    w.pollTimer = setInterval(() => pollOutput(id), 1000);
-    if (delay) setTimeout(() => pollOutput(id), delay);
-  }
+// Single poll loop — polls all workers concurrently without blocking event loop
+const POLL_INTERVAL = 300;
+async function pollAll() {
+  const ids = [...workers.keys()];
+  await Promise.all(ids.map(id => pollOutput(id).catch(() => {})));
+  setTimeout(pollAll, POLL_INTERVAL);
 }
 
 function sendInput(id, text) {
   const w = workers.get(id);
   if (!w) return false;
-  pausePoll(id);
   const lines = text.split("\n");
   for (const line of lines) {
     tmux(`send-keys -t ${w.sessionName} "${line.replace(/"/g, '\\"')}" ""`);
     tmux(`send-keys -t ${w.sessionName} "" Enter`);
   }
   broadcast({ type: "log", id, src: "stdin", text, ts: Date.now() });
-  resumePoll(id, 100);
+  setTimeout(() => pollOutput(id), 100);
   return true;
 }
 
 function killWorker(id) {
   const w = workers.get(id);
   if (!w) return false;
-  clearInterval(w.pollTimer);
   tmux(`kill-session -t ${w.sessionName}`);
   w.status = 'stopped';
   w.aiState = null;
@@ -208,7 +200,7 @@ function json(res, code, obj) {
 function auth(req) {
   const cookie = req.headers.cookie || "";
   const token = cookie.split(";").map(s => s.trim()).find(s => s.startsWith("token="))?.slice(6);
-  return token && sessions.has(token);
+  return token === AUTH_TOKEN;
 }
 
 const server = http.createServer(async (req, res) => {
@@ -223,9 +215,7 @@ const server = http.createServer(async (req, res) => {
   if (method === "POST" && url === "/api/login") {
     const body = JSON.parse(await readBody(req));
     if (body.pw === PASSWORD) {
-      const token = createToken();
-      sessions.set(token, true);
-      res.writeHead(200, { "Set-Cookie": `token=${token}; Path=/; HttpOnly`, "Content-Type": "application/json" });
+      res.writeHead(200, { "Set-Cookie": `token=${AUTH_TOKEN}; Path=/; HttpOnly`, "Content-Type": "application/json" });
       return res.end(JSON.stringify({ ok: true }));
     }
     return json(res, 401, { ok: false });
@@ -281,8 +271,6 @@ const server = http.createServer(async (req, res) => {
     const { sessionName, cwd } = JSON.parse(await readBody(req));
     const id = String(nextId++);
     workers.set(id, { sessionName, cwd, logs: [] });
-    const pollTimer = setInterval(() => pollOutput(id), 1000);
-    workers.get(id).pollTimer = pollTimer;
     broadcast({ type: "spawned", id, cwd, status: "running", sessionName });
     return json(res, 200, { id });
   }
@@ -311,8 +299,8 @@ const server = http.createServer(async (req, res) => {
 
   if (method === "POST" && url === "/api/remove") {
     const { id } = JSON.parse(await readBody(req));
-    const w = workers.get(id);
-    if (w) { clearInterval(w.pollTimer); workers.delete(id); }
+    workers.delete(id);
+    delete lastCapture[id];
     return json(res, 200, { ok: true });
   }
 
@@ -328,8 +316,6 @@ const server = http.createServer(async (req, res) => {
     const w = workers.get(id);
     if (!w) return json(res, 404, { ok: false });
     if (isAlive(w.sessionName)) {
-      clearInterval(w.pollTimer);
-      w.pollTimer = setInterval(() => pollOutput(id), 1000);
       broadcast({ type: "status", id, status: "running" });
       return json(res, 200, { ok: true });
     }
@@ -372,22 +358,20 @@ wss.on('connection', ws => {
       if (msg.type === 'key') {
         const w = workers.get(msg.id);
         if (w) {
-          pausePoll(msg.id);
           tmux(`send-keys -t ${w.sessionName} ${msg.key}`);
-          resumePoll(msg.id, 100);
+          setTimeout(() => pollOutput(msg.id), 100);
         }
       }
       if (msg.type === 'input') {
         const w = workers.get(msg.id);
         if (w) {
-          pausePoll(msg.id);
           const lines = msg.text.split("\n");
           for (const line of lines) {
             tmux(`send-keys -t ${w.sessionName} "${line.replace(/"/g, '\\"')}" ""`);
             tmux(`send-keys -t ${w.sessionName} "" Enter`);
           }
           broadcast({ type: "log", id: msg.id, src: "stdin", text: msg.text, ts: Date.now() });
-          resumePoll(msg.id, 100);
+          setTimeout(() => pollOutput(msg.id), 100);
         }
       }
     } catch (e) {}
@@ -411,8 +395,6 @@ function recoverSessions() {
     if (isNaN(numId)) continue;
     if (workers.has(id)) continue;
     workers.set(id, { sessionName, cwd, cmd, logs: [] });
-    const pollTimer = setInterval(() => pollOutput(id), 1000);
-    workers.get(id).pollTimer = pollTimer;
     if (numId >= nextId) nextId = numId + 1;
   }
   if (workers.size > 0) {
@@ -468,6 +450,7 @@ function checkTunnel() {
 
 server.listen(PORT, () => {
   recoverSessions();
+  pollAll(); // Start single async poll loop for all workers
   console.log(`✅ TermHub running → http://localhost:${PORT}`);
   console.log(`🔑 Password: ${PASSWORD}`);
   console.log(`📺 View tmux session: tmux attach -t term-1`);

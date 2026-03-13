@@ -24,8 +24,7 @@ function applySnapshot(id, lines) {
     var children = box.children;
 
     if (!prev || Math.abs(lines.length - prev.length) > 50) {
-      // Full rebuild only on first load or big jump
-      box.innerHTML = '';
+      // Full rebuild only on first load or big jump — atomic swap to avoid flicker
       var frag = document.createDocumentFragment();
       for (var i = 0; i < lines.length; i++) {
         var el = document.createElement('div');
@@ -33,7 +32,7 @@ function applySnapshot(id, lines) {
         el.innerHTML = ansiToHtml(lines[i]);
         frag.appendChild(el);
       }
-      box.appendChild(frag);
+      box.replaceChildren(frag);
     } else {
       // Diff: update only changed lines
       // Adjust length
@@ -63,57 +62,6 @@ function applySnapshot(id, lines) {
   _snapshotCache[id] = lines;
 }
 
-function applyDelta(id, len, changed) {
-  var keys = Object.keys(changed);
-  if (keys.length === 0) return;
-  // Update cache
-  var cache = _snapshotCache[id];
-  if (!cache) {
-    // No cache — rebuild full lines from delta and apply as snapshot
-    var lines = [];
-    for (var i = 0; i < len; i++) {
-      lines[i] = (changed[i] !== undefined && changed[i] !== null) ? changed[i] : '';
-    }
-    scheduleSnapshot(id, lines);
-    return;
-  }
-  // Apply changes to cache
-  for (var k = 0; k < keys.length; k++) {
-    var idx = parseInt(keys[k]);
-    if (changed[keys[k]] === null) continue;
-    cache[idx] = changed[keys[k]];
-  }
-  if (cache.length > len) cache.length = len;
-  while (cache.length < len) cache.push('');
-
-  // DOM update — only touch changed lines
-  document.querySelectorAll('#logs-' + id).forEach(function(box) {
-    var wasAtBottom = isNearBottom(box);
-    var children = box.children;
-    // Remove excess
-    while (children.length > len) box.removeChild(box.lastChild);
-    // Update changed existing lines
-    for (var k = 0; k < keys.length; k++) {
-      var idx = parseInt(keys[k]);
-      if (idx < children.length && cache[idx] !== undefined) {
-        children[idx].innerHTML = ansiToHtml(cache[idx]);
-      }
-    }
-    // Append new lines if needed
-    if (len > children.length) {
-      var frag = document.createDocumentFragment();
-      for (var i = children.length; i < len; i++) {
-        var el = document.createElement('div');
-        el.className = 'log-line stdout';
-        el.innerHTML = ansiToHtml(cache[i] || '');
-        frag.appendChild(el);
-      }
-      box.appendChild(frag);
-    }
-    if (wasAtBottom) box.scrollTop = box.scrollHeight;
-  });
-}
-
 let ws;
 
 function initWS() {
@@ -138,9 +86,6 @@ function handleMsg(d) {
   if (d.type === 'aiState') updateAIState(d.id, d.state);
   if (d.type === 'snapshot') {
     scheduleSnapshot(d.id, d.lines);
-  }
-  if (d.type === 'delta') {
-    applyDelta(d.id, d.len, d.changed);
   }
 }
 
