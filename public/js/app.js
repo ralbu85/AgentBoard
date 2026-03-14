@@ -5,6 +5,11 @@ function enterApp(workerList) {
   document.getElementById('app').style.display = 'flex';
   loadConfig();
   initWS();
+  // Request notification permission
+  if ('Notification' in window && Notification.permission === 'default') {
+    Notification.requestPermission();
+  }
+  updateNotifyBtn();
   if (workerList) {
     workerList.forEach(w => {
       ensureCard(w.id, w.cwd, w.status, w.logs, w.cmd);
@@ -41,6 +46,18 @@ document.getElementById('toggle-toolbar-btn').addEventListener('click', toggleSp
 document.getElementById('scan-btn').addEventListener('click', scanSessions);
 document.getElementById('layout-tab-btn').addEventListener('click', () => setLayout('tab'));
 document.getElementById('layout-split-btn').addEventListener('click', () => setLayout('split'));
+document.getElementById('notify-btn').addEventListener('click', toggleNotify);
+
+function toggleNotify() {
+  _notifyEnabled = !_notifyEnabled;
+  localStorage.setItem('notifyEnabled', _notifyEnabled);
+  updateNotifyBtn();
+}
+
+function updateNotifyBtn() {
+  var btn = document.getElementById('notify-btn');
+  if (btn) btn.textContent = _notifyEnabled ? '🔔' : '🔕';
+}
 
 window.addEventListener('resize', sendResize);
 

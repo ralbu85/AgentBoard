@@ -84,6 +84,7 @@ function handleMsg(d) {
   if (d.type === 'status') updateStatus(d.id, d.status);
   if (d.type === 'cwd') updateCwd(d.id, d.cwd);
   if (d.type === 'aiState') updateAIState(d.id, d.state);
+  if (d.type === 'info') updateInfo(d.id, d.process, d.createdAt, d.memKB);
   if (d.type === 'snapshot') {
     scheduleSnapshot(d.id, d.lines);
   }
@@ -145,6 +146,7 @@ function loadAll() {
     .then(list => list.forEach(w => {
       ensureCard(w.id, w.cwd, w.status, w.logs, w.cmd);
       if (w.aiState) updateAIState(w.id, w.aiState);
+      if (w.process || w.createdAt) updateInfo(w.id, w.process, w.createdAt, w.memKB);
     }));
 }
 

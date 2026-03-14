@@ -110,13 +110,38 @@ async function pollOutput(id) {
   const [, output, currentCwd] = await Promise.all([
     tmuxAsyncRaw(["resize-window", "-t", w.sessionName, "-x", String(cols), "-y", String(rows)]),
     tmuxAsyncRaw(["capture-pane", "-t", w.sessionName, "-p", "-e", "-S", "-500", "-J"]),
-    tmuxAsyncRaw(["display-message", "-t", w.sessionName, "-p", "#{pane_current_path}"]),
+    tmuxAsyncRaw(["display-message", "-t", w.sessionName, "-p", "#{pane_current_path}|#{pane_current_command}|#{session_created}|#{pane_pid}"]),
   ]);
 
-  const trimmedCwd = currentCwd.trim();
+  const infoParts = currentCwd.trim().split("|");
+  const trimmedCwd = infoParts[0] || "";
+  const curProcess = infoParts[1] || "";
+  const createdAt = parseInt(infoParts[2]) || 0;
+  const panePid = infoParts[3] || "";
+
   if (trimmedCwd && trimmedCwd !== w.cwd) {
     w.cwd = trimmedCwd;
     broadcast({ type: "cwd", id, cwd: trimmedCwd });
+  }
+
+  // Memory check throttled to ~10s (every 30 polls at 300ms)
+  if (!w._memTick) w._memTick = 0;
+  w._memTick++;
+  let memKB = w.memKB || 0;
+  if (panePid && w._memTick % 30 === 0) {
+    try {
+      const psOut = await new Promise(resolve => {
+        execFile("ps", ["-o", "rss=", "--pid", panePid, "--ppid", panePid], { encoding: "utf8", timeout: 3000 }, (err, stdout) => resolve(err ? "" : stdout));
+      });
+      memKB = psOut.trim().split(/\s+/).reduce((sum, v) => sum + (parseInt(v) || 0), 0);
+    } catch (e) { memKB = 0; }
+  }
+
+  if (curProcess !== w.process || createdAt !== w.createdAt || memKB !== w.memKB) {
+    w.process = curProcess;
+    w.createdAt = createdAt;
+    w.memKB = memKB;
+    broadcast({ type: "info", id, process: curProcess, createdAt, memKB });
   }
 
   if (output === lastCapture[id]) {
@@ -252,7 +277,7 @@ const server = http.createServer(async (req, res) => {
 
   if (method === "GET" && url === "/api/workers") {
     const list = [...workers.entries()].map(([id, w]) => ({
-      id, cwd: w.cwd, cmd: w.cmd || "claude", status: isAlive(w.sessionName) ? "running" : (w.status || "stopped"), sessionName: w.sessionName, logs: w.logs, aiState: w.aiState || null
+      id, cwd: w.cwd, cmd: w.cmd || "claude", status: isAlive(w.sessionName) ? "running" : (w.status || "stopped"), sessionName: w.sessionName, logs: w.logs, aiState: w.aiState || null, process: w.process || null, createdAt: w.createdAt || null, memKB: w.memKB || 0
     }));
     return json(res, 200, list);
   }

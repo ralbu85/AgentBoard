@@ -355,6 +355,7 @@ header h1 {
 
 .tab-dot.completed {
   background: #3fb950;
+  animation: pulse 1.5s ease-in-out 3;
 }
 
 .tab-dot.ai-idle {
@@ -440,6 +441,11 @@ header h1 {
   padding: 3px 12px;
   flex-shrink: 0;
   border-bottom: 1px solid #21262d;
+}
+
+.card-info {
+  color: #6e7681;
+  font-size: 11px;
 }
 
 .badge {
@@ -634,47 +640,177 @@ header h1 {
 /* ── Mobile ────────────────────────────────────────── */
 
 @media (max-width: 768px) {
+  /* Safe area for notch phones */
+  body {
+    padding-top: env(safe-area-inset-top);
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
+
+  /* Header — compact */
+  header {
+    padding: 6px 10px;
+    gap: 6px;
+  }
+
+  header h1 {
+    font-size: 13px;
+  }
+
   #layout-tab-btn,
-  #layout-split-btn {
+  #layout-split-btn,
+  .header-divider {
     display: none;
   }
 
-  .toolbar {
-    flex-wrap: wrap;
+  .header-btn {
+    height: 32px;
+    min-width: 32px;
+    padding: 0 6px;
+    font-size: 14px;
+  }
+
+  .header-btn.accent {
+    font-size: 20px;
+    padding: 0 8px;
+  }
+
+  /* Tab bar — touch-friendly */
+  #tab-bar {
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .tab {
+    padding: 10px 12px;
+    font-size: 12px;
     gap: 6px;
+  }
+
+  .tab-dot {
+    width: 8px;
+    height: 8px;
+  }
+
+  /* Card header — allow wrapping */
+  .card-header {
+    padding: 6px 10px;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+
+  .card-title {
+    font-size: 12px;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .card-cwd {
+    font-size: 10px;
+    padding: 2px 10px;
+  }
+
+  /* Logs — compact */
+  .logs {
+    font-size: 11px;
+    padding: 6px;
+    min-height: 80px;
+  }
+
+  /* Input row — stack vertically */
+  .input-row {
+    flex-wrap: wrap;
+    padding: 6px;
+    gap: 4px;
+    padding-bottom: calc(6px + env(safe-area-inset-bottom));
+  }
+
+  .input-row textarea {
+    flex: 1;
+    min-width: 0;
+    font-size: 16px; /* prevents iOS zoom on focus */
+    padding: 8px;
+    min-height: 36px;
+  }
+
+  .input-row .send-btn {
+    padding: 8px 14px;
+    font-size: 14px;
+  }
+
+  /* Quick keys — full width row below textarea */
+  .quick-keys {
+    order: 1;
+    width: 100%;
+    justify-content: space-between;
+    gap: 3px;
+  }
+
+  .input-row .qk-btn {
+    flex: 1;
+    height: 32px;
+    font-size: 12px;
+    min-width: 0;
+  }
+
+  /* Spawn panel — mobile-friendly */
+  #spawn-panel {
     padding: 8px 10px;
   }
 
-  #cmd-input {
+  .browse-path {
+    font-size: 12px;
+    padding: 6px 10px;
+  }
+
+  .browse-item {
+    padding: 10px 12px;
+    font-size: 14px;
+    min-height: 40px;
+  }
+
+  .browse-list {
+    max-height: 40vh;
+  }
+
+  .spawn-panel-footer {
+    flex-direction: column;
+    gap: 6px;
+    align-items: stretch;
+  }
+
+  .spawn-panel-actions {
+    margin-left: 0;
+    justify-content: stretch;
+  }
+
+  .spawn-create-btn {
     flex: 1;
-    width: auto;
-    order: 0;
+    padding: 10px !important;
+    font-size: 14px !important;
   }
 
-  #dir-btn { order: 1; }
-  #spawn-btn { order: 2; }
-  #scan-btn { order: 3; }
-
-  .dir-wrap {
-    min-width: 0;
-    flex-basis: 100%;
-    order: 4;
-    margin-top: 2px;
+  .bookmark-add {
+    height: 34px;
   }
 
-  .dir-dropdown {
-    left: 0;
-    right: 0;
-    position: fixed;
-    top: auto;
-    bottom: 0;
-    border-radius: 12px 12px 0 0;
-    max-height: 60vh;
-    overflow-y: auto;
+  .bookmark-chip {
+    padding: 6px 12px;
+    font-size: 12px;
   }
 
-  .dir-item span {
-    white-space: normal;
-    word-break: break-all;
+  /* Kill/Reconnect buttons — bigger touch targets */
+  .kill-btn,
+  .reconnect-btn {
+    padding: 4px 10px !important;
+    font-size: 12px !important;
+    min-height: 28px;
+  }
+
+  /* Badge */
+  .badge {
+    font-size: 10px;
+    padding: 2px 6px;
   }
 }

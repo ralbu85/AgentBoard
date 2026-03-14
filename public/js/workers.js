@@ -1,3 +1,62 @@
+// ── Notifications ──
+
+var _notifyEnabled = localStorage.getItem('notifyEnabled') !== 'false';
+var _titleBlinkTimer = null;
+var _prevStatuses = {};
+var _prevAIStates = {};
+
+function playBeep(type) {
+  try {
+    var ctx = new (window.AudioContext || window.webkitAudioContext)();
+    var osc = ctx.createOscillator();
+    var gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    if (type === 'waiting') {
+      osc.frequency.value = 880;
+      osc.type = 'sine';
+    } else {
+      osc.frequency.value = 660;
+      osc.type = 'square';
+    }
+    gain.gain.value = 0.08;
+    osc.start();
+    osc.stop(ctx.currentTime + 0.15);
+  } catch (e) {}
+}
+
+function startTitleBlink(msg) {
+  if (_titleBlinkTimer) return;
+  var orig = document.title;
+  var show = false;
+  _titleBlinkTimer = setInterval(function() {
+    document.title = (show = !show) ? msg : orig;
+  }, 800);
+  var stop = function() {
+    clearInterval(_titleBlinkTimer);
+    _titleBlinkTimer = null;
+    document.title = orig;
+    document.removeEventListener('visibilitychange', onVis);
+    window.removeEventListener('focus', stop);
+  };
+  var onVis = function() { if (!document.hidden) stop(); };
+  document.addEventListener('visibilitychange', onVis);
+  window.addEventListener('focus', stop);
+}
+
+function notifyUser(title, body, type) {
+  if (!_notifyEnabled) return;
+  playBeep(type);
+  startTitleBlink(title);
+  if (Notification.permission === 'granted') {
+    try { new Notification(title, { body: body, tag: 'termhub-' + Date.now() }); } catch (e) {}
+  }
+}
+
+function shouldNotify() {
+  return document.hidden;
+}
+
 // ── Worker Card UI ──
 
 let customTitles = {};
@@ -59,7 +118,7 @@ function ensureCard(id, cwd, status, logs, cmd) {
       '<span class="badge' + (status === 'stopped' ? ' stopped' : '') + (status === 'completed' ? ' completed' : '') + '" id="badge-' + id + '">' + status + '</span>' +
       killBtnHtml(id, status) +
     '</div>' +
-    '<div class="card-cwd">' + displayPath(cwd) + '</div>' +
+    '<div class="card-cwd">' + displayPath(cwd) + '<span class="card-info"></span></div>' +
     '<div class="logs" id="logs-' + id + '"></div>' +
     '<div class="input-row" id="input-row-' + id + '"' + (status === 'stopped' || status === 'completed' ? ' style="display:none"' : '') + '>' +
       '<textarea id="inp-' + id + '" placeholder="Enter command..." rows="1"></textarea>' +
@@ -226,6 +285,12 @@ function markPrompt(line, text) {
 }
 
 function updateStatus(id, status) {
+  var prev = _prevStatuses[id];
+  _prevStatuses[id] = status;
+  if (shouldNotify() && prev && prev !== status) {
+    if (status === 'completed') notifyUser('#' + id + ' 세션 완료', 'Session completed', 'done');
+    else if (status === 'stopped') notifyUser('#' + id + ' 세션 중지', 'Session stopped', 'done');
+  }
   var isStopped = status === 'stopped' || status === 'completed';
   document.querySelectorAll('#badge-' + id).forEach(el => {
     el.textContent = status;
@@ -268,6 +333,11 @@ function updateStatus(id, status) {
 }
 
 function updateAIState(id, state) {
+  var prev = _prevAIStates[id];
+  _prevAIStates[id] = state;
+  if (shouldNotify() && prev && prev !== state && state === 'waiting') {
+    notifyUser('#' + id + ' 입력 대기', 'Waiting for input', 'waiting');
+  }
   // Skip if worker is stopped/completed
   var badge = document.querySelector('#badge-' + id);
   if (badge && (badge.classList.contains('stopped') || badge.classList.contains('completed'))) return;
@@ -381,6 +451,52 @@ function spawnSession() {
     })
     .catch(() => { alert('Failed to create worker.'); });
 }
+
+var _workerInfo = {}; // id → { process, createdAt, memKB }
+
+function formatUptime(seconds) {
+  if (seconds < 60) return '<1m';
+  var m = Math.floor(seconds / 60) % 60;
+  var h = Math.floor(seconds / 3600) % 24;
+  var d = Math.floor(seconds / 86400);
+  if (d > 0) return d + 'd ' + h + 'h';
+  if (h > 0) return h + 'h ' + m + 'm';
+  return m + 'm';
+}
+
+function formatMem(kb) {
+  if (!kb || kb <= 0) return '';
+  if (kb < 1024) return kb + ' KB';
+  if (kb < 1048576) return (kb / 1024).toFixed(0) + ' MB';
+  return (kb / 1048576).toFixed(1) + ' GB';
+}
+
+function updateInfo(id, process, createdAt, memKB) {
+  var prev = _workerInfo[id] || {};
+  _workerInfo[id] = { process: process, createdAt: createdAt, memKB: memKB != null ? memKB : prev.memKB || 0 };
+  var info = _workerInfo[id];
+  var now = Math.floor(Date.now() / 1000);
+  var uptime = info.createdAt ? formatUptime(now - info.createdAt) : '';
+  var mem = formatMem(info.memKB);
+  var parts = [process || '', uptime, mem].filter(Boolean);
+  var text = parts.length ? ' · ' + parts.join(' · ') : '';
+  // Update in both tab-panel and split-content cards
+  document.querySelectorAll('#card-' + id + ' .card-info').forEach(function(el) {
+    el.textContent = text;
+  });
+  document.querySelectorAll('.tab-panel[data-id="' + id + '"] .card-info').forEach(function(el) {
+    el.textContent = text;
+  });
+}
+
+function refreshUptimes() {
+  Object.keys(_workerInfo).forEach(function(id) {
+    var info = _workerInfo[id];
+    if (info.createdAt) updateInfo(id, info.process, info.createdAt, info.memKB);
+  });
+}
+
+setInterval(refreshUptimes, 60000);
 
 function scanSessions() {
   const btn = document.getElementById('scan-btn');

@@ -35,6 +35,14 @@ function selectTab(id) {
   activeTab = id;
   document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.id === id));
   document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.dataset.id === id));
+  // Scroll logs to bottom after tab becomes visible
+  requestAnimationFrame(function() {
+    var panel = document.querySelector('.tab-panel[data-id="' + id + '"]');
+    if (panel) {
+      var box = panel.querySelector('.logs');
+      if (box) box.scrollTop = box.scrollHeight;
+    }
+  });
 }
 
 function switchTab(delta) {
