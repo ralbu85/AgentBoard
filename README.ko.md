@@ -1,189 +1,226 @@
-# TermHub
+<p align="center">
+  <img src="https://img.shields.io/badge/AgentBoard-AI_세션_대시보드-7c3aed?style=for-the-badge" alt="AgentBoard" />
+</p>
 
-tmux를 활용한 멀티 터미널 세션 웹 대시보드. Claude, Gemini, GPT 등 어떤 CLI든 실행하고 한 곳에서 모니터링하세요.
+<h1 align="center">AgentBoard</h1>
 
-이 프로젝트가 유용했다면 GitHub 스타로 응원해 주세요.
+<p align="center">
+  <strong>여러 AI 코딩 세션을 브라우저에서 한눈에 관리</strong><br>
+  Claude Code 세션을 모니터링하고, 입력이 필요할 때 즉시 알림을 받으세요.
+</p>
 
-## 프로젝트 상태
+<p align="center">
+  <a href="#빠른-시작">빠른 시작</a> &bull;
+  <a href="#주요-기능">주요 기능</a> &bull;
+  <a href="#원격-접속">원격 접속</a> &bull;
+  <a href="#라이센스">라이센스</a>
+</p>
 
-TermHub는 현재 활발히 개발 중이며, 일부 버그나 미완성된 부분이 있을 수 있습니다.
-문제를 발견하셨다면 재현 방법과 함께 이슈를 등록해 주세요.
-버그 제보와 기여는 언제나 환영합니다.
+<p align="center">
+  <img src="https://img.shields.io/badge/node-%3E%3D18-339933?logo=node.js&logoColor=white" alt="Node.js" />
+  <img src="https://img.shields.io/badge/tmux-필수-1BB91F?logo=tmux&logoColor=white" alt="tmux" />
+  <img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT License" />
+</p>
+
+---
+
+## 이런 문제를 겪고 있다면
+
+Claude Code를 3개 이상 동시에 돌리고 있는데, 터미널 탭을 왔다갔다 하다가 **어떤 세션이 입력을 기다리는지** 놓치고 있지 않나요? 그 대기 시간이 수십 분씩 낭비됩니다.
+
+## 해결책
+
+AgentBoard는 모든 AI 코딩 세션을 **브라우저 하나로** 관리합니다:
+
+- 모든 세션의 실시간 출력을 한눈에 확인
+- 입력이 필요한 세션이 생기면 **즉시 알림**
+- 폰, 다른 PC 등 브라우저만 있으면 어디서든 접속
+- 모니터링에 SSH 불필요 — URL만 열면 끝
+
+---
 
 ## 주요 기능
 
-- **모든 명령어 실행** — 원하는 CLI 도구로 세션 생성 (기본: `claude`)
-- **멀티 터미널 관리** — 각 세션이 독립적인 tmux 세션으로 실행
-- **실시간 로그** — tmux 출력을 실시간으로 캡처 및 표시
-- **AI 상태 감지** — 터미널 출력을 분석하여 AI 상태를 자동 감지:
-  - 🔵 작업 중 → 🟢 대기 → 🟡 결정 필요 (권한 요청)
-- **양방향 미러링** — 대시보드와 로컬 터미널에서 동일 세션을 동시에 확인
+### Overview 모드
+모든 세션을 카드 그리드로 표시. 실시간 상태와 출력 미리보기. 카드 클릭으로 바로 진입.
 
-### 부가 기능
+### 실시간 상태 감지
+터미널 출력을 분석해서 AI 상태를 자동 판별:
+- **Running** (보라) — AI가 작업 중
+- **Waiting** (노랑 펄스) — 사용자 입력 대기
+- **Idle** (초록) — 작업 완료, 다음 명령 대기
+- **Completed** (초록 glow) — 세션 종료, 확인할 때까지 깜빡임
 
-- **tmux 세션 스캔** — 기존 세션 자동 감지 및 연결
-- **Tab / Split 레이아웃** — Tab으로 집중, Split으로 나란히 보기
-- **즐겨찾기 & 최근 경로** — 자주 사용하는 디렉토리 빠른 접근
-- **비밀번호 인증 + 외부 터널** — Cloudflare(권장) 또는 ngrok으로 외부 접근
-- **적응형 터미널 크기** — 화면에 맞게 tmux 자동 리사이즈
-- **키보드 단축키** — Esc, Shift+Tab, Ctrl+C, 방향키를 활성 워커에 전달
+### 알림 시스템
+- 세션 완료/입력 대기 시 브라우저 알림
+- 비프음 (waiting과 completed 톤 구분)
+- 다른 탭에 있을 때 제목 깜빡임
+- 다른 세션 보고 있을 때 탭 플래시
 
-## 사전 요구사항
+### 3가지 레이아웃
+- **Overview** — 모든 세션을 카드로 한눈에
+- **Tab** — 하나씩 집중, 탭 바로 전환
+- **Split** — 나란히 보기, 헤더 드래그로 순서 변경
 
-- [Node.js](https://nodejs.org)
-- [tmux](https://github.com/tmux/tmux) (`brew install tmux`)
-- [cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/) (선택사항, 외부 접근용 — 권장)
-- [ngrok](https://ngrok.com) (선택사항, 외부 접근용)
+### 터미널 기능
+- ANSI 컬러 완전 지원 (256색 + RGB)
+- 박스 라인을 깔끔한 구분선으로 렌더링
+- 터미널 내 검색 (돋보기 아이콘 클릭)
+- 파일 업로드 — 스크린샷 붙여넣기, 파일 드래그앤드롭
+- 빠른 키: Esc, 방향키, Enter, Tab, Ctrl+C
 
-## 빠른 설치
+### 기타
+- 기존 tmux 세션 자동 감지 및 연결
+- 폴더 브라우저 + 북마크
+- 모바일 반응형 UI
+- 프로세스 정보 (명령, 업타임, 메모리)
+- 비밀번호 인증
+- Cloudflare 터널로 원격 접속
 
-셋업 스크립트를 실행하면 의존성 설치, 설정 파일 생성, 백그라운드 서비스 등록이 한 번에 완료됩니다:
+---
 
-```bash
-git clone https://github.com/yourname/termhub.git
-cd termhub
-npm run setup
-```
+## 빠른 시작
 
-셋업 스크립트가 수행하는 작업:
-1. Node.js, tmux 확인 (없으면 Homebrew로 tmux 설치)
-2. `npm install` 실행
-3. `.env` 생성 — 비밀번호와 포트 입력
-4. `config.json` 생성 — 기본 경로와 기본 명령어 입력
-5. macOS launchd 서비스 등록 — 부팅 시 자동 시작, 크래시 시 자동 재시작
+### 사전 요구사항
 
-설치 후 TermHub는 백그라운드에서 실행됩니다. 서비스 관리:
+- **Node.js** >= 18
+- **tmux** (macOS: `brew install tmux`, Ubuntu: `apt install tmux`)
 
-```bash
-launchctl unload ~/Library/LaunchAgents/com.termhub.server.plist   # 중지
-launchctl load ~/Library/LaunchAgents/com.termhub.server.plist     # 시작
-cat /tmp/termhub.log                                                # 로그 확인
-```
-
-## 수동 설치
-
-셋업 스크립트 대신 수동으로 설정하려면:
+### 설치 & 실행
 
 ```bash
+git clone https://github.com/ralbu85/AgentBoard.git
+cd AgentBoard
 npm install
-cp config.example.json config.json   # basePath, favorites, defaultCommand 수정
-echo -e "PORT=8081\nDASHBOARD_PASSWORD=yourpass" > .env
+```
+
+`.env` 파일 생성:
+```bash
+echo "DASHBOARD_PASSWORD=비밀번호입력" > .env
+```
+
+서버 시작:
+```bash
 node server.js
 ```
 
-launchd 없이 수동으로 실행하려면:
+브라우저에서 **http://localhost:3000** 접속. 끝.
+
+### 선택: 설정 파일
 
 ```bash
-node server.js                                        # 서버 시작
-cloudflared tunnel --url http://localhost:8081         # 터널 시작 (선택, 별도 프로세스)
+cp config.example.json config.json
 ```
 
-## 외부 접근 (Cloudflare / ngrok)
+`config.json` 편집:
+```json
+{
+  "basePath": "/home/you/projects",
+  "defaultCommand": "claude",
+  "favorites": ["/home/you/projects/app1", "/home/you/projects/app2"]
+}
+```
 
-로컬 네트워크 외부(모바일, 다른 PC 등)에서 TermHub에 접근할 때는 터널 도구를 사용하세요.
-
-> **권장:** Cloudflare Tunnel (`cloudflared`)  
-> 이유: 계정/도메인 없이도 빠르게 임시 URL(`*.trycloudflare.com`)을 열 수 있고, 설정이 간단합니다.
-
-### 옵션 A. Cloudflare (권장)
-
-1. 설치
+### 선택: 백그라운드 실행
 
 ```bash
-brew install cloudflared
+# nohup 사용
+nohup node server.js > /tmp/agentboard.log 2>&1 &
+
+# 또는 pm2 사용
+npm install -g pm2
+pm2 start server.js --name agentboard
+pm2 save
+pm2 startup  # 부팅 시 자동 시작
 ```
 
-2. 끝 — TermHub가 서버 시작 시 자동으로 Cloudflare 터널을 실행합니다. 터널 URL은:
+---
 
-- 서버 로그에 출력 (`☁️  Tunnel URL → https://...`)
-- API로 조회 가능: `GET /api/tunnel`
-- WebSocket으로 연결된 클라이언트에 브로드캐스트
+## 사용법
 
-3. (선택) **Discord 알림** — `.env`에 webhook URL을 추가하면 서버 시작 시 터널 URL이 Discord로 전송됩니다:
+### 세션 생성
+1. 우측 상단 **+** 클릭
+2. 프로젝트 폴더로 이동
+3. **Open here** 클릭 — 해당 디렉토리에서 Claude Code 세션 시작
 
+### 기존 세션 연결
+헤더의 **돋보기 아이콘**을 클릭하면 실행 중인 tmux 세션을 스캔해서 대시보드에 추가합니다.
+
+### 터미널에서 직접 접속
+세션은 표준 tmux이므로 터미널에서도 접속 가능:
+```bash
+tmux attach -t term-1
+```
+
+### 키보드 단축키
+| 키 | 동작 |
+|-----|------|
+| Cmd+Shift+좌/우 | 탭 전환 |
+| Ctrl+F | 터미널 출력 검색 |
+| Esc, Enter, 방향키 | 활성 세션에 전달 |
+| Ctrl+C | 세션에 인터럽트 전송 |
+
+---
+
+## 원격 접속
+
+폰이나 다른 PC에서 AgentBoard에 접속하는 방법.
+
+### Cloudflare 터널 (추천)
+
+```bash
+brew install cloudflared  # 또는 cloudflare.com에서 다운로드
+```
+
+`cloudflared`가 설치되어 있으면 AgentBoard가 자동으로 터널을 시작합니다:
+```
+☁️  Tunnel URL → https://random-name.trycloudflare.com
+```
+
+Discord로 URL을 받으려면 `.env`에 추가:
 ```env
 DISCORD_WEBHOOK=https://discord.com/api/webhooks/your/webhook-url
 ```
 
-> **참고:** `trycloudflare.com` URL은 임시 주소입니다. 재시작할 때마다 바뀝니다.
-
-### 옵션 B. ngrok
-
-1. 설치
+### ngrok
 
 ```bash
-brew install ngrok
+ngrok http 3000
 ```
 
-2. 계정 연결
+---
 
-[ngrok 대시보드](https://dashboard.ngrok.com)에서 무료 계정을 생성한 후 authtoken을 등록하세요:
+## 환경 변수
 
-```bash
-ngrok config add-authtoken <your-token>
-```
+| 변수 | 기본값 | 설명 |
+|------|--------|------|
+| `PORT` | `3000` | 서버 포트 |
+| `DASHBOARD_PASSWORD` | `changeme` | 로그인 비밀번호 |
+| `DISCORD_WEBHOOK` | — | 터널 URL Discord 알림 |
 
-3. 터널 시작
+---
 
-```bash
-ngrok http 8081
-```
-
-4. 접속
-
-출력에 표시되는 URL(예: `https://xxxx-xxxx.ngrok-free.app`)을 브라우저에서 열면 됩니다.
-
-> **참고:** 무료 플랜은 ngrok을 시작할 때마다 새로운 URL이 생성됩니다. 고정 도메인을 사용하려면 `ngrok http --url=your-domain.ngrok-free.app 8081`으로 실행하세요.
-
-## 사용법
-
-### 새 세션 시작
-1. 우측 상단의 **+** 버튼을 클릭하여 생성 도구바 열기
-2. 📁 클릭으로 프로젝트 경로 선택 (즐겨찾기 및 최근 경로 지원)
-3. 필요시 명령어 변경 (기본: `claude`)
-4. **+ New** 클릭하여 세션 시작
-
-### 기존 tmux 세션 연결
-1. 헤더의 🔍 클릭으로 실행 중인 tmux 세션 스캔
-2. 확인하여 대시보드에 추가
-
-### 로컬 터미널에서 세션 보기
-```bash
-tmux attach -t term-1   # 워커 #1
-tmux attach -t term-2   # 워커 #2
-```
-
-### 레이아웃 전환
-헤더의 **Tab / Split** 버튼으로 전환. 선택은 브라우저에 저장됩니다.
-
-### 워커 중지 및 제거
-- 실행 중: **Stop** 버튼 — tmux 세션 종료
-- 중지됨: **Remove** 버튼 — 대시보드에서 제거
-
-## 파일 구조
+## 아키텍처
 
 ```
-termhub/
-├── server.js              # Node.js 서버 (tmux 관리, WebSocket)
-├── index.html             # 웹 UI 진입점
-├── setup.sh               # 원스텝 셋업 스크립트
-├── public/
-│   ├── style.css          # 스타일
-│   └── js/
-│       ├── layout.js      # 레이아웃 & 탭 관리
-│       ├── favorites.js   # 즐겨찾기 & 경로 관리
-│       ├── ws.js          # WebSocket & API 통신
-│       ├── workers.js     # 워커 카드 UI & 액션
-│       └── app.js         # 초기화 & 이벤트 바인딩
-├── config.json            # 사용자 설정 (gitignored)
-├── config.example.json    # 설정 템플릿
-├── .env                   # 환경 변수 (gitignored)
-├── .gitignore
-├── package.json
-├── README.md              # English
-└── README.ko.md           # 한국어
+브라우저 (Vanilla JS)
+   ↕ WebSocket + REST API
+Node.js HTTP 서버 (server.js)
+   ↕ tmux 명령
+tmux 세션들 (term-1, term-2, ...)
+   └─ claude / 임의 CLI
 ```
 
-## 라이선스
+- **프레임워크 없음** — 순수 Node.js 서버 + 바닐라 JS 프론트엔드
+- **최소 의존성** — `ws`와 `dotenv`만 사용
+- **tmux 네이티브** — 서버 재시작해도 세션 유지
+
+---
+
+## 크레딧
+
+[sunmerrr/TermHub](https://github.com/sunmerrr/TermHub)을 기반으로 합니다. Overview 모드, 알림 시스템, Claude 특화 UI, 모바일 지원 등을 추가했습니다.
+
+## 라이센스
 
 MIT

@@ -5,6 +5,10 @@
 <h1 align="center">AgentBoard</h1>
 
 <p align="center">
+  <a href="README.ko.md">한국어</a>
+</p>
+
+<p align="center">
   <strong>Browser-based dashboard for managing multiple AI coding sessions</strong><br>
   Monitor all your Claude Code sessions in one place. Get notified when they need input.
 </p>
