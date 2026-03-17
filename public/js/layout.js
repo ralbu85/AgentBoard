@@ -44,6 +44,9 @@ function selectTab(id) {
   var panelCard = document.querySelector('.tab-panel[data-id="' + id + '"] .card');
   if (panelCard) panelCard.classList.add('status-seen');
 
+  // Refresh side panel for new tab
+  if (_spOpen && typeof refreshSPFiles === 'function') refreshSPFiles();
+
   // Scroll logs to bottom after tab becomes visible
   requestAnimationFrame(function() {
     var panel = document.querySelector('.tab-panel[data-id="' + id + '"]');

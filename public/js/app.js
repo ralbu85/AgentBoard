@@ -49,6 +49,7 @@ document.getElementById('layout-overview-btn').addEventListener('click', () => s
 document.getElementById('layout-tab-btn').addEventListener('click', () => setLayout('tab'));
 document.getElementById('layout-split-btn').addEventListener('click', () => setLayout('split'));
 document.getElementById('notify-btn').addEventListener('click', toggleNotify);
+document.getElementById('sidepanel-btn').addEventListener('click', toggleSidePanel);
 
 function toggleNotify() {
   _notifyEnabled = !_notifyEnabled;
@@ -77,6 +78,13 @@ document.addEventListener('keydown', e => {
   } else if (!inInput && e.metaKey && e.shiftKey && !e.ctrlKey && !e.altKey && e.key === 'ArrowRight') {
     e.preventDefault();
     switchTab(1);
+    return;
+  }
+
+  // Ctrl+B / Cmd+B → side panel toggle
+  if (e.key === 'b' && (e.ctrlKey || e.metaKey) && !inInput) {
+    e.preventDefault();
+    toggleSidePanel();
     return;
   }
 

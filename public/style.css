@@ -556,6 +556,245 @@ header h1 {
   50% { background: #fbbf2444; }
 }
 
+/* ── Side Panel ────────────────────────────────────── */
+
+#side-panel {
+  width: 380px;
+  min-width: 280px;
+  background: #161b22;
+  border-left: 1px solid #30363d;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+#sp-tabs {
+  display: flex;
+  border-bottom: 1px solid #30363d;
+  flex-shrink: 0;
+}
+
+.sp-tab {
+  flex: 1;
+  padding: 6px 0;
+  font-size: 11px;
+  background: none;
+  border: none;
+  color: #8b949e;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+}
+
+.sp-tab.active {
+  color: #e6edf3;
+  border-bottom-color: #a78bfa;
+}
+
+.sp-tab:hover {
+  color: #e6edf3;
+}
+
+.sp-close {
+  background: none;
+  border: none;
+  color: #8b949e;
+  font-size: 16px;
+  padding: 0 10px;
+  cursor: pointer;
+}
+
+.sp-close:hover {
+  color: #e6edf3;
+}
+
+.sp-content {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Files tab */
+.sp-path {
+  font-size: 11px;
+  color: #8b949e;
+  padding: 6px 10px;
+  border-bottom: 1px solid #21262d;
+  display: flex;
+  gap: 2px;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+
+.sp-path .crumb {
+  color: #c084fc;
+  cursor: pointer;
+  padding: 1px 3px;
+  border-radius: 3px;
+  font-size: 11px;
+}
+
+.sp-path .crumb:hover {
+  background: #21262d;
+}
+
+.sp-list {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.sp-file {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  color: #e6edf3;
+}
+
+.sp-file:hover {
+  background: #21262d;
+}
+
+.sp-file-icon {
+  font-size: 13px;
+  width: 18px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.sp-file-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sp-file-size {
+  color: #484f58;
+  font-size: 10px;
+  flex-shrink: 0;
+}
+
+/* Editor tab */
+#sp-editor {
+  display: flex;
+  flex-direction: column;
+}
+
+#sp-editor-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-bottom: 1px solid #21262d;
+  flex-shrink: 0;
+}
+
+#sp-editor-name {
+  flex: 1;
+  font-size: 11px;
+  color: #8b949e;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sp-btn {
+  background: #21262d;
+  border: 1px solid #30363d;
+  border-radius: 4px;
+  color: #8b949e;
+  font-size: 10px;
+  padding: 2px 8px;
+  cursor: pointer;
+}
+
+.sp-btn:hover {
+  background: #30363d;
+  color: #e6edf3;
+}
+
+.sp-btn.active {
+  background: #7c3aed;
+  border-color: #7c3aed;
+  color: #fff;
+}
+
+#sp-editor-area {
+  flex: 1;
+  background: #0d1117;
+  border: none;
+  color: #e6edf3;
+  font-family: "Cascadia Code", monospace;
+  font-size: 12px;
+  padding: 10px;
+  resize: none;
+  outline: none;
+  line-height: 1.5;
+}
+
+#sp-editor-preview {
+  flex: 1;
+  padding: 10px;
+  overflow-y: auto;
+  background: #0d1117;
+  font-size: 13px;
+  line-height: 1.6;
+  display: none;
+}
+
+#sp-editor-preview h1 { font-size: 20px; margin: 12px 0 6px; border-bottom: 1px solid #21262d; padding-bottom: 4px; }
+#sp-editor-preview h2 { font-size: 17px; margin: 10px 0 4px; border-bottom: 1px solid #21262d; padding-bottom: 3px; }
+#sp-editor-preview h3 { font-size: 15px; margin: 8px 0 4px; }
+#sp-editor-preview p { margin: 6px 0; }
+#sp-editor-preview code { background: #21262d; padding: 2px 5px; border-radius: 3px; font-size: 12px; font-family: "Cascadia Code", monospace; }
+#sp-editor-preview pre { background: #21262d; padding: 10px; border-radius: 6px; overflow-x: auto; margin: 8px 0; }
+#sp-editor-preview pre code { background: none; padding: 0; }
+#sp-editor-preview ul, #sp-editor-preview ol { padding-left: 20px; margin: 6px 0; }
+#sp-editor-preview li { margin: 2px 0; }
+#sp-editor-preview a { color: #a78bfa; }
+#sp-editor-preview hr { border: none; border-top: 1px solid #30363d; margin: 10px 0; }
+#sp-editor-preview blockquote { border-left: 3px solid #30363d; padding-left: 10px; color: #8b949e; margin: 6px 0; }
+#sp-editor-preview table { border-collapse: collapse; margin: 8px 0; width: 100%; }
+#sp-editor-preview th, #sp-editor-preview td { border: 1px solid #30363d; padding: 4px 8px; font-size: 12px; }
+#sp-editor-preview th { background: #21262d; }
+
+/* History tab */
+#sp-history-list {
+  padding: 6px;
+}
+
+.sp-hist-item {
+  padding: 4px 8px;
+  font-size: 11px;
+  font-family: "Cascadia Code", monospace;
+  color: #c084fc;
+  background: #0d111766;
+  border-radius: 4px;
+  margin-bottom: 3px;
+  cursor: pointer;
+  display: flex;
+  gap: 6px;
+}
+
+.sp-hist-item:hover {
+  background: #21262d;
+}
+
+.sp-hist-time {
+  color: #484f58;
+  flex-shrink: 0;
+}
+
+.sp-hist-text {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* ── Content Area ──────────────────────────────────── */
 
 #content {

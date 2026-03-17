@@ -299,6 +299,56 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
+  if (method === "GET" && url.startsWith("/api/files")) {
+    const qs = req.url.split("?")[1] || "";
+    const params = new URLSearchParams(qs);
+    const dir = params.get("path") || "/";
+    const resolved = path.resolve(dir);
+    try {
+      const entries = fs.readdirSync(resolved, { withFileTypes: true });
+      const items = entries
+        .filter(e => !e.name.startsWith('.'))
+        .map(e => {
+          try {
+            const st = fs.statSync(path.join(resolved, e.name));
+            return { name: e.name, type: e.isDirectory() ? 'dir' : 'file', size: st.size, mtime: st.mtimeMs };
+          } catch { return { name: e.name, type: e.isDirectory() ? 'dir' : 'file', size: 0, mtime: 0 }; }
+        })
+        .sort((a, b) => a.type === b.type ? a.name.localeCompare(b.name) : a.type === 'dir' ? -1 : 1);
+      return json(res, 200, { path: resolved, entries: items });
+    } catch (e) {
+      return json(res, 400, { error: "Cannot read directory" });
+    }
+  }
+
+  if (method === "GET" && url.startsWith("/api/file")) {
+    if (url.startsWith("/api/files")) {} // handled above
+    else {
+      const qs = req.url.split("?")[1] || "";
+      const params = new URLSearchParams(qs);
+      const filePath = path.resolve(params.get("path") || "");
+      try {
+        const st = fs.statSync(filePath);
+        if (st.size > 1024 * 1024) return json(res, 400, { error: "File too large (>1MB)" });
+        const content = fs.readFileSync(filePath, "utf8");
+        return json(res, 200, { path: filePath, content, size: st.size });
+      } catch (e) {
+        return json(res, 400, { error: "Cannot read file" });
+      }
+    }
+  }
+
+  if (method === "POST" && url === "/api/file") {
+    const { path: filePath, content } = JSON.parse(await readBody(req));
+    const resolved = path.resolve(filePath);
+    try {
+      fs.writeFileSync(resolved, content, "utf8");
+      return json(res, 200, { ok: true, path: resolved });
+    } catch (e) {
+      return json(res, 400, { error: "Cannot write file" });
+    }
+  }
+
   if (method === "GET" && url === "/api/scan") {
     const raw = tmux("ls -F '#{session_name}|#{pane_current_path}'");
     const existingNames = new Set([...workers.values()].map(w => w.sessionName));

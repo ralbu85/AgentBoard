@@ -590,6 +590,7 @@ function sendInput(id) {
   text = text.split('\n').filter(l => l.trim() !== '').join('\n');
   if (!text) return;
   inps.forEach(inp => { inp.value = ''; inp.style.height = 'auto'; });
+  if (typeof recordInput === 'function') recordInput(id, text);
   notifyActive();
   if (ws && ws.readyState === 1) {
     ws.send(JSON.stringify({ type: 'input', id, text }));

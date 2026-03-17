@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cascadia+Code&display=swap">
-<link rel="stylesheet" href="/style.css?v=24">
+<link rel="stylesheet" href="/style.css?v=25">
 </head>
 <body>
 
@@ -29,6 +29,7 @@
     </div>
     <div class="header-divider"></div>
     <button id="notify-btn" class="header-btn">🔔</button>
+    <button id="sidepanel-btn" class="header-btn">Panel</button>
     <button id="scan-btn" class="header-btn">🔍</button>
     <button id="toggle-toolbar-btn" class="header-btn accent">+</button>
   </header>
@@ -55,7 +56,33 @@
   <!-- Tab mode -->
   <div id="tab-mode" style="flex:1;display:flex;flex-direction:column;overflow:hidden">
     <div id="tab-bar"></div>
-    <div id="tab-content"></div>
+    <div id="tab-body" style="display:flex;flex:1;overflow:hidden">
+      <div id="tab-content"></div>
+      <div id="side-panel" style="display:none">
+        <div id="sp-tabs">
+          <button class="sp-tab active" data-sp="files">Files</button>
+          <button class="sp-tab" data-sp="editor">Editor</button>
+          <button class="sp-tab" data-sp="history">History</button>
+          <button class="sp-close">&times;</button>
+        </div>
+        <div id="sp-files" class="sp-content">
+          <div id="sp-files-path" class="sp-path"></div>
+          <div id="sp-files-list" class="sp-list"></div>
+        </div>
+        <div id="sp-editor" class="sp-content" style="display:none">
+          <div id="sp-editor-bar">
+            <span id="sp-editor-name">No file open</span>
+            <button id="sp-preview-btn" class="sp-btn">Preview</button>
+            <button id="sp-save-btn" class="sp-btn">Save</button>
+          </div>
+          <textarea id="sp-editor-area" placeholder="Open a file from the Files tab..."></textarea>
+          <div id="sp-editor-preview"></div>
+        </div>
+        <div id="sp-history" class="sp-content" style="display:none">
+          <div id="sp-history-list"></div>
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- Split mode -->
@@ -64,11 +91,12 @@
   </div>
 </div>
 
-<script src="/js/ansi.js?v=24"></script>
-<script src="/js/layout.js?v=24"></script>
-<script src="/js/favorites.js?v=24"></script>
-<script src="/js/ws.js?v=24"></script>
-<script src="/js/workers.js?v=24"></script>
-<script src="/js/app.js?v=24"></script>
+<script src="/js/ansi.js?v=25"></script>
+<script src="/js/layout.js?v=25"></script>
+<script src="/js/favorites.js?v=25"></script>
+<script src="/js/ws.js?v=25"></script>
+<script src="/js/workers.js?v=25"></script>
+<script src="/js/sidepanel.js?v=25"></script>
+<script src="/js/app.js?v=25"></script>
 </body>
 </html>
