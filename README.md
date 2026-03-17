@@ -1,189 +1,226 @@
-# TermHub
+<p align="center">
+  <img src="https://img.shields.io/badge/AgentBoard-AI_Session_Dashboard-7c3aed?style=for-the-badge" alt="AgentBoard" />
+</p>
 
-[한국어](README.ko.md)
+<h1 align="center">AgentBoard</h1>
 
-A web dashboard for managing multiple terminal sessions via tmux. Run any command — Claude CLI, bash, python, or anything else — and monitor them all from one place.
+<p align="center">
+  <strong>Browser-based dashboard for managing multiple AI coding sessions</strong><br>
+  Monitor all your Claude Code sessions in one place. Get notified when they need input.
+</p>
 
-If you find it useful, feel free to give it a star on GitHub.
+<p align="center">
+  <a href="#quick-start">Quick Start</a> &bull;
+  <a href="#features">Features</a> &bull;
+  <a href="#remote-access">Remote Access</a> &bull;
+  <a href="#license">License</a>
+</p>
 
-## Project Status
+<p align="center">
+  <img src="https://img.shields.io/badge/node-%3E%3D18-339933?logo=node.js&logoColor=white" alt="Node.js" />
+  <img src="https://img.shields.io/badge/tmux-required-1BB91F?logo=tmux&logoColor=white" alt="tmux" />
+  <img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT License" />
+</p>
 
-TermHub is actively developed and may contain bugs or rough edges.
-If you hit an issue, please open an issue with steps to reproduce.
-Contributions and bug reports are very welcome.
+---
+
+## The Problem
+
+You're running 3+ Claude Code sessions across different projects. You switch between terminal tabs, lose track, and miss when one is **waiting for input** — wasting minutes (or hours) of idle time.
+
+## The Solution
+
+AgentBoard gives you a **single browser dashboard** for all your AI coding sessions:
+
+- See every session's live output at a glance
+- Get **notified instantly** when a session needs your input
+- Works from your phone, another PC, or anywhere with a browser
+- No SSH required for monitoring — just open the URL
+
+---
 
 ## Features
 
-- **Run any command** — spawn sessions with any CLI tool (default: `claude`)
-- **Multiple terminal sessions** — each runs as an independent worker in a tmux session
-- **Real-time logs** — captures and displays tmux output in real time
-- **AI state detection** — automatically detects AI CLI state from terminal output:
-  - 🔵 Working → 🟢 Idle → 🟡 Waiting (permission needed)
-- **Two-way mirroring** — view the same session from both the dashboard and your local terminal
+### Overview Mode
+Card grid showing all sessions with live status and output preview. Click any card to jump in.
+
+### Live Status Detection
+Automatically detects AI CLI state from terminal output:
+- **Running** (purple) — AI is actively working
+- **Waiting** (yellow pulse) — needs your input
+- **Idle** (green) — finished, waiting for next task
+- **Completed** (green glow) — session done, pulses until you check
+
+### Notifications
+- Browser notifications when sessions complete or need input
+- Audio beep (different tones for waiting vs. completed)
+- Tab title blink when browser is in background
+- Tab flash when viewing a different session
+
+### Three Layout Modes
+- **Overview** — all sessions as cards with preview
+- **Tab** — one session at a time, tab bar for switching
+- **Split** — side-by-side, drag headers to reorder
+
+### Terminal Features
+- Full ANSI color support (256 + RGB)
+- Box-drawing lines rendered as clean separators
+- In-terminal search (click the magnifying glass icon)
+- File upload — paste screenshots or drag files to session directory
+- Quick keys: Esc, arrows, Enter, Tab, Ctrl+C
 
 ### More
+- Auto-detect and attach existing tmux sessions
+- Folder browser with bookmarks
+- Mobile responsive UI
+- Process info (command, uptime, memory)
+- Password authentication
+- Cloudflare tunnel for remote access
 
-- **tmux session scanning** — auto-detect and attach to existing sessions
-- **Tab / Split layout** — Tab mode for focus, Split mode for side-by-side
-- **Favorites & recent paths** — quick access to frequently used directories
-- **Password auth + external tunnels** — Cloudflare (recommended) or ngrok for remote access
-- **Adaptive terminal size** — tmux resizes to match your screen
-- **Keyboard shortcuts** — Esc, Shift+Tab, Ctrl+C, arrow keys forwarded to active worker
+---
 
-## Prerequisites
+## Quick Start
 
-- [Node.js](https://nodejs.org)
-- [tmux](https://github.com/tmux/tmux) (`brew install tmux`)
-- [cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/) (optional, for external access — recommended)
-- [ngrok](https://ngrok.com) (optional, for external access)
+### Prerequisites
 
-## Quick Setup
+- **Node.js** >= 18
+- **tmux** (`brew install tmux` on macOS, `apt install tmux` on Ubuntu)
 
-Run the setup script to install dependencies, create config files, and register TermHub as a background service:
-
-```bash
-git clone https://github.com/yourname/termhub.git
-cd termhub
-npm run setup
-```
-
-The setup script will:
-1. Check for Node.js and tmux (installs tmux via Homebrew if missing)
-2. Run `npm install`
-3. Create `.env` — prompts for password and port
-4. Create `config.json` — prompts for base path and default command
-5. Register as a macOS launchd service — starts automatically on boot, restarts on crash
-
-After setup, TermHub is running in the background. Manage the service with:
+### Install & Run
 
 ```bash
-launchctl unload ~/Library/LaunchAgents/com.termhub.server.plist   # Stop
-launchctl load ~/Library/LaunchAgents/com.termhub.server.plist     # Start
-cat /tmp/termhub.log                                                # View logs
-```
-
-## Manual Installation
-
-If you prefer to set up manually instead of using the setup script:
-
-```bash
+git clone https://github.com/ralbu85/AgentBoard.git
+cd AgentBoard
 npm install
-cp config.example.json config.json   # Edit basePath, favorites, defaultCommand
-echo -e "PORT=8081\nDASHBOARD_PASSWORD=yourpass" > .env
+```
+
+Create a `.env` file:
+```bash
+echo "DASHBOARD_PASSWORD=yourpassword" > .env
+```
+
+Start the server:
+```bash
 node server.js
 ```
 
-To run each component manually (without launchd):
+Open **http://localhost:3000** in your browser. That's it.
 
+### Optional: Config File
+
+Copy the example config for custom settings:
 ```bash
-node server.js                                        # Start server
-cloudflared tunnel --url http://localhost:8081         # Start tunnel (optional, separate process)
+cp config.example.json config.json
 ```
 
-## External Access (Cloudflare / ngrok)
-
-To access TermHub from outside your local network (mobile, another PC, etc.), use a tunnel tool.
-
-> **Recommended:** Cloudflare Tunnel (`cloudflared`)  
-> Why: it is fast to set up and can expose an temporary `*.trycloudflare.com` URL without account/domain setup.
-
-### Option A. Cloudflare (Recommended)
-
-1. Install
-
-```bash
-brew install cloudflared
+Edit `config.json`:
+```json
+{
+  "basePath": "/home/you/projects",
+  "defaultCommand": "claude",
+  "favorites": ["/home/you/projects/app1", "/home/you/projects/app2"]
+}
 ```
 
-2. That's it — TermHub automatically starts a Cloudflare tunnel on launch. The tunnel URL is:
+### Optional: Run as Background Service
 
-- Printed in the server log (`☁️  Tunnel URL → https://...`)
-- Available via API: `GET /api/tunnel`
-- Broadcast to connected clients via WebSocket
+```bash
+# Using nohup
+nohup node server.js > /tmp/agentboard.log 2>&1 &
 
-3. (Optional) **Discord notification** — add a webhook URL to `.env` to receive the tunnel URL on Discord whenever the server starts:
+# Or using pm2
+npm install -g pm2
+pm2 start server.js --name agentboard
+pm2 save
+pm2 startup  # auto-start on boot
+```
 
+---
+
+## Usage
+
+### Create a Session
+1. Click **+** in the top-right
+2. Browse to your project folder
+3. Click **Open here** — a Claude Code session starts in that directory
+
+### Attach Existing Sessions
+Click **magnifying glass icon** in the header to scan for running tmux sessions and add them to the dashboard.
+
+### View from Terminal
+Sessions are standard tmux — attach from any terminal:
+```bash
+tmux attach -t term-1
+```
+
+### Keyboard Shortcuts
+| Key | Action |
+|-----|--------|
+| Cmd+Shift+Left/Right | Switch tabs |
+| Ctrl+F | Search in terminal output |
+| Esc, Enter, arrows | Forwarded to active session |
+| Ctrl+C | Send interrupt to session |
+
+---
+
+## Remote Access
+
+Access AgentBoard from your phone or another computer.
+
+### Cloudflare Tunnel (Recommended)
+
+```bash
+brew install cloudflared  # or download from cloudflare.com
+```
+
+AgentBoard auto-starts a tunnel if `cloudflared` is installed. The URL appears in the server log:
+```
+☁️  Tunnel URL → https://random-name.trycloudflare.com
+```
+
+Optional: Get the URL on Discord by adding to `.env`:
 ```env
 DISCORD_WEBHOOK=https://discord.com/api/webhooks/your/webhook-url
 ```
 
-> **Note:** `trycloudflare.com` URLs are temporary. They change on every restart.
-
-### Option B. ngrok
-
-1. Install
+### ngrok
 
 ```bash
-brew install ngrok
+ngrok http 3000
 ```
 
-2. Connect your account
+---
 
-Create a free account at the [ngrok dashboard](https://dashboard.ngrok.com), then register your authtoken:
+## Environment Variables
 
-```bash
-ngrok config add-authtoken <your-token>
-```
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PORT` | `3000` | Server port |
+| `DASHBOARD_PASSWORD` | `changeme` | Login password |
+| `DISCORD_WEBHOOK` | — | Discord webhook for tunnel URL |
 
-3. Start the tunnel
+---
 
-```bash
-ngrok http 8081
-```
-
-4. Connect
-
-Open the URL shown in the output (for example, `https://xxxx-xxxx.ngrok-free.app`) in your browser.
-
-> **Note:** The free plan generates a new URL each time you start ngrok. For a fixed domain, use `ngrok http --url=your-domain.ngrok-free.app 8081`.
-
-## Usage
-
-### Start a new session
-1. Click the **+** button in the top-right corner to open the spawn toolbar
-2. Click 📁 to select a project path (favorites and recent paths supported)
-3. Optionally change the command (default: `claude`)
-4. Click **+ New** to start the session
-
-### Attach existing tmux sessions
-1. Click 🔍 in the header to scan for running tmux sessions
-2. Confirm to add them to the dashboard
-
-### View sessions from your local terminal
-```bash
-tmux attach -t term-1   # Worker #1
-tmux attach -t term-2   # Worker #2
-```
-
-### Switch layouts
-Use the **Tab / Split** buttons in the header. Your choice is saved in the browser.
-
-### Stop and remove workers
-- Running: **Stop** button — terminates the tmux session
-- Stopped: **Remove** button — removes from the dashboard
-
-## File Structure
+## Architecture
 
 ```
-termhub/
-├── server.js              # Node.js server (tmux management, WebSocket)
-├── index.html             # Web UI entry point
-├── setup.sh               # One-step setup script
-├── public/
-│   ├── style.css          # Styles
-│   └── js/
-│       ├── layout.js      # Layout & tab management
-│       ├── favorites.js   # Favorites & path management
-│       ├── ws.js          # WebSocket & API communication
-│       ├── workers.js     # Worker card UI & actions
-│       └── app.js         # Init & event binding
-├── config.json            # User config (gitignored)
-├── config.example.json    # Config template
-├── .env                   # Environment variables (gitignored)
-├── .gitignore
-├── package.json
-└── README.md
+Browser (Vanilla JS)
+   ↕ WebSocket + REST API
+Node.js HTTP Server (server.js)
+   ↕ tmux commands
+tmux sessions (term-1, term-2, ...)
+   └─ claude / any CLI
 ```
+
+- **No frameworks** — pure Node.js server + vanilla JavaScript frontend
+- **Minimal dependencies** — only `ws` and `dotenv`
+- **tmux native** — sessions persist across server restarts
+
+---
+
+## Credits
+
+Based on [sunmerrr/TermHub](https://github.com/sunmerrr/TermHub). Extended with overview mode, notification system, Claude-focused UI, mobile support, and more.
 
 ## License
 
