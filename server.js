@@ -63,7 +63,7 @@ function spawnWorker(cwd, cmd) {
     tmux(`send-keys -t ${sessionName} ${JSON.stringify(cmd)} Enter`);
   }
   const logs = [];
-  workers.set(id, { sessionName, cwd, cmd, logs });
+  workers.set(id, { sessionName, cwd, cmd, logs, cols: 80, rows: 24 });
   broadcast({ type: "spawned", id, cwd, cmd, status: "running", sessionName });
   return id;
 }
@@ -356,6 +356,22 @@ const server = http.createServer(async (req, res) => {
     return json(res, 200, { ok: true });
   }
 
+  if (method === "POST" && url === "/api/upload") {
+    const qs = req.url.split("?")[1] || "";
+    const params = new URLSearchParams(qs);
+    const id = params.get("id");
+    const filename = params.get("name") || ("paste-" + Date.now() + ".png");
+    const w = workers.get(id);
+    if (!w) return json(res, 404, { error: "worker not found" });
+    const chunks = [];
+    for await (const chunk of req) chunks.push(chunk);
+    const buf = Buffer.concat(chunks);
+    const safeName = path.basename(filename);
+    const dest = path.join(w.cwd, safeName);
+    fs.writeFileSync(dest, buf);
+    return json(res, 200, { ok: true, path: dest, name: safeName });
+  }
+
   if (method === "POST" && url === "/api/reconnect") {
     const { id } = JSON.parse(await readBody(req));
     const w = workers.get(id);
@@ -395,6 +411,12 @@ wss.on('connection', ws => {
       const msg = JSON.parse(raw);
       if (msg.type === 'resize') {
         clientSizes.set(ws, { cols: msg.cols, rows: msg.rows });
+        if (msg.id) {
+          const w = workers.get(msg.id);
+          if (w) { w.cols = msg.cols; w.rows = msg.rows; }
+        } else {
+          workers.forEach(w => { w.cols = msg.cols; w.rows = msg.rows; });
+        }
       }
       if (msg.type === 'active') {
         const size = clientSizes.get(ws);
@@ -442,7 +464,7 @@ function recoverSessions() {
     const numId = parseInt(id);
     if (isNaN(numId)) continue;
     if (workers.has(id)) continue;
-    workers.set(id, { sessionName, cwd, cmd, logs: [] });
+    workers.set(id, { sessionName, cwd, cmd, logs: [], cols: 80, rows: 24 });
     if (numId >= nextId) nextId = numId + 1;
   }
   if (workers.size > 0) {

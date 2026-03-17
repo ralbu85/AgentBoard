@@ -5,7 +5,15 @@ var ANSI_COLORS = [
   '#484f58','#ff7b72','#56d364','#e3b341','#79c0ff','#d2a8ff','#56d4dd','#ffffff'   // 8-15 (bright)
 ];
 
+function isBoxLine(text) {
+  var stripped = text.replace(/\x1b\[[0-9;]*m/g, '').trim();
+  if (stripped.length < 10) return false;
+  var boxes = stripped.replace(/[─━═╌╍┄┅┈┉╶╴╸╺─]/g, '');
+  return boxes.length === 0;
+}
+
 function ansiToHtml(text) {
+  if (isBoxLine(text)) return '<hr class="term-hr">';
   var result = '';
   var fg = null, bg = null, bold = false, dim = false, italic = false, underline = false, strikethrough = false;
   var i = 0;

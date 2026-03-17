@@ -25,36 +25,68 @@ function playBeep(type) {
   } catch (e) {}
 }
 
+var _blinkMessages = [];
+var _blinkStopListener = null;
+
 function startTitleBlink(msg) {
+  _blinkMessages.push(msg);
   if (_titleBlinkTimer) return;
   var orig = document.title;
-  var show = false;
+  var tick = 0;
   _titleBlinkTimer = setInterval(function() {
-    document.title = (show = !show) ? msg : orig;
-  }, 800);
-  var stop = function() {
-    clearInterval(_titleBlinkTimer);
-    _titleBlinkTimer = null;
-    document.title = orig;
-    document.removeEventListener('visibilitychange', onVis);
-    window.removeEventListener('focus', stop);
-  };
-  var onVis = function() { if (!document.hidden) stop(); };
-  document.addEventListener('visibilitychange', onVis);
-  window.addEventListener('focus', stop);
+    if (_blinkMessages.length === 0) return;
+    tick++;
+    if (tick % 2 === 1) {
+      var idx = Math.floor(tick / 2) % _blinkMessages.length;
+      document.title = '\u26a1 ' + _blinkMessages[idx];
+    } else {
+      document.title = orig;
+    }
+  }, 600);
+
+  // Only attach stop listener once
+  if (!_blinkStopListener) {
+    _blinkStopListener = function() {
+      // When user returns to this tab, wait a moment so they can see it, then stop
+      if (!document.hidden) {
+        setTimeout(function() {
+          if (_titleBlinkTimer) {
+            clearInterval(_titleBlinkTimer);
+            _titleBlinkTimer = null;
+            _blinkMessages = [];
+            document.title = orig;
+          }
+        }, 2000);
+      }
+    };
+    document.addEventListener('visibilitychange', _blinkStopListener);
+  }
 }
 
-function notifyUser(title, body, type) {
+function flashTab(id) {
+  var tab = document.querySelector('.tab[data-id="' + id + '"]');
+  if (!tab) return;
+  tab.classList.add('tab-flash');
+  setTimeout(function() { tab.classList.remove('tab-flash'); }, 3000);
+}
+
+function notifyUser(title, body, type, id) {
   if (!_notifyEnabled) return;
   playBeep(type);
-  startTitleBlink(title);
+  flashTab(id);
+  if (document.hidden) {
+    startTitleBlink(title);
+  }
   if (Notification.permission === 'granted') {
     try { new Notification(title, { body: body, tag: 'termhub-' + Date.now() }); } catch (e) {}
   }
 }
 
-function shouldNotify() {
-  return document.hidden;
+function shouldNotify(id) {
+  if (document.hidden) return true;
+  // In tab mode, notify if the changed session is not the active tab
+  if (id && activeTab && String(activeTab) !== String(id)) return true;
+  return false;
 }
 
 // ── Worker Card UI ──
@@ -106,6 +138,8 @@ function killBtnHtml(id, status) {
 }
 
 function ensureCard(id, cwd, status, logs, cmd) {
+  // Seed prev state so future changes trigger notifications
+  if (!_prevStatuses[id]) _prevStatuses[id] = status;
   if (document.getElementById('card-' + id)) return;
 
   const cmdLabel = cmd || 'claude';
@@ -117,8 +151,10 @@ function ensureCard(id, cwd, status, logs, cmd) {
       '<span class="card-title" id="card-title-' + id + '">#' + id + ' ' + cmdLabel + ' · ' + (cwd.replace(/\/$/, '').split('/').pop() || cwd) + '</span>' +
       '<span class="badge' + (status === 'stopped' ? ' stopped' : '') + (status === 'completed' ? ' completed' : '') + '" id="badge-' + id + '">' + status + '</span>' +
       killBtnHtml(id, status) +
+      '<button class="search-btn" onclick="toggleSearch(\'' + id + '\')">&#128269;</button>' +
     '</div>' +
     '<div class="card-cwd">' + displayPath(cwd) + '<span class="card-info"></span></div>' +
+    '<div class="search-row" style="display:none"><input class="search-inp" placeholder="Search..." /><button class="search-close" onclick="toggleSearch(\'' + id + '\')">&times;</button></div>' +
     '<div class="logs" id="logs-' + id + '"></div>' +
     '<div class="input-row" id="input-row-' + id + '"' + (status === 'stopped' || status === 'completed' ? ' style="display:none"' : '') + '>' +
       '<textarea id="inp-' + id + '" placeholder="Enter command..." rows="1"></textarea>' +
@@ -141,6 +177,7 @@ function ensureCard(id, cwd, status, logs, cmd) {
 
   const splitCard = card;
   document.getElementById('split-content').appendChild(splitCard);
+  bindSplitDrag(splitCard);
   updateSplitGrid();
 
   const tab = document.createElement('div');
@@ -183,6 +220,9 @@ function ensureCard(id, cwd, status, logs, cmd) {
   renderTitle(id, cwd, cmdLabel);
   if (logs) logs.forEach(l => appendLog(id, l.src, l.text));
   setTimeout(sendResize, 100);
+  updateCardBorder(id);
+  updateSummaryBar();
+  if (layout === 'overview') renderOverview();
 }
 
 function bindCard(id, root) {
@@ -236,6 +276,26 @@ function bindCard(id, root) {
     });
   }
 
+  // Search
+  var searchInp = root.querySelector ? root.querySelector('.search-inp') : null;
+  if (searchInp) {
+    searchInp.addEventListener('input', function() { doSearch(id); });
+    searchInp.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape') { toggleSearch(id); e.stopPropagation(); }
+    });
+  }
+
+  // File paste & drop
+  if (inp) {
+    inp.addEventListener('paste', function(e) { handlePaste(id, e); });
+  }
+  var logsEl = q('#logs-' + id);
+  var cardEl = root.querySelector ? root : document.getElementById('card-' + id);
+  if (cardEl) {
+    cardEl.addEventListener('dragover', function(e) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; });
+    cardEl.addEventListener('drop', function(e) { handleFileDrop(id, e); });
+  }
+
   // Quick key buttons
   const keyMap = {
     up: 'Up', down: 'Down', enter: 'Enter', esc: 'Escape',
@@ -287,9 +347,9 @@ function markPrompt(line, text) {
 function updateStatus(id, status) {
   var prev = _prevStatuses[id];
   _prevStatuses[id] = status;
-  if (shouldNotify() && prev && prev !== status) {
-    if (status === 'completed') notifyUser('#' + id + ' 세션 완료', 'Session completed', 'done');
-    else if (status === 'stopped') notifyUser('#' + id + ' 세션 중지', 'Session stopped', 'done');
+  if (shouldNotify(id) && prev && prev !== status) {
+    if (status === 'completed') notifyUser('#' + id + ' 세션 완료', 'Session completed', 'done', id);
+    else if (status === 'stopped') notifyUser('#' + id + ' 세션 중지', 'Session stopped', 'done', id);
   }
   var isStopped = status === 'stopped' || status === 'completed';
   document.querySelectorAll('#badge-' + id).forEach(el => {
@@ -323,20 +383,36 @@ function updateStatus(id, status) {
       btn.textContent = 'Stop';
       btn.style.background = '';
       btn.style.borderColor = '';
-      btn.style.color = '#f85149';
+      btn.style.color = '#f87171';
       btn.onclick = () => killWorker(id);
       var reconBtn = btn.parentElement.querySelector('.reconnect-btn');
       if (reconBtn) reconBtn.remove();
     });
     document.querySelectorAll('#input-row-' + id).forEach(el => el.style.display = '');
   }
+  updateCardBorder(id);
+  updateSummaryBar();
+  if (layout === 'overview') renderOverview();
+}
+
+function updateCardBorder(id) {
+  document.querySelectorAll('#card-' + id + ', .tab-panel[data-id="' + id + '"] .card').forEach(function(card) {
+    card.classList.remove('status-completed', 'status-stopped', 'status-waiting', 'status-idle', 'status-running');
+    var s = _prevStatuses[id];
+    var ai = _prevAIStates[id];
+    if (s === 'completed') card.classList.add('status-completed');
+    else if (s === 'stopped') card.classList.add('status-stopped');
+    else if (ai === 'waiting') card.classList.add('status-waiting');
+    else if (ai === 'idle') card.classList.add('status-idle');
+    else card.classList.add('status-running');
+  });
 }
 
 function updateAIState(id, state) {
   var prev = _prevAIStates[id];
   _prevAIStates[id] = state;
-  if (shouldNotify() && prev && prev !== state && state === 'waiting') {
-    notifyUser('#' + id + ' 입력 대기', 'Waiting for input', 'waiting');
+  if (shouldNotify(id) && prev && prev !== state && state === 'waiting') {
+    notifyUser('#' + id + ' 입력 대기', 'Waiting for input', 'waiting', id);
   }
   // Skip if worker is stopped/completed
   var badge = document.querySelector('#badge-' + id);
@@ -360,6 +436,9 @@ function updateAIState(id, state) {
       el.textContent = 'running';
     }
   });
+  updateCardBorder(id);
+  updateSummaryBar();
+  if (layout === 'overview') renderOverview();
 }
 
 function removeWorker(id) {
@@ -380,6 +459,8 @@ function removeWorker(id) {
   const card = document.getElementById('card-' + id);
   if (card) card.remove();
   updateSplitGrid();
+  updateSummaryBar();
+  if (layout === 'overview') renderOverview();
 }
 
 function updateCwd(id, cwd) {
@@ -401,6 +482,93 @@ function reconnectWorker(id) {
     .then(d => {
       if (!d.ok) alert('Session is no longer alive.');
     });
+}
+
+// ── File Upload ──
+
+function uploadFile(id, file) {
+  var name = file.name || ('paste-' + Date.now() + '.png');
+  return fetch('/api/upload?id=' + encodeURIComponent(id) + '&name=' + encodeURIComponent(name), {
+    method: 'POST',
+    body: file,
+    credentials: 'include'
+  }).then(function(r) { return r.json(); });
+}
+
+function handleFileDrop(id, e) {
+  e.preventDefault();
+  e.stopPropagation();
+  var files = e.dataTransfer ? e.dataTransfer.files : [];
+  for (var i = 0; i < files.length; i++) {
+    uploadFile(id, files[i]).then(function(d) {
+      if (d.ok) appendLog(id, 'stdin', '📎 Uploaded: ' + d.name + ' → ' + d.path);
+    });
+  }
+}
+
+function handlePaste(id, e) {
+  var items = e.clipboardData && e.clipboardData.items;
+  if (!items) return;
+  for (var i = 0; i < items.length; i++) {
+    if (items[i].type.indexOf('image/') === 0) {
+      e.preventDefault();
+      var file = items[i].getAsFile();
+      if (!file) continue;
+      var ext = file.type.split('/')[1] || 'png';
+      var named = new File([file], 'screenshot-' + Date.now() + '.' + ext, { type: file.type });
+      uploadFile(id, named).then(function(d) {
+        if (d.ok) appendLog(id, 'stdin', '📎 Screenshot saved: ' + d.name + ' → ' + d.path);
+      });
+      return;
+    }
+  }
+}
+
+// ── Terminal Search ──
+
+var _searchOpen = {};
+
+function toggleSearch(id) {
+  var rows = document.querySelectorAll('.tab-panel[data-id="' + id + '"] .search-row, #card-' + id + ' .search-row');
+  if (!rows.length) return;
+  var open = rows[0].style.display !== 'none';
+  rows.forEach(function(row) {
+    row.style.display = open ? 'none' : 'flex';
+    if (!open) {
+      var inp = row.querySelector('.search-inp');
+      if (inp) inp.focus();
+    }
+  });
+  if (open) clearSearch(id);
+}
+
+function doSearch(id) {
+  var row = document.querySelector('.tab-panel[data-id="' + id + '"] .search-row') ||
+            document.querySelector('#card-' + id + ' .search-row');
+  if (!row) return;
+  var term = row.querySelector('.search-inp').value.trim().toLowerCase();
+  if (!term) { clearSearch(id); return; }
+
+  document.querySelectorAll('#logs-' + id + ' .log-line').forEach(function(el) {
+    var text = el.textContent.toLowerCase();
+    if (text.includes(term)) {
+      el.classList.add('search-hit');
+      el.classList.remove('search-dim');
+    } else {
+      el.classList.remove('search-hit');
+      el.classList.add('search-dim');
+    }
+  });
+
+  // Scroll to first hit
+  var hit = document.querySelector('#logs-' + id + ' .search-hit');
+  if (hit) hit.scrollIntoView({ block: 'center' });
+}
+
+function clearSearch(id) {
+  document.querySelectorAll('#logs-' + id + ' .log-line').forEach(function(el) {
+    el.classList.remove('search-hit', 'search-dim');
+  });
 }
 
 // ── Worker Actions ──

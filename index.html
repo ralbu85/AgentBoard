@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cascadia+Code&display=swap">
-<link rel="stylesheet" href="/style.css?v=20">
+<link rel="stylesheet" href="/style.css?v=24">
 </head>
 <body>
 
@@ -23,7 +23,8 @@
     <div id="status-dot" class="off"></div>
     <h1>TermHub</h1>
     <div class="layout-group">
-      <button id="layout-tab-btn" class="header-btn layout-active">Tab</button>
+      <button id="layout-overview-btn" class="header-btn layout-active">Overview</button>
+      <button id="layout-tab-btn" class="header-btn">Tab</button>
       <button id="layout-split-btn" class="header-btn">Split</button>
     </div>
     <div class="header-divider"></div>
@@ -31,6 +32,13 @@
     <button id="scan-btn" class="header-btn">🔍</button>
     <button id="toggle-toolbar-btn" class="header-btn accent">+</button>
   </header>
+
+  <div id="summary-bar"></div>
+
+  <!-- Overview mode -->
+  <div id="overview-mode" style="flex:1;overflow-y:auto;display:none">
+    <div id="overview-content"></div>
+  </div>
 
   <div id="spawn-panel" style="display:none">
     <div class="browse-path" id="browse-path">/</div>
@@ -56,11 +64,11 @@
   </div>
 </div>
 
-<script src="/js/ansi.js?v=20"></script>
-<script src="/js/layout.js?v=20"></script>
-<script src="/js/favorites.js?v=20"></script>
-<script src="/js/ws.js?v=20"></script>
-<script src="/js/workers.js?v=20"></script>
-<script src="/js/app.js?v=20"></script>
+<script src="/js/ansi.js?v=24"></script>
+<script src="/js/layout.js?v=24"></script>
+<script src="/js/favorites.js?v=24"></script>
+<script src="/js/ws.js?v=24"></script>
+<script src="/js/workers.js?v=24"></script>
+<script src="/js/app.js?v=24"></script>
 </body>
 </html>

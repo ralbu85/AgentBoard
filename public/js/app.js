@@ -19,6 +19,7 @@ function enterApp(workerList) {
     loadAll();
   }
   setLayout(layout);
+  setTimeout(updateSummaryBar, 500);
 }
 
 fetch('/api/workers', { credentials: 'include' })
@@ -44,6 +45,7 @@ document.getElementById('login-btn').addEventListener('click', doLogin);
 document.getElementById('pw').addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
 document.getElementById('toggle-toolbar-btn').addEventListener('click', toggleSpawnPanel);
 document.getElementById('scan-btn').addEventListener('click', scanSessions);
+document.getElementById('layout-overview-btn').addEventListener('click', () => setLayout('overview'));
 document.getElementById('layout-tab-btn').addEventListener('click', () => setLayout('tab'));
 document.getElementById('layout-split-btn').addEventListener('click', () => setLayout('split'));
 document.getElementById('notify-btn').addEventListener('click', toggleNotify);
@@ -75,6 +77,13 @@ document.addEventListener('keydown', e => {
   } else if (!inInput && e.metaKey && e.shiftKey && !e.ctrlKey && !e.altKey && e.key === 'ArrowRight') {
     e.preventDefault();
     switchTab(1);
+    return;
+  }
+
+  // Ctrl+F / Cmd+F → terminal search
+  if (e.key === 'f' && (e.ctrlKey || e.metaKey)) {
+    e.preventDefault();
+    toggleSearch(activeTab);
     return;
   }
 

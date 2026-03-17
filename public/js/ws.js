@@ -18,6 +18,8 @@ function scheduleSnapshot(id, lines) {
 }
 
 function applySnapshot(id, lines) {
+  // Trim trailing empty lines
+  while (lines.length > 0 && lines[lines.length - 1].replace(/\x1b\[[0-9;]*m/g, '').trim() === '') lines.pop();
   var prev = _snapshotCache[id];
   document.querySelectorAll('#logs-' + id).forEach(function(box) {
     var wasAtBottom = isNearBottom(box);
@@ -60,7 +62,18 @@ function applySnapshot(id, lines) {
     if (wasAtBottom) box.scrollTop = box.scrollHeight;
   });
   _snapshotCache[id] = lines;
+  // Throttled overview refresh on snapshot
+  if (layout === 'overview') {
+    if (!_ovRefreshTimer) {
+      _ovRefreshTimer = setTimeout(function() {
+        _ovRefreshTimer = null;
+        renderOverview();
+      }, 2000);
+    }
+  }
 }
+
+var _ovRefreshTimer = null;
 
 let ws;
 
@@ -111,14 +124,36 @@ function measureChar(box) {
 var _resizeTimer = null;
 function _doResize() {
   if (!ws || ws.readyState !== 1) return;
-  const box = document.querySelector('.logs');
-  if (!box || !box.clientWidth) return;
-  const ch = measureChar(box);
+
+  // Measure from a visible .logs box for char size
+  var refBox = document.querySelector('.logs');
+  if (!refBox || !refBox.clientWidth) return;
+  var ch = measureChar(refBox);
   if (!ch.w || !ch.h) return;
-  const cols = Math.floor((box.clientWidth - 16) / ch.w);
-  const rows = Math.floor(box.clientHeight / ch.h);
-  document.querySelectorAll('.tab').forEach(t => {
-    ws.send(JSON.stringify({ type: 'resize', id: t.dataset.id, cols, rows }));
+
+  // Send per-session resize based on each visible .logs width
+  document.querySelectorAll('.tab').forEach(function(t) {
+    var id = t.dataset.id;
+    var box = null;
+
+    // In split mode, use the split-content card's .logs
+    if (layout === 'split') {
+      var card = document.querySelector('#split-content #card-' + id);
+      if (card) box = card.querySelector('.logs');
+    }
+    // In tab mode, use the active panel's .logs
+    if (!box) {
+      var panel = document.querySelector('.tab-panel[data-id="' + id + '"]');
+      if (panel) box = panel.querySelector('.logs');
+    }
+
+    var w = box && box.clientWidth > 0 ? box.clientWidth : refBox.clientWidth;
+    var h = box && box.clientHeight > 0 ? box.clientHeight : refBox.clientHeight;
+    var cols = Math.floor((w - 16) / ch.w);
+    var rows = Math.floor(h / ch.h);
+    if (cols > 0 && rows > 0) {
+      ws.send(JSON.stringify({ type: 'resize', id: id, cols: cols, rows: rows }));
+    }
   });
 }
 function sendResize() {
