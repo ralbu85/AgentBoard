@@ -261,7 +261,7 @@ const server = http.createServer(async (req, res) => {
     const safePath = path.normalize(url).replace(/^(\.\.[\/\\])+/, '');
     const filePath = path.join(__dirname, "public", safePath);
     if (filePath.startsWith(path.join(__dirname, "public")) && fs.existsSync(filePath)) {
-      res.writeHead(200, { "Content-Type": MIME[ext] + "; charset=utf-8" });
+      res.writeHead(200, { "Content-Type": MIME[ext] + "; charset=utf-8", "Cache-Control": "no-cache, no-store, must-revalidate" });
       return res.end(fs.readFileSync(filePath));
     }
   }
@@ -307,7 +307,6 @@ const server = http.createServer(async (req, res) => {
     try {
       const entries = fs.readdirSync(resolved, { withFileTypes: true });
       const items = entries
-        .filter(e => !e.name.startsWith('.'))
         .map(e => {
           try {
             const st = fs.statSync(path.join(resolved, e.name));
@@ -321,20 +320,71 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
-  if (method === "GET" && url.startsWith("/api/file")) {
-    if (url.startsWith("/api/files")) {} // handled above
-    else {
+  if (method === "GET" && url.startsWith("/api/file") && !url.startsWith("/api/files") && !url.startsWith("/api/file-raw")) {
+    {
       const qs = req.url.split("?")[1] || "";
       const params = new URLSearchParams(qs);
       const filePath = path.resolve(params.get("path") || "");
       try {
         const st = fs.statSync(filePath);
-        if (st.size > 1024 * 1024) return json(res, 400, { error: "File too large (>1MB)" });
+        if (st.size > 10 * 1024 * 1024) return json(res, 400, { error: "File too large (>10MB)" });
+        const binExts = ['.pdf','.png','.jpg','.jpeg','.gif','.zip','.tar','.gz','.bin','.exe','.dll','.so','.o','.pyc','.woff','.woff2','.ttf','.ico','.mp3','.mp4','.mov','.avi'];
+        if (binExts.includes(path.extname(filePath).toLowerCase())) return json(res, 400, { error: "Binary file — use file-raw endpoint" });
         const content = fs.readFileSync(filePath, "utf8");
         return json(res, 200, { path: filePath, content, size: st.size });
       } catch (e) {
         return json(res, 400, { error: "Cannot read file" });
       }
+    }
+  }
+
+  if (method === "GET" && url.startsWith("/api/file-raw")) {
+    const qs = req.url.split("?")[1] || "";
+    const params = new URLSearchParams(qs);
+    const filePath = path.resolve(params.get("path") || "");
+    const ext = path.extname(filePath).toLowerCase();
+    const mimeMap = { ".pdf": "application/pdf", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif" };
+    try {
+      const st = fs.statSync(filePath);
+      res.writeHead(200, { "Content-Type": mimeMap[ext] || "application/octet-stream", "Content-Length": st.size });
+      fs.createReadStream(filePath).pipe(res);
+      return;
+    } catch (e) {
+      return json(res, 400, { error: "Cannot read file" });
+    }
+  }
+
+  if (method === "POST" && url === "/api/rename") {
+    const { from, to } = JSON.parse(await readBody(req));
+    try {
+      fs.renameSync(path.resolve(from), path.resolve(to));
+      return json(res, 200, { ok: true });
+    } catch (e) {
+      return json(res, 400, { error: "Cannot rename" });
+    }
+  }
+
+  if (method === "POST" && url === "/api/delete") {
+    const { path: filePath } = JSON.parse(await readBody(req));
+    const resolved = path.resolve(filePath);
+    try {
+      const st = fs.statSync(resolved);
+      if (st.isDirectory()) fs.rmSync(resolved, { recursive: true });
+      else fs.unlinkSync(resolved);
+      return json(res, 200, { ok: true });
+    } catch (e) {
+      return json(res, 400, { error: "Cannot delete" });
+    }
+  }
+
+  if (method === "POST" && url === "/api/mkdir") {
+    const { path: dirPath } = JSON.parse(await readBody(req));
+    const resolved = path.resolve(dirPath);
+    try {
+      fs.mkdirSync(resolved, { recursive: true });
+      return json(res, 200, { ok: true, path: resolved });
+    } catch (e) {
+      return json(res, 400, { error: "Cannot create directory" });
     }
   }
 
@@ -411,13 +461,14 @@ const server = http.createServer(async (req, res) => {
     const params = new URLSearchParams(qs);
     const id = params.get("id");
     const filename = params.get("name") || ("paste-" + Date.now() + ".png");
-    const w = workers.get(id);
-    if (!w) return json(res, 404, { error: "worker not found" });
+    const dir = params.get("dir");
+    const w = dir ? null : workers.get(id);
+    if (!w && !dir) return json(res, 404, { error: "worker not found" });
     const chunks = [];
     for await (const chunk of req) chunks.push(chunk);
     const buf = Buffer.concat(chunks);
     const safeName = path.basename(filename);
-    const dest = path.join(w.cwd, safeName);
+    const dest = path.join(dir || w.cwd, safeName);
     fs.writeFileSync(dest, buf);
     return json(res, 200, { ok: true, path: dest, name: safeName });
   }

@@ -11,10 +11,46 @@ var _inputHistory = {}; // id → [{text, ts}]
 function toggleSidePanel() {
   _spOpen = !_spOpen;
   var panel = document.getElementById('side-panel');
+  var drag = document.getElementById('sp-drag');
+  var btn = document.getElementById('sidepanel-btn');
   panel.style.display = _spOpen ? 'flex' : 'none';
+  drag.style.display = _spOpen ? 'block' : 'none';
+  if (btn) btn.classList.toggle('active', _spOpen);
   if (_spOpen && activeTab) refreshSPFiles();
   setTimeout(sendResize, 100);
 }
+
+// ── Drag Resize ──
+
+(function() {
+  var drag = document.getElementById('sp-drag');
+  var panel = document.getElementById('side-panel');
+  if (!drag || !panel) return;
+
+  var startX, startW;
+
+  drag.addEventListener('mousedown', function(e) {
+    e.preventDefault();
+    startX = e.clientX;
+    startW = panel.offsetWidth;
+    drag.classList.add('dragging');
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  });
+
+  function onMove(e) {
+    var diff = startX - e.clientX;
+    var newW = Math.max(200, Math.min(startW + diff, window.innerWidth * 0.6));
+    panel.style.width = newW + 'px';
+  }
+
+  function onUp() {
+    drag.classList.remove('dragging');
+    document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('mouseup', onUp);
+    setTimeout(sendResize, 100);
+  }
+})();
 
 function switchSPTab(name) {
   document.querySelectorAll('.sp-tab').forEach(function(t) {
@@ -24,33 +60,52 @@ function switchSPTab(name) {
     var el = document.getElementById('sp-' + n);
     if (el) el.style.display = n === name ? 'flex' : 'none';
   });
-  if (name === 'files' && activeTab) refreshSPFiles();
+  if (name === 'files' && activeTab && !_spBrowseInitialized[activeTab]) refreshSPFiles();
   if (name === 'history' && activeTab) renderHistory(activeTab);
 }
 
 // ── Files Tab ──
 
 var _spBrowsePath = '/';
+var _spBrowseInitialized = {}; // per-tab: true if already browsing
+var _spBrowsePaths = {};       // per-tab: remember last browsed path
+var _spRootPath = {};          // per-tab: session CWD (locked root)
 
 function refreshSPFiles() {
   var tab = document.querySelector('.tab[data-id="' + activeTab + '"]');
   if (tab && tab.dataset.cwd) {
-    _spBrowsePath = tab.dataset.cwd;
+    var cwd = tab.dataset.cwd;
+    _spRootPath[activeTab] = cwd;
+    if (_spBrowsePaths[activeTab]) {
+      // Restore last browsed path for this tab
+      _spBrowsePath = _spBrowsePaths[activeTab];
+    } else {
+      _spBrowsePath = cwd;
+    }
+    _spBrowseInitialized[activeTab] = true;
   }
   loadSPFiles(_spBrowsePath);
 }
 
 function loadSPFiles(dir) {
+  // Lock to session CWD root
+  var root = _spRootPath[activeTab];
+  if (root && !dir.startsWith(root) && dir !== '/') {
+    dir = root;
+  }
   _spBrowsePath = dir;
+  if (activeTab) _spBrowsePaths[activeTab] = dir;
   renderSPPath(dir);
   apiGet('/api/files?path=' + encodeURIComponent(dir))
     .then(function(data) {
       var list = document.getElementById('sp-files-list');
       list.innerHTML = '';
 
-      // Parent dir
-      if (dir !== '/') {
+      // Parent dir (don't go above session root)
+      var root = _spRootPath[activeTab] || '/';
+      if (dir !== '/' && dir !== root) {
         var parent = dir.replace(/\/[^/]+\/?$/, '') || '/';
+        if (parent.length < root.length) parent = root;
         var up = document.createElement('div');
         up.className = 'sp-file';
         up.innerHTML = '<span class="sp-file-icon">..</span><span class="sp-file-name" style="color:#8b949e">parent</span>';
@@ -59,6 +114,7 @@ function loadSPFiles(dir) {
       }
 
       data.entries.forEach(function(e) {
+        var fullPath = dir + '/' + e.name;
         var item = document.createElement('div');
         item.className = 'sp-file';
         var icon = e.type === 'dir' ? '📁' : getFileIcon(e.name);
@@ -67,10 +123,20 @@ function loadSPFiles(dir) {
           '<span class="sp-file-name">' + e.name + '</span>' +
           '<span class="sp-file-size">' + size + '</span>';
         if (e.type === 'dir') {
-          item.onclick = function() { loadSPFiles(dir + '/' + e.name); };
+          item.onclick = function() { loadSPFiles(fullPath); };
+        } else if (isPDF(e.name)) {
+          item.onclick = function() { openPDF(fullPath); };
+        } else if (isEditableFile(e.name)) {
+          item.onclick = function() { openFileInEditor(fullPath); };
         } else {
-          item.onclick = function() { openFileInEditor(dir + '/' + e.name); };
+          item.style.opacity = '0.4';
+          item.style.cursor = 'default';
         }
+        // Right-click context menu
+        item.addEventListener('contextmenu', function(ev) {
+          ev.preventDefault();
+          showContextMenu(ev.clientX, ev.clientY, fullPath, e.type, e.name, dir);
+        });
         list.appendChild(item);
       });
     })
@@ -103,9 +169,42 @@ function renderSPPath(dir) {
   });
 }
 
+var _editableExts = ['md', 'txt', 'js', 'ts', 'jsx', 'tsx', 'py', 'json', 'css', 'html', 'yml', 'yaml', 'toml', 'sh', 'bash', 'zsh', 'env', 'cfg', 'ini', 'xml', 'svg', 'sql', 'rs', 'go', 'java', 'c', 'cpp', 'h', 'hpp', 'rb', 'php', 'lua', 'r', 'csv', 'log', 'conf', 'dockerfile', 'makefile'];
+
+function isPDF(name) {
+  return name.toLowerCase().endsWith('.pdf');
+}
+
+function openPDF(filePath) {
+  var url = '/api/file-raw?path=' + encodeURIComponent(filePath);
+  document.getElementById('sp-editor-name').textContent = filePath.split('/').pop();
+  document.getElementById('sp-editor-name').title = filePath;
+  document.getElementById('sp-editor-area').style.display = 'none';
+  document.getElementById('sp-editor-preview').style.display = 'none';
+  // Remove old iframe if any
+  var old = document.getElementById('sp-pdf-frame');
+  if (old) old.remove();
+  var iframe = document.createElement('iframe');
+  iframe.id = 'sp-pdf-frame';
+  iframe.src = url;
+  iframe.style.cssText = 'flex:1;border:none;background:#0d1117;';
+  document.getElementById('sp-editor').appendChild(iframe);
+  _spCurrentFile = null;
+  _spPreviewMode = false;
+  showEditorBackBtn();
+  switchSPTab('editor');
+}
+
+function isEditableFile(name) {
+  var lower = name.toLowerCase();
+  if (lower === 'makefile' || lower === 'dockerfile') return true;
+  var ext = lower.split('.').pop();
+  return _editableExts.indexOf(ext) !== -1;
+}
+
 function getFileIcon(name) {
   var ext = name.split('.').pop().toLowerCase();
-  var icons = { md: '📝', js: '📜', py: '🐍', json: '📋', css: '🎨', html: '🌐', ts: '📜', txt: '📄' };
+  var icons = { md: '📝', js: '📜', py: '🐍', json: '📋', css: '🎨', html: '🌐', ts: '📜', txt: '📄', pdf: '📕' };
   return icons[ext] || '📄';
 }
 
@@ -115,10 +214,105 @@ function formatFileSize(bytes) {
   return (bytes / 1048576).toFixed(1) + 'M';
 }
 
+// ── Context Menu ──
+
+function showContextMenu(x, y, filePath, type, name, parentDir) {
+  closeContextMenu();
+  var menu = document.createElement('div');
+  menu.id = 'sp-context-menu';
+  menu.className = 'sp-context-menu';
+
+  var items = [];
+  if (type === 'file') {
+    if (isPDF(name)) {
+      items.push({ label: 'View PDF', action: function() { openPDF(filePath); } });
+    } else if (isEditableFile(name)) {
+      items.push({ label: 'Edit', action: function() { openFileInEditor(filePath); } });
+    }
+    items.push({ label: 'Download', action: function() {
+      var a = document.createElement('a');
+      a.href = '/api/file-raw?path=' + encodeURIComponent(filePath);
+      a.download = name;
+      a.click();
+    }});
+  } else {
+    items.push({ label: 'Open', action: function() { loadSPFiles(filePath); } });
+  }
+  items.push({ label: 'Rename', action: function() {
+    var newName = prompt('Rename to:', name);
+    if (!newName || newName === name) return;
+    var newPath = parentDir + '/' + newName;
+    apiPost('/api/rename', { from: filePath, to: newPath })
+      .then(function(r) { return r.json(); })
+      .then(function(d) { if (d.ok) loadSPFiles(parentDir); else alert(d.error || 'Failed'); });
+  }});
+  items.push({ label: 'Delete', cls: 'danger', action: function() {
+    if (!confirm('Delete "' + name + '"?')) return;
+    apiPost('/api/delete', { path: filePath })
+      .then(function(r) { return r.json(); })
+      .then(function(d) { if (d.ok) loadSPFiles(parentDir); else alert(d.error || 'Failed'); });
+  }});
+
+  items.forEach(function(it) {
+    var el = document.createElement('div');
+    el.className = 'sp-ctx-item' + (it.cls ? ' ' + it.cls : '');
+    el.textContent = it.label;
+    el.onclick = function() { closeContextMenu(); it.action(); };
+    menu.appendChild(el);
+  });
+
+  menu.style.left = x + 'px';
+  menu.style.top = y + 'px';
+  document.body.appendChild(menu);
+
+  // Adjust if off screen
+  var rect = menu.getBoundingClientRect();
+  if (rect.right > window.innerWidth) menu.style.left = (x - rect.width) + 'px';
+  if (rect.bottom > window.innerHeight) menu.style.top = (y - rect.height) + 'px';
+
+  setTimeout(function() {
+    document.addEventListener('click', closeContextMenu, { once: true });
+  }, 0);
+}
+
+function closeContextMenu() {
+  var old = document.getElementById('sp-context-menu');
+  if (old) old.remove();
+}
+
 // ── Editor Tab ──
+
+function resetEditor() {
+  _spCurrentFile = null;
+  _spDirty = false;
+  _spPreviewMode = false;
+  document.getElementById('sp-editor-name').textContent = 'No file open';
+  document.getElementById('sp-editor-area').value = '';
+  document.getElementById('sp-editor-area').style.display = 'block';
+  document.getElementById('sp-editor-preview').style.display = 'none';
+  document.getElementById('sp-editor-preview').innerHTML = '';
+  var oldPdf = document.getElementById('sp-pdf-frame');
+  if (oldPdf) oldPdf.remove();
+  var backBtn = document.querySelector('.sp-back-btn');
+  if (backBtn) backBtn.remove();
+  document.getElementById('sp-preview-btn').classList.remove('active');
+}
+
+function showEditorBackBtn() {
+  var bar = document.getElementById('sp-editor-bar');
+  if (bar.querySelector('.sp-back-btn')) return;
+  var btn = document.createElement('button');
+  btn.className = 'sp-btn sp-back-btn';
+  btn.textContent = '← Files';
+  btn.onclick = function() { switchSPTab('files'); };
+  bar.insertBefore(btn, bar.firstChild);
+}
 
 function openFileInEditor(filePath) {
   if (_spDirty && !confirm('Unsaved changes will be lost. Continue?')) return;
+  // Clean up PDF iframe if present
+  var oldPdf = document.getElementById('sp-pdf-frame');
+  if (oldPdf) oldPdf.remove();
   apiGet('/api/file?path=' + encodeURIComponent(filePath))
     .then(function(data) {
       _spCurrentFile = data.path;
@@ -126,11 +320,15 @@ function openFileInEditor(filePath) {
       document.getElementById('sp-editor-name').textContent = data.path.split('/').pop();
       document.getElementById('sp-editor-name').title = data.path;
       document.getElementById('sp-editor-area').value = data.content;
-      setPreviewMode(false);
+      document.getElementById('sp-editor-area').style.display = 'block';
+      document.getElementById('sp-editor-preview').style.display = 'none';
+      showEditorBackBtn();
       switchSPTab('editor');
       // Auto-preview for markdown files
       if (/\.md$/i.test(filePath)) {
-        renderMarkdownPreview(data.content);
+        setPreviewMode(true);
+      } else {
+        setPreviewMode(false);
       }
     })
     .catch(function() { alert('Cannot open file'); });
@@ -162,8 +360,112 @@ function setPreviewMode(on) {
   }
 }
 
+// ── LaTeX Table Parser ──
+
+function parseLatexTables(text) {
+  // Replace \begin{table}...\end{table} or \begin{tabular}...\end{tabular}
+  return text.replace(/\\begin\{table\}[\s\S]*?\\end\{table\}/g, function(block) {
+    return convertLatexTable(block);
+  }).replace(/\\begin\{tabular\}\{[^}]*\}([\s\S]*?)\\end\{tabular\}/g, function(_, body) {
+    return buildTableHtml(body);
+  });
+}
+
+function convertLatexTable(block) {
+  // Extract caption
+  var caption = '';
+  var capMatch = block.match(/\\caption\{([\s\S]*?)\}(?:\\label\{[^}]*\})?/);
+  if (capMatch) caption = cleanLatex(capMatch[1]);
+
+  // Extract tabular body
+  var tabMatch = block.match(/\\begin\{tabular\}\{[^}]*\}([\s\S]*?)\\end\{tabular\}/);
+  if (!tabMatch) return block;
+
+  var html = buildTableHtml(tabMatch[1]);
+  if (caption) html = '<div class="latex-caption">' + caption + '</div>' + html;
+  return html;
+}
+
+function buildTableHtml(body) {
+  var rows = body.split('\\\\').map(function(r) { return r.trim(); }).filter(Boolean);
+  var html = '<table class="latex-table">';
+  var inHeader = true;
+
+  rows.forEach(function(row) {
+    // Skip rule commands
+    if (/^\\(toprule|midrule|bottomrule|hline|cline)/.test(row)) {
+      if (/^\\midrule/.test(row) || /^\\bottomrule/.test(row)) inHeader = false;
+      // Check if there's content after the rule on same line
+      var after = row.replace(/^\\(toprule|midrule|bottomrule|hline|cline\{[^}]*\})\s*/, '').trim();
+      if (!after) return;
+      row = after;
+    }
+
+    var cells = row.split('&').map(function(c) { return cleanLatex(c.trim()); });
+    var tag = inHeader ? 'th' : 'td';
+    html += '<tr>';
+    cells.forEach(function(c) {
+      // Handle \multicolumn
+      var multiMatch = c.match(/\\multicolumn\{(\d+)\}\{[^}]*\}\{([\s\S]*?)\}/);
+      if (multiMatch) {
+        html += '<' + tag + ' colspan="' + multiMatch[1] + '">' + cleanLatex(multiMatch[2]) + '</' + tag + '>';
+      } else {
+        html += '<' + tag + '>' + c + '</' + tag + '>';
+      }
+    });
+    html += '</tr>';
+  });
+
+  html += '</table>';
+  return html;
+}
+
+function cleanLatex(text) {
+  // Render inline math
+  text = text.replace(/\$([^$]+)\$/g, function(_, expr) {
+    if (typeof katex !== 'undefined') {
+      try { return katex.renderToString(expr.trim(), { displayMode: false, throwOnError: false }); }
+      catch (e) { return expr; }
+    }
+    return expr;
+  });
+  // Clean common LaTeX commands
+  text = text.replace(/\\textbf\{([^}]*)\}/g, '<strong>$1</strong>');
+  text = text.replace(/\\textit\{([^}]*)\}/g, '<em>$1</em>');
+  text = text.replace(/\\text\{([^}]*)\}/g, '$1');
+  text = text.replace(/\\emph\{([^}]*)\}/g, '<em>$1</em>');
+  text = text.replace(/\{,\}/g, ',');  // {,} → comma (number formatting)
+  text = text.replace(/\{([^}]*)\}/g, '$1');  // remove remaining braces
+  text = text.replace(/~+/g, ' ');  // ~ → space
+  text = text.replace(/\\,/g, ' ');
+  text = text.replace(/\\\s/g, ' ');
+  text = text.replace(/\\%/g, '%');
+  text = text.replace(/\\&/g, '&amp;');
+  text = text.replace(/\\#/g, '#');
+  text = text.replace(/\\_/g, '_');
+  return text.trim();
+}
+
 function renderMarkdownPreview(text) {
-  var html = markdownToHtml(text);
+  var html;
+  if (typeof marked !== 'undefined') {
+    // Convert LaTeX tables first
+    text = parseLatexTables(text);
+    // Render math blocks before marked processes them
+    // Block math: $$...$$
+    text = text.replace(/\$\$([\s\S]+?)\$\$/g, function(_, expr) {
+      try { return '<div class="math-block">' + katex.renderToString(expr.trim(), { displayMode: true, throwOnError: false }) + '</div>'; }
+      catch (e) { return '<div class="math-block">' + expr + '</div>'; }
+    });
+    // Inline math: $...$
+    text = text.replace(/\$([^\$\n]+?)\$/g, function(_, expr) {
+      try { return katex.renderToString(expr.trim(), { displayMode: false, throwOnError: false }); }
+      catch (e) { return '<code>' + expr + '</code>'; }
+    });
+    html = marked.parse(text);
+  } else {
+    html = markdownToHtml(text);
+  }
   document.getElementById('sp-editor-preview').innerHTML = html;
 }
 
@@ -223,11 +525,10 @@ function markdownToHtml(md) {
       html += '<li>' + inline(line.replace(/^\s*\d+\.\s/, '')) + '</li>';
       continue;
     }
-    // Table
-    if (/\|/.test(line) && line.trim().startsWith('|')) {
-      // Collect table lines
-      var tableLines = [line];
-      while (i + 1 < lines.length && /\|/.test(lines[i + 1])) { tableLines.push(lines[++i]); }
+    // Table — detect header + separator pair
+    if (/\|/.test(line) && i + 1 < lines.length && /^[\s|:\-]+$/.test(lines[i + 1].trim()) && /\|/.test(lines[i + 1])) {
+      var tableLines = [line, lines[++i]];
+      while (i + 1 < lines.length && /\|/.test(lines[i + 1]) && lines[i + 1].trim() !== '') { tableLines.push(lines[++i]); }
       html += renderTable(tableLines);
       continue;
     }
@@ -257,18 +558,42 @@ function inline(s) {
   return s;
 }
 
+function splitTableCells(line) {
+  // Handle both |col|col| and col|col formats
+  var trimmed = line.trim();
+  if (trimmed.startsWith('|')) trimmed = trimmed.slice(1);
+  if (trimmed.endsWith('|')) trimmed = trimmed.slice(0, -1);
+  return trimmed.split('|').map(function(c) { return c.trim(); });
+}
+
 function renderTable(lines) {
   if (lines.length < 2) return '';
-  var html = '<table>';
-  lines.forEach(function(line, idx) {
-    if (idx === 1 && /^[\s|:-]+$/.test(line)) return; // separator
-    var cells = line.split('|').filter(function(c, i, a) { return i > 0 && i < a.length - 1; });
-    var tag = idx === 0 ? 'th' : 'td';
-    html += '<tr>';
-    cells.forEach(function(c) { html += '<' + tag + '>' + inline(c.trim()) + '</' + tag + '>'; });
-    html += '</tr>';
+  var headerCells = splitTableCells(lines[0]);
+  // Parse alignment from separator row
+  var sepCells = splitTableCells(lines[1]);
+  var aligns = sepCells.map(function(c) {
+    if (c.startsWith(':') && c.endsWith(':')) return 'center';
+    if (c.endsWith(':')) return 'right';
+    return 'left';
   });
-  html += '</table>';
+
+  var html = '<table><thead><tr>';
+  headerCells.forEach(function(c, j) {
+    var align = aligns[j] || 'left';
+    html += '<th style="text-align:' + align + '">' + inline(c) + '</th>';
+  });
+  html += '</tr></thead><tbody>';
+
+  for (var r = 2; r < lines.length; r++) {
+    var cells = splitTableCells(lines[r]);
+    html += '<tr>';
+    cells.forEach(function(c, j) {
+      var align = aligns[j] || 'left';
+      html += '<td style="text-align:' + align + '">' + inline(c) + '</td>';
+    });
+    html += '</tr>';
+  }
+  html += '</tbody></table>';
   return html;
 }
 
@@ -307,6 +632,77 @@ function renderHistory(id) {
   }
 }
 
+// ── Side Panel File Upload ──
+
+function uploadToSPDir(file) {
+  if (!activeTab) return;
+  var name = file.name || ('paste-' + Date.now() + '.png');
+  var dir = _spBrowsePath || '/tmp';
+  var dest = dir + '/' + name;
+
+  var list = document.getElementById('sp-files-list');
+  var bar = document.createElement('div');
+  bar.className = 'upload-progress';
+  bar.innerHTML = '<div class="upload-progress-bar" style="width:0%"></div>';
+  list.insertBefore(bar, list.firstChild);
+
+  var xhr = new XMLHttpRequest();
+  xhr.open('POST', '/api/upload?id=' + encodeURIComponent(activeTab) + '&name=' + encodeURIComponent(name) + '&dir=' + encodeURIComponent(dir));
+  xhr.withCredentials = true;
+
+  xhr.upload.onprogress = function(e) {
+    if (e.lengthComputable) {
+      bar.querySelector('.upload-progress-bar').style.width = Math.round(e.loaded / e.total * 100) + '%';
+    }
+  };
+
+  xhr.onload = function() {
+    bar.remove();
+    loadSPFiles(_spBrowsePath); // refresh file list
+  };
+
+  xhr.onerror = function() {
+    bar.remove();
+    alert('Upload failed');
+  };
+
+  xhr.send(file);
+}
+
+(function() {
+  var filesContent = document.getElementById('sp-files');
+  if (!filesContent) return;
+  var _dc = 0;
+
+  filesContent.addEventListener('dragenter', function(e) {
+    e.preventDefault();
+    _dc++;
+    filesContent.classList.add('sp-drop-active');
+  });
+
+  filesContent.addEventListener('dragleave', function() {
+    _dc--;
+    if (_dc <= 0) { _dc = 0; filesContent.classList.remove('sp-drop-active'); }
+  });
+
+  filesContent.addEventListener('dragover', function(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = 'copy';
+  });
+
+  filesContent.addEventListener('drop', function(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    _dc = 0;
+    filesContent.classList.remove('sp-drop-active');
+    var files = e.dataTransfer ? e.dataTransfer.files : [];
+    for (var i = 0; i < files.length; i++) {
+      uploadToSPDir(files[i]);
+    }
+  });
+})();
+
 // ── Init ──
 
 document.querySelectorAll('.sp-tab').forEach(function(btn) {
@@ -325,3 +721,55 @@ document.getElementById('sp-editor-area').addEventListener('input', function() {
   _spDirty = true;
   if (_spPreviewMode) renderMarkdownPreview(this.value);
 });
+
+// Right-click on empty area in file list
+document.getElementById('sp-files-list').addEventListener('contextmenu', function(e) {
+  if (e.target.closest('.sp-file')) return; // handled by file item
+  e.preventDefault();
+  showDirContextMenu(e.clientX, e.clientY, _spBrowsePath);
+});
+
+function showDirContextMenu(x, y, dir) {
+  closeContextMenu();
+  var menu = document.createElement('div');
+  menu.id = 'sp-context-menu';
+  menu.className = 'sp-context-menu';
+
+  var items = [
+    { label: 'New Folder', action: function() {
+      var name = prompt('Folder name:');
+      if (!name || !name.trim()) return;
+      apiPost('/api/mkdir', { path: dir + '/' + name.trim() })
+        .then(function(r) { return r.json(); })
+        .then(function(d) { if (d.ok) loadSPFiles(dir); else alert(d.error || 'Failed'); });
+    }},
+    { label: 'New File', action: function() {
+      var name = prompt('File name:');
+      if (!name || !name.trim()) return;
+      apiPost('/api/file', { path: dir + '/' + name.trim(), content: '' })
+        .then(function(r) { return r.json(); })
+        .then(function(d) { if (d.ok) loadSPFiles(dir); else alert(d.error || 'Failed'); });
+    }},
+    { label: 'Refresh', action: function() { loadSPFiles(dir); } }
+  ];
+
+  items.forEach(function(it) {
+    var el = document.createElement('div');
+    el.className = 'sp-ctx-item';
+    el.textContent = it.label;
+    el.onclick = function() { closeContextMenu(); it.action(); };
+    menu.appendChild(el);
+  });
+
+  menu.style.left = x + 'px';
+  menu.style.top = y + 'px';
+  document.body.appendChild(menu);
+
+  var rect = menu.getBoundingClientRect();
+  if (rect.right > window.innerWidth) menu.style.left = (x - rect.width) + 'px';
+  if (rect.bottom > window.innerHeight) menu.style.top = (y - rect.height) + 'px';
+
+  setTimeout(function() {
+    document.addEventListener('click', closeContextMenu, { once: true });
+  }, 0);
+}

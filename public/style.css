@@ -558,9 +558,28 @@ header h1 {
 
 /* ── Side Panel ────────────────────────────────────── */
 
+#sp-drag {
+  width: 4px;
+  cursor: col-resize;
+  background: #30363d;
+  flex-shrink: 0;
+  transition: background 0.15s;
+}
+
+#sp-drag:hover, #sp-drag.dragging {
+  background: #a78bfa;
+}
+
+#sidepanel-btn.active {
+  background: #7c3aed;
+  border-color: #7c3aed;
+  color: #fff;
+}
+
 #side-panel {
   width: 380px;
-  min-width: 280px;
+  min-width: 200px;
+  max-width: 60vw;
   background: #161b22;
   border-left: 1px solid #30363d;
   display: flex;
@@ -655,6 +674,11 @@ header h1 {
 
 .sp-file:hover {
   background: #21262d;
+}
+
+.sp-file.sp-new-folder {
+  color: #a78bfa;
+  border-bottom: 1px solid #21262d;
 }
 
 .sp-file-icon {
@@ -757,6 +781,13 @@ header h1 {
 #sp-editor-preview a { color: #a78bfa; }
 #sp-editor-preview hr { border: none; border-top: 1px solid #30363d; margin: 10px 0; }
 #sp-editor-preview blockquote { border-left: 3px solid #30363d; padding-left: 10px; color: #8b949e; margin: 6px 0; }
+#sp-editor-preview .math-block { text-align: center; margin: 12px 0; overflow-x: auto; }
+#sp-editor-preview .latex-caption { font-size: 12px; color: #8b949e; margin: 8px 0 4px; font-style: italic; }
+#sp-editor-preview .latex-table { border-collapse: collapse; margin: 8px 0; width: 100%; font-size: 11px; }
+#sp-editor-preview .latex-table th { border-top: 2px solid #e6edf3; border-bottom: 1px solid #e6edf3; padding: 4px 8px; text-align: left; font-weight: 600; }
+#sp-editor-preview .latex-table td { padding: 3px 8px; border-bottom: 1px solid #21262d; }
+#sp-editor-preview .latex-table tr:last-child td { border-bottom: 2px solid #e6edf3; }
+#sp-editor-preview .katex { color: #e6edf3; }
 #sp-editor-preview table { border-collapse: collapse; margin: 8px 0; width: 100%; }
 #sp-editor-preview th, #sp-editor-preview td { border: 1px solid #30363d; padding: 4px 8px; font-size: 12px; }
 #sp-editor-preview th { background: #21262d; }
@@ -852,6 +883,119 @@ header h1 {
 
 #split-content .card .card-header[draggable="true"]:active {
   cursor: grabbing;
+}
+
+/* ── Autocomplete ──────────────────────────────────── */
+
+.ac-menu {
+  position: fixed;
+  z-index: 1000;
+  background: #1c2128;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  padding: 4px 0;
+  min-width: 200px;
+  max-width: 320px;
+  max-height: 240px;
+  overflow-y: auto;
+  box-shadow: 0 4px 20px #00000066;
+  scrollbar-width: thin;
+  scrollbar-color: #30363d transparent;
+}
+
+.ac-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.ac-item:hover, .ac-item.active {
+  background: #21262d;
+}
+
+.ac-cmd {
+  color: #c084fc;
+  font-family: "Cascadia Code", monospace;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.ac-desc {
+  color: #6e7681;
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Upload Progress ───────────────────────────────── */
+
+.upload-progress {
+  height: 3px;
+  background: #21262d;
+  border-radius: 2px;
+  margin: 4px 0;
+  overflow: hidden;
+}
+
+.upload-progress-bar {
+  height: 100%;
+  background: #a78bfa;
+  border-radius: 2px;
+  transition: width 0.2s;
+}
+
+/* ── Context Menu ──────────────────────────────────── */
+
+.sp-context-menu {
+  position: fixed;
+  z-index: 1000;
+  background: #1c2128;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  padding: 4px 0;
+  min-width: 120px;
+  box-shadow: 0 4px 16px #00000066;
+}
+
+.sp-ctx-item {
+  padding: 6px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  color: #e6edf3;
+}
+
+.sp-ctx-item:hover {
+  background: #21262d;
+}
+
+.sp-ctx-item.danger {
+  color: #f87171;
+}
+
+.sp-ctx-item.danger:hover {
+  background: #f8717122;
+}
+
+.sp-back-btn {
+  margin-right: auto;
+}
+
+.sp-drop-active {
+  outline: 2px dashed #a78bfa;
+  outline-offset: -2px;
+  background: #a78bfa0a;
+}
+
+/* ── File Drop ─────────────────────────────────────── */
+
+.card.file-drop-active {
+  outline: 2px dashed #a78bfa;
+  outline-offset: -2px;
+  background: #a78bfa0a;
 }
 
 /* ── Worker Card ───────────────────────────────────── */

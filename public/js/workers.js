@@ -276,6 +276,9 @@ function bindCard(id, root) {
     });
   }
 
+  // Autocomplete
+  if (inp) bindAutocomplete(inp, id);
+
   // Search
   var searchInp = root.querySelector ? root.querySelector('.search-inp') : null;
   if (searchInp) {
@@ -289,11 +292,28 @@ function bindCard(id, root) {
   if (inp) {
     inp.addEventListener('paste', function(e) { handlePaste(id, e); });
   }
-  var logsEl = q('#logs-' + id);
   var cardEl = root.querySelector ? root : document.getElementById('card-' + id);
   if (cardEl) {
-    cardEl.addEventListener('dragover', function(e) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; });
-    cardEl.addEventListener('drop', function(e) { handleFileDrop(id, e); });
+    var _dragCount = 0;
+    cardEl.addEventListener('dragenter', function(e) {
+      e.preventDefault();
+      _dragCount++;
+      cardEl.classList.add('file-drop-active');
+    });
+    cardEl.addEventListener('dragleave', function(e) {
+      _dragCount--;
+      if (_dragCount <= 0) { _dragCount = 0; cardEl.classList.remove('file-drop-active'); }
+    });
+    cardEl.addEventListener('dragover', function(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      e.dataTransfer.dropEffect = 'copy';
+    });
+    cardEl.addEventListener('drop', function(e) {
+      _dragCount = 0;
+      cardEl.classList.remove('file-drop-active');
+      handleFileDrop(id, e);
+    });
   }
 
   // Quick key buttons
@@ -484,15 +504,241 @@ function reconnectWorker(id) {
     });
 }
 
+// ── Intellisense ──
+
+var _slashCommands = [
+  { cmd: '/help', desc: 'Show help' },
+  { cmd: '/compact', desc: 'Compact conversation' },
+  { cmd: '/clear', desc: 'Clear conversation' },
+  { cmd: '/config', desc: 'View/update config' },
+  { cmd: '/cost', desc: 'Show token usage' },
+  { cmd: '/doctor', desc: 'Check health' },
+  { cmd: '/init', desc: 'Init CLAUDE.md' },
+  { cmd: '/login', desc: 'Login to account' },
+  { cmd: '/logout', desc: 'Logout' },
+  { cmd: '/memory', desc: 'Edit CLAUDE.md' },
+  { cmd: '/model', desc: 'Switch model' },
+  { cmd: '/permissions', desc: 'View permissions' },
+  { cmd: '/review', desc: 'Review code' },
+  { cmd: '/status', desc: 'Session info' },
+  { cmd: '/terminal-setup', desc: 'Setup terminal' },
+  { cmd: '/vim', desc: 'Vim mode toggle' },
+  { cmd: '/bug', desc: 'Report a bug' },
+];
+
+var _acActive = null; // { inp, id, type }
+var _acIndex = -1;
+
+function showAutocomplete(inp, id, items) {
+  hideAutocomplete();
+  if (!items.length) return;
+  var box = document.createElement('div');
+  box.id = 'ac-menu';
+  box.className = 'ac-menu';
+
+  items.forEach(function(item, i) {
+    var el = document.createElement('div');
+    el.className = 'ac-item';
+    el.dataset.index = i;
+    if (item.desc) {
+      el.innerHTML = '<span class="ac-cmd">' + item.cmd + '</span><span class="ac-desc">' + item.desc + '</span>';
+    } else {
+      el.innerHTML = '<span class="ac-cmd">' + item.cmd + '</span>';
+    }
+    el.onmousedown = function(e) {
+      e.preventDefault();
+      applyAutocomplete(inp, item.cmd);
+    };
+    box.appendChild(el);
+  });
+
+  // Position above input
+  var rect = inp.getBoundingClientRect();
+  box.style.left = rect.left + 'px';
+  box.style.bottom = (window.innerHeight - rect.top + 4) + 'px';
+  document.body.appendChild(box);
+  _acActive = { inp: inp, id: id };
+  _acIndex = -1;
+}
+
+function hideAutocomplete() {
+  var old = document.getElementById('ac-menu');
+  if (old) old.remove();
+  _acActive = null;
+  _acIndex = -1;
+}
+
+function applyAutocomplete(inp, value) {
+  var text = inp.value;
+  // Find the @ or / trigger position
+  var atIdx = text.lastIndexOf('@');
+  var triggerIdx = -1;
+  if (value.startsWith('@')) {
+    triggerIdx = atIdx;
+  } else if (value.startsWith('/')) {
+    // For slash commands, find the / that started the command
+    var match = text.match(/(^|\s)(\/\S*)$/);
+    triggerIdx = match ? text.length - match[2].length : -1;
+  }
+
+  var isDir = value.endsWith('/');
+  var acId = _acActive ? _acActive.id : null;
+  if (triggerIdx >= 0) {
+    inp.value = text.slice(0, triggerIdx) + value + (isDir ? '' : ' ');
+  } else {
+    inp.value = value + (isDir ? '' : ' ');
+  }
+  hideAutocomplete();
+  inp.focus();
+  // If directory selected, re-trigger to browse into it
+  if (isDir && acId) {
+    setTimeout(function() { triggerAutocomplete(inp, acId); }, 50);
+  }
+}
+
+function navigateAutocomplete(delta) {
+  var menu = document.getElementById('ac-menu');
+  if (!menu) return false;
+  var items = menu.querySelectorAll('.ac-item');
+  if (!items.length) return false;
+  _acIndex = (_acIndex + delta + items.length) % items.length;
+  items.forEach(function(el, i) { el.classList.toggle('active', i === _acIndex); });
+  items[_acIndex].scrollIntoView({ block: 'nearest' });
+  return true;
+}
+
+function selectAutocomplete(inp) {
+  var menu = document.getElementById('ac-menu');
+  if (!menu || _acIndex < 0) return false;
+  var items = menu.querySelectorAll('.ac-item');
+  if (_acIndex < items.length) {
+    var cmd = items[_acIndex].querySelector('.ac-cmd').textContent;
+    applyAutocomplete(inp, cmd);
+    return true;
+  }
+  return false;
+}
+
+function triggerAutocomplete(inp, id) {
+  var text = inp.value;
+  var cursor = inp.selectionStart;
+  var before = text.slice(0, cursor);
+
+  // Check for / at start or after whitespace
+  var slashMatch = before.match(/(^|\s)(\/\S*)$/);
+  if (slashMatch) {
+    var query = slashMatch[2].toLowerCase();
+    var filtered = _slashCommands.filter(function(c) {
+      return c.cmd.toLowerCase().startsWith(query);
+    });
+    showAutocomplete(inp, id, filtered);
+    return;
+  }
+
+  // Check for @ — navigate into subdirs like @src/components/
+  var atMatch = before.match(/(^|\s)(@\S*)$/);
+  if (atMatch) {
+    var raw = atMatch[2].slice(1); // remove @
+    var tab = document.querySelector('.tab[data-id="' + id + '"]');
+    var cwd = tab ? tab.dataset.cwd : '';
+    if (!cwd) { hideAutocomplete(); return; }
+
+    // Split into dir path + partial filename
+    var lastSlash = raw.lastIndexOf('/');
+    var dirPart = lastSlash >= 0 ? raw.slice(0, lastSlash) : '';
+    var filePart = lastSlash >= 0 ? raw.slice(lastSlash + 1) : raw;
+    var browsePath = cwd + (dirPart ? '/' + dirPart : '');
+    var prefix = dirPart ? dirPart + '/' : '';
+
+    apiGet('/api/files?path=' + encodeURIComponent(browsePath))
+      .then(function(data) {
+        var items = data.entries
+          .filter(function(e) { return e.name.toLowerCase().startsWith(filePart.toLowerCase()); })
+          .slice(0, 15)
+          .map(function(e) {
+            var display = prefix + e.name;
+            return { cmd: '@' + display + (e.type === 'dir' ? '/' : ''), desc: e.type };
+          });
+        showAutocomplete(inp, id, items);
+      })
+      .catch(function() { hideAutocomplete(); });
+    return;
+  }
+
+  hideAutocomplete();
+}
+
+function bindAutocomplete(inp, id) {
+  inp.addEventListener('input', function() {
+    triggerAutocomplete(inp, id);
+  });
+  inp.addEventListener('blur', function() {
+    setTimeout(hideAutocomplete, 150);
+  });
+  inp.addEventListener('keydown', function(e) {
+    if (!document.getElementById('ac-menu')) return;
+    if (e.key === 'ArrowDown') { e.preventDefault(); navigateAutocomplete(1); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); navigateAutocomplete(-1); }
+    else if (e.key === 'Tab' || (e.key === 'Enter' && _acIndex >= 0)) {
+      if (selectAutocomplete(inp)) { e.preventDefault(); }
+    }
+    else if (e.key === 'Escape') { hideAutocomplete(); }
+  });
+}
+
 // ── File Upload ──
 
 function uploadFile(id, file) {
   var name = file.name || ('paste-' + Date.now() + '.png');
-  return fetch('/api/upload?id=' + encodeURIComponent(id) + '&name=' + encodeURIComponent(name), {
-    method: 'POST',
-    body: file,
-    credentials: 'include'
-  }).then(function(r) { return r.json(); });
+  var size = file.size;
+  var logMsg = '📎 Uploading: ' + name + ' (' + formatUploadSize(size) + ')...';
+  appendLog(id, 'stdin', logMsg);
+
+  return new Promise(function(resolve, reject) {
+    var xhr = new XMLHttpRequest();
+    xhr.open('POST', '/api/upload?id=' + encodeURIComponent(id) + '&name=' + encodeURIComponent(name));
+    xhr.withCredentials = true;
+
+    // Progress bar element
+    var progressEl = null;
+    document.querySelectorAll('#logs-' + id).forEach(function(box) {
+      var last = box.lastElementChild;
+      if (last) {
+        var bar = document.createElement('div');
+        bar.className = 'upload-progress';
+        bar.innerHTML = '<div class="upload-progress-bar" style="width:0%"></div>';
+        box.appendChild(bar);
+        progressEl = bar;
+        box.scrollTop = box.scrollHeight;
+      }
+    });
+
+    xhr.upload.onprogress = function(e) {
+      if (e.lengthComputable && progressEl) {
+        var pct = Math.round(e.loaded / e.total * 100);
+        progressEl.querySelector('.upload-progress-bar').style.width = pct + '%';
+      }
+    };
+
+    xhr.onload = function() {
+      if (progressEl) progressEl.remove();
+      try { resolve(JSON.parse(xhr.responseText)); }
+      catch (e) { resolve({ ok: false }); }
+    };
+
+    xhr.onerror = function() {
+      if (progressEl) progressEl.remove();
+      resolve({ ok: false });
+    };
+
+    xhr.send(file);
+  });
+}
+
+function formatUploadSize(bytes) {
+  if (bytes < 1024) return bytes + 'B';
+  if (bytes < 1048576) return (bytes / 1024).toFixed(0) + 'KB';
+  return (bytes / 1048576).toFixed(1) + 'MB';
 }
 
 function handleFileDrop(id, e) {

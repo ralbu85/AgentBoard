@@ -7,7 +7,10 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cascadia+Code&display=swap">
-<link rel="stylesheet" href="/style.css?v=25">
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<link rel="stylesheet" href="/style.css?v=28">
 </head>
 <body>
 
@@ -29,7 +32,7 @@
     </div>
     <div class="header-divider"></div>
     <button id="notify-btn" class="header-btn">🔔</button>
-    <button id="sidepanel-btn" class="header-btn">Panel</button>
+    <button id="sidepanel-btn" class="header-btn" title="Side Panel (Ctrl+B)">☰</button>
     <button id="scan-btn" class="header-btn">🔍</button>
     <button id="toggle-toolbar-btn" class="header-btn accent">+</button>
   </header>
@@ -58,6 +61,7 @@
     <div id="tab-bar"></div>
     <div id="tab-body" style="display:flex;flex:1;overflow:hidden">
       <div id="tab-content"></div>
+      <div id="sp-drag" style="display:none"></div>
       <div id="side-panel" style="display:none">
         <div id="sp-tabs">
           <button class="sp-tab active" data-sp="files">Files</button>
@@ -91,12 +95,12 @@
   </div>
 </div>
 
-<script src="/js/ansi.js?v=25"></script>
-<script src="/js/layout.js?v=25"></script>
-<script src="/js/favorites.js?v=25"></script>
-<script src="/js/ws.js?v=25"></script>
-<script src="/js/workers.js?v=25"></script>
-<script src="/js/sidepanel.js?v=25"></script>
-<script src="/js/app.js?v=25"></script>
+<script src="/js/ansi.js?v=28"></script>
+<script src="/js/layout.js?v=28"></script>
+<script src="/js/favorites.js?v=28"></script>
+<script src="/js/ws.js?v=28"></script>
+<script src="/js/workers.js?v=28"></script>
+<script src="/js/sidepanel.js?v=28b"></script>
+<script src="/js/app.js?v=28"></script>
 </body>
 </html>

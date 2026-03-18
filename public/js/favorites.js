@@ -78,6 +78,22 @@ function browseTo(dir) {
         list.appendChild(up);
       }
 
+      // New folder button
+      var newDir = document.createElement('div');
+      newDir.className = 'browse-item';
+      newDir.style.color = '#a78bfa';
+      newDir.innerHTML = '<span class="browse-item-icon">+</span><span>New Folder</span>';
+      newDir.onclick = function() {
+        var name = prompt('Folder name:');
+        if (!name || !name.trim()) return;
+        var full = (dir === '/' ? '' : dir) + '/' + name.trim();
+        _post('/api/mkdir', { path: full }).then(function(d) {
+          if (d.ok) browseTo(dir);
+          else alert(d.error || 'Failed');
+        });
+      };
+      list.appendChild(newDir);
+
       if (data.dirs && data.dirs.length > 0) {
         data.dirs.forEach(function(name) {
           var full = (dir === '/' ? '' : dir) + '/' + name;

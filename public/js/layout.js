@@ -45,7 +45,13 @@ function selectTab(id) {
   if (panelCard) panelCard.classList.add('status-seen');
 
   // Refresh side panel for new tab
-  if (_spOpen && typeof refreshSPFiles === 'function') refreshSPFiles();
+  if (_spOpen && typeof refreshSPFiles === 'function') {
+    _spBrowseInitialized[id] = false;
+    refreshSPFiles();
+    // Reset editor
+    if (typeof resetEditor === 'function') resetEditor();
+    switchSPTab('files');
+  }
 
   // Scroll logs to bottom after tab becomes visible
   requestAnimationFrame(function() {
