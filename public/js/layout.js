@@ -38,6 +38,8 @@ function selectTab(id) {
   activeTab = id;
   document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.id === id));
   document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.dataset.id === id));
+  // Notify server to poll this session immediately
+  if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'active', id: id }));
   // Mark completed card as seen — stop pulsing
   var card = document.querySelector('#card-' + id);
   if (card) card.classList.add('status-seen');

@@ -109,7 +109,7 @@ async function pollOutput(id) {
   // Run resize, capture, and cwd in parallel — non-blocking
   const [, output, currentCwd] = await Promise.all([
     tmuxAsyncRaw(["resize-window", "-t", w.sessionName, "-x", String(cols), "-y", String(rows)]),
-    tmuxAsyncRaw(["capture-pane", "-t", w.sessionName, "-p", "-e", "-S", "-500", "-J"]),
+    tmuxAsyncRaw(["capture-pane", "-t", w.sessionName, "-p", "-e", "-S", "-100", "-J"]),
     tmuxAsyncRaw(["display-message", "-t", w.sessionName, "-p", "#{pane_current_path}|#{pane_current_command}|#{session_created}|#{pane_pid}"]),
   ]);
 
@@ -174,12 +174,28 @@ async function pollOutput(id) {
   }
 }
 
-// Single poll loop — polls all workers concurrently without blocking event loop
-const POLL_INTERVAL = 300;
+// Adaptive polling — active sessions poll fast, idle/stopped poll slow
+const POLL_FAST = 500;   // active: 500ms
+const POLL_SLOW = 5000;  // idle/stopped: 5s
+const POLL_BASE = 300;   // minimum loop interval
+
 async function pollAll() {
+  const now = Date.now();
   const ids = [...workers.keys()];
-  await Promise.all(ids.map(id => pollOutput(id).catch(() => {})));
-  setTimeout(pollAll, POLL_INTERVAL);
+  const toPoll = ids.filter(id => {
+    const w = workers.get(id);
+    if (!w) return false;
+    const interval = (w.aiState === 'idle' || w.aiState === 'waiting' || w.status === 'stopped' || w.status === 'completed') ? POLL_SLOW : POLL_FAST;
+    if (!w._lastPoll || now - w._lastPoll >= interval) {
+      w._lastPoll = now;
+      return true;
+    }
+    return false;
+  });
+  if (toPoll.length > 0) {
+    await Promise.all(toPoll.map(id => pollOutput(id).catch(() => {})));
+  }
+  setTimeout(pollAll, POLL_BASE);
 }
 
 async function sendInput(id, text) {
@@ -521,7 +537,13 @@ wss.on('connection', ws => {
       }
       if (msg.type === 'active') {
         const size = clientSizes.get(ws);
-        if (size) workers.forEach(w => { w.cols = size.cols; w.rows = size.rows; });
+        if (msg.id) {
+          const w = workers.get(msg.id);
+          if (w && size) { w.cols = size.cols; w.rows = size.rows; }
+          pollOutput(msg.id).catch(() => {});
+        } else if (size) {
+          workers.forEach(w => { w.cols = size.cols; w.rows = size.rows; });
+        }
       }
       if (msg.type === 'key') {
         const w = workers.get(msg.id);

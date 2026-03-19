@@ -4,6 +4,15 @@ var _spOpen = false;
 var _spCurrentFile = null;
 var _spDirty = false;
 var _spPreviewMode = false;
+var _cmEditor = null; // CodeMirror instance
+var _cmModes = {
+  tex: 'stex', sty: 'stex', cls: 'stex', bib: 'stex',
+  js: 'javascript', jsx: 'javascript', ts: 'javascript', tsx: 'javascript',
+  py: 'python', css: 'css', html: 'htmlmixed', xml: 'xml',
+  md: 'markdown', yml: 'yaml', yaml: 'yaml',
+  sh: 'shell', bash: 'shell', zsh: 'shell',
+  sql: 'sql', json: { name: 'javascript', json: true }
+};
 var _inputHistory = {}; // id → [{text, ts}]
 
 // ── Panel Toggle ──
@@ -169,7 +178,7 @@ function renderSPPath(dir) {
   });
 }
 
-var _editableExts = ['md', 'txt', 'js', 'ts', 'jsx', 'tsx', 'py', 'json', 'css', 'html', 'yml', 'yaml', 'toml', 'sh', 'bash', 'zsh', 'env', 'cfg', 'ini', 'xml', 'svg', 'sql', 'rs', 'go', 'java', 'c', 'cpp', 'h', 'hpp', 'rb', 'php', 'lua', 'r', 'csv', 'log', 'conf', 'dockerfile', 'makefile'];
+var _editableExts = ['md', 'txt', 'js', 'ts', 'jsx', 'tsx', 'py', 'json', 'css', 'html', 'yml', 'yaml', 'toml', 'sh', 'bash', 'zsh', 'env', 'cfg', 'ini', 'xml', 'svg', 'sql', 'rs', 'go', 'java', 'c', 'cpp', 'h', 'hpp', 'rb', 'php', 'lua', 'r', 'csv', 'log', 'conf', 'dockerfile', 'makefile', 'tex', 'bib', 'sty', 'cls', 'bbl', 'aux'];
 
 function isPDF(name) {
   return name.toLowerCase().endsWith('.pdf');
@@ -177,6 +186,8 @@ function isPDF(name) {
 
 function openPDF(filePath) {
   var url = '/api/file-raw?path=' + encodeURIComponent(filePath);
+  // Hide everything first
+  destroyCodeMirror();
   document.getElementById('sp-editor-name').textContent = filePath.split('/').pop();
   document.getElementById('sp-editor-name').title = filePath;
   document.getElementById('sp-editor-area').style.display = 'none';
@@ -204,7 +215,7 @@ function isEditableFile(name) {
 
 function getFileIcon(name) {
   var ext = name.split('.').pop().toLowerCase();
-  var icons = { md: '📝', js: '📜', py: '🐍', json: '📋', css: '🎨', html: '🌐', ts: '📜', txt: '📄', pdf: '📕' };
+  var icons = { md: '📝', js: '📜', py: '🐍', json: '📋', css: '🎨', html: '🌐', ts: '📜', txt: '📄', pdf: '📕', tex: '📐', bib: '📚', sty: '⚙️' };
   return icons[ext] || '📄';
 }
 
@@ -282,10 +293,53 @@ function closeContextMenu() {
 
 // ── Editor Tab ──
 
+function initCodeMirror(mode) {
+  destroyCodeMirror();
+  var ta = document.getElementById('sp-editor-area');
+  ta.style.display = 'none';
+  _cmEditor = CodeMirror(function(el) {
+    ta.parentNode.insertBefore(el, ta);
+  }, {
+    value: ta.value,
+    mode: mode || 'text',
+    theme: 'material-darker',
+    lineNumbers: true,
+    matchBrackets: true,
+    autoCloseBrackets: true,
+    indentUnit: 2,
+    tabSize: 2,
+    indentWithTabs: false,
+    lineWrapping: true,
+    extraKeys: {
+      'Ctrl-S': function() { saveCurrentFile(); },
+      'Cmd-S': function() { saveCurrentFile(); }
+    }
+  });
+  _cmEditor.on('change', function() {
+    _spDirty = true;
+    // Sync to textarea for save
+    document.getElementById('sp-editor-area').value = _cmEditor.getValue();
+  });
+  // Fix height
+  _cmEditor.getWrapperElement().style.flex = '1';
+  _cmEditor.getWrapperElement().style.overflow = 'hidden';
+  setTimeout(function() { _cmEditor.refresh(); }, 100);
+}
+
+function destroyCodeMirror() {
+  if (_cmEditor) {
+    var wrapper = _cmEditor.getWrapperElement();
+    if (wrapper && wrapper.parentNode) wrapper.parentNode.removeChild(wrapper);
+    _cmEditor = null;
+  }
+  document.getElementById('sp-editor-area').style.display = 'block';
+}
+
 function resetEditor() {
   _spCurrentFile = null;
   _spDirty = false;
   _spPreviewMode = false;
+  destroyCodeMirror();
   document.getElementById('sp-editor-name').textContent = 'No file open';
   document.getElementById('sp-editor-area').value = '';
   document.getElementById('sp-editor-area').style.display = 'block';
@@ -320,14 +374,22 @@ function openFileInEditor(filePath) {
       document.getElementById('sp-editor-name').textContent = data.path.split('/').pop();
       document.getElementById('sp-editor-name').title = data.path;
       document.getElementById('sp-editor-area').value = data.content;
-      document.getElementById('sp-editor-area').style.display = 'block';
       document.getElementById('sp-editor-preview').style.display = 'none';
       showEditorBackBtn();
       switchSPTab('editor');
       // Auto-preview for markdown files
       if (/\.md$/i.test(filePath)) {
+        destroyCodeMirror();
+        document.getElementById('sp-editor-area').style.display = 'block';
         setPreviewMode(true);
+      } else if (typeof CodeMirror !== 'undefined') {
+        // Use CodeMirror for code/tex files
+        var ext = filePath.split('.').pop().toLowerCase();
+        var mode = _cmModes[ext] || 'text';
+        setPreviewMode(false);
+        initCodeMirror(mode);
       } else {
+        document.getElementById('sp-editor-area').style.display = 'block';
         setPreviewMode(false);
       }
     })
@@ -352,12 +414,17 @@ function saveCurrentFile() {
 
 function setPreviewMode(on) {
   _spPreviewMode = on;
-  document.getElementById('sp-editor-area').style.display = on ? 'none' : 'block';
+  if (_cmEditor) {
+    _cmEditor.getWrapperElement().style.display = on ? 'none' : '';
+  } else {
+    document.getElementById('sp-editor-area').style.display = on ? 'none' : 'block';
+  }
   document.getElementById('sp-editor-preview').style.display = on ? 'block' : 'none';
   document.getElementById('sp-preview-btn').classList.toggle('active', on);
   if (on) {
     renderMarkdownPreview(document.getElementById('sp-editor-area').value);
   }
+  if (!on && _cmEditor) setTimeout(function() { _cmEditor.refresh(); }, 50);
 }
 
 // ── LaTeX Table Parser ──
@@ -720,6 +787,77 @@ document.getElementById('sp-preview-btn').addEventListener('click', function() {
 document.getElementById('sp-editor-area').addEventListener('input', function() {
   _spDirty = true;
   if (_spPreviewMode) renderMarkdownPreview(this.value);
+});
+
+// ── Editor Key Handling ──
+document.getElementById('sp-editor-area').addEventListener('keydown', function(e) {
+  var ta = this;
+  var start = ta.selectionStart;
+  var end = ta.selectionEnd;
+  var val = ta.value;
+
+  // Tab → insert 2 spaces (or indent selection)
+  if (e.key === 'Tab' && !e.ctrlKey && !e.metaKey) {
+    e.preventDefault();
+    if (start === end) {
+      // No selection — insert spaces
+      ta.value = val.slice(0, start) + '  ' + val.slice(end);
+      ta.selectionStart = ta.selectionEnd = start + 2;
+    } else {
+      // Selection — indent/unindent lines
+      var before = val.slice(0, start);
+      var sel = val.slice(start, end);
+      var after = val.slice(end);
+      var lineStart = before.lastIndexOf('\n') + 1;
+      var block = val.slice(lineStart, end);
+      if (e.shiftKey) {
+        // Unindent
+        block = block.replace(/^  /gm, '');
+      } else {
+        block = block.replace(/^/gm, '  ');
+      }
+      ta.value = val.slice(0, lineStart) + block + after;
+      ta.selectionStart = lineStart;
+      ta.selectionEnd = lineStart + block.length;
+    }
+    _spDirty = true;
+    return;
+  }
+
+  // Enter → auto-indent (match previous line's leading whitespace)
+  if (e.key === 'Enter' && !e.shiftKey) {
+    var lineStart = val.lastIndexOf('\n', start - 1) + 1;
+    var currentLine = val.slice(lineStart, start);
+    var indent = currentLine.match(/^(\s*)/)[1];
+
+    // Extra indent after \begin{...}
+    if (/\\begin\{[^}]*\}\s*$/.test(currentLine)) {
+      indent += '  ';
+    }
+
+    e.preventDefault();
+    ta.value = val.slice(0, start) + '\n' + indent + val.slice(end);
+    ta.selectionStart = ta.selectionEnd = start + 1 + indent.length;
+    _spDirty = true;
+    return;
+  }
+
+  // Auto-close brackets and braces
+  var pairs = { '{': '}', '[': ']', '(': ')' };
+  if (pairs[e.key] && start === end) {
+    e.preventDefault();
+    ta.value = val.slice(0, start) + e.key + pairs[e.key] + val.slice(end);
+    ta.selectionStart = ta.selectionEnd = start + 1;
+    _spDirty = true;
+    return;
+  }
+
+  // Ctrl+S / Cmd+S → save
+  if (e.key === 's' && (e.ctrlKey || e.metaKey)) {
+    e.preventDefault();
+    saveCurrentFile();
+    return;
+  }
 });
 
 // Right-click on empty area in file list

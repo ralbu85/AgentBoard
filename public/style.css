@@ -756,8 +756,47 @@ header h1 {
   padding: 10px;
   resize: none;
   outline: none;
-  line-height: 1.5;
+  line-height: 1.6;
+  tab-size: 2;
+  -moz-tab-size: 2;
+  white-space: pre;
+  overflow-x: auto;
+  overflow-y: auto;
 }
+
+/* CodeMirror overrides */
+#sp-editor .CodeMirror {
+  flex: 1;
+  height: auto;
+  background: #0d1117;
+  font-family: "Cascadia Code", monospace;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+#sp-editor .CodeMirror-gutters {
+  background: #161b22;
+  border-right: 1px solid #21262d;
+}
+
+#sp-editor .CodeMirror-linenumber {
+  color: #484f58;
+}
+
+#sp-editor .CodeMirror-cursor {
+  border-left-color: #e6edf3;
+}
+
+#sp-editor .CodeMirror-selected {
+  background: #264f78 !important;
+}
+
+#sp-editor .cm-s-material-darker .cm-keyword { color: #c084fc; }
+#sp-editor .cm-s-material-darker .cm-tag { color: #c084fc; }
+#sp-editor .cm-s-material-darker .cm-string { color: #3fb950; }
+#sp-editor .cm-s-material-darker .cm-comment { color: #6e7681; }
+#sp-editor .cm-s-material-darker .cm-number { color: #fbbf24; }
+#sp-editor .cm-s-material-darker .cm-bracket { color: #e6edf3; }
 
 #sp-editor-preview {
   flex: 1;
