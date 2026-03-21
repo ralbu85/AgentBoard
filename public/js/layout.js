@@ -13,7 +13,11 @@ function setLayout(mode) {
   document.getElementById('layout-overview-btn').classList.toggle('layout-active', mode === 'overview');
   document.getElementById('layout-tab-btn').classList.toggle('layout-active', mode === 'tab');
   document.getElementById('layout-split-btn').classList.toggle('layout-active', mode === 'split');
-  if (mode === 'overview') renderOverview();
+  if (mode === 'overview') {
+    renderOverview();
+    // No active tab in overview — all sessions use 100-line capture
+    if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'active', id: null }));
+  }
   updateSplitGrid();
 }
 

@@ -1,76 +1,169 @@
 // ── WebSocket & API Communication ──
 
-// Snapshot throttle & diff — prevents main-thread stalls on long sessions
-var _snapshotPending = {};   // id → lines (latest pending)
-var _snapshotTimer = {};     // id → requestAnimationFrame id
-var _snapshotCache = {};     // id → last rendered lines array
+var _snapshotPending = {};
+var _snapshotTimer = {};
+var _snapshotCache = {};
 
-function scheduleSnapshot(id, lines) {
-  _snapshotPending[id] = lines;
-  if (_snapshotTimer[id]) return; // already scheduled
+var DOM_LIMIT = 300;  // max lines in DOM — full data stays in _snapshotCache
+var LOAD_BATCH = 200; // lines to prepend when scrolling up
+var _domOffset = {};  // id -> index into _snapshotCache where DOM starts
+
+function scheduleSnapshot(id, msg) {
+  _snapshotPending[id] = msg;
+  if (_snapshotTimer[id]) return;
   _snapshotTimer[id] = requestAnimationFrame(function() {
     _snapshotTimer[id] = null;
     var pending = _snapshotPending[id];
     if (!pending) return;
     _snapshotPending[id] = null;
-    applySnapshot(id, pending);
+    if (pending.lines) {
+      applyFullSnapshot(id, pending.lines);
+    } else {
+      applyTailSnapshot(id, pending.tail, pending.offset, pending.total);
+    }
   });
 }
 
-function applySnapshot(id, lines) {
-  // Trim trailing empty lines
+function _trimEmpty(lines) {
   while (lines.length > 0 && lines[lines.length - 1].replace(/\x1b\[[0-9;]*m/g, '').trim() === '') lines.pop();
-  var prev = _snapshotCache[id];
+  return lines;
+}
+
+function _bindScroll(id, box) {
+  if (!box._scrollBound) {
+    box._scrollBound = true;
+    box.addEventListener('scroll', function() { _onLogsScroll(id, box); });
+  }
+}
+
+function _refreshOV() {
+  if (layout === 'overview' && !_ovRefreshTimer) {
+    _ovRefreshTimer = setTimeout(function() { _ovRefreshTimer = null; renderOverview(); }, 2000);
+  }
+}
+
+// Full rebuild — used for first load, tab switch, capture size change
+function _renderFull(id, allLines) {
+  var start = Math.max(0, allLines.length - DOM_LIMIT);
+  _domOffset[id] = start;
+  var renderLines = allLines.slice(start);
+
   document.querySelectorAll('#logs-' + id).forEach(function(box) {
+    _bindScroll(id, box);
+    var frag = document.createDocumentFragment();
+    for (var i = 0; i < renderLines.length; i++) {
+      var el = document.createElement('div');
+      el.className = 'log-line stdout';
+      el.innerHTML = ansiToHtml(renderLines[i]);
+      frag.appendChild(el);
+    }
+    box.replaceChildren(frag);
+    box.scrollTop = box.scrollHeight;
+  });
+  _refreshOV();
+}
+
+// Incremental update — used for tail diffs (only changed region touched)
+function _renderTail(id, allLines, changeOffset) {
+  var start = Math.max(0, allLines.length - DOM_LIMIT);
+  _domOffset[id] = start;
+  var renderLines = allLines.slice(start);
+
+  document.querySelectorAll('#logs-' + id).forEach(function(box) {
+    _bindScroll(id, box);
     var wasAtBottom = isNearBottom(box);
     var children = box.children;
+    var existingCount = children.length;
+    var diff = renderLines.length - existingCount;
 
-    if (!prev || Math.abs(lines.length - prev.length) > 50) {
-      // Full rebuild only on first load or big jump — atomic swap to avoid flicker
-      var frag = document.createDocumentFragment();
-      for (var i = 0; i < lines.length; i++) {
+    if (existingCount > 0 && diff >= 0 && diff <= 50) {
+      // Append new lines at the end
+      for (var i = 0; i < diff; i++) {
         var el = document.createElement('div');
         el.className = 'log-line stdout';
-        el.innerHTML = ansiToHtml(lines[i]);
+        el.innerHTML = ansiToHtml(renderLines[existingCount + i]);
+        box.appendChild(el);
+      }
+      // Update existing lines in the changed region only
+      var domChangeStart = Math.max(0, changeOffset - start);
+      for (var i = domChangeStart; i < existingCount; i++) {
+        var newHtml = ansiToHtml(renderLines[i]);
+        if (children[i].innerHTML !== newHtml) {
+          children[i].innerHTML = newHtml;
+        }
+      }
+      // Trim from top if over limit
+      while (children.length > DOM_LIMIT) {
+        box.removeChild(box.firstChild);
+        _domOffset[id]++;
+      }
+      if (wasAtBottom) box.scrollTop = box.scrollHeight;
+    } else {
+      // Fallback to full rebuild
+      var frag = document.createDocumentFragment();
+      for (var i = 0; i < renderLines.length; i++) {
+        var el = document.createElement('div');
+        el.className = 'log-line stdout';
+        el.innerHTML = ansiToHtml(renderLines[i]);
         frag.appendChild(el);
       }
       box.replaceChildren(frag);
-    } else {
-      // Diff: update only changed lines
-      // Adjust length
-      while (children.length > lines.length) {
-        box.removeChild(box.lastChild);
-      }
-      // Update existing lines that changed
-      for (var i = 0; i < children.length; i++) {
-        if (!prev || i >= prev.length || lines[i] !== prev[i]) {
-          children[i].innerHTML = ansiToHtml(lines[i]);
-        }
-      }
-      // Append new lines
-      if (lines.length > children.length) {
-        var frag = document.createDocumentFragment();
-        for (var i = children.length; i < lines.length; i++) {
-          var el = document.createElement('div');
-          el.className = 'log-line stdout';
-          el.innerHTML = ansiToHtml(lines[i]);
-          frag.appendChild(el);
-        }
-        box.appendChild(frag);
-      }
+      box.scrollTop = box.scrollHeight;
     }
-    if (wasAtBottom) box.scrollTop = box.scrollHeight;
   });
-  _snapshotCache[id] = lines;
-  // Throttled overview refresh on snapshot
-  if (layout === 'overview') {
-    if (!_ovRefreshTimer) {
-      _ovRefreshTimer = setTimeout(function() {
-        _ovRefreshTimer = null;
-        renderOverview();
-      }, 2000);
-    }
+  _refreshOV();
+}
+
+function _onLogsScroll(id, box) {
+  // When scrolled near top, prepend older lines from cache
+  if (box.scrollTop > 50) return;
+  var offset = _domOffset[id] || 0;
+  if (offset <= 0) return;
+
+  var cache = _snapshotCache[id];
+  if (!cache) return;
+
+  var loadFrom = Math.max(0, offset - LOAD_BATCH);
+  var batch = cache.slice(loadFrom, offset);
+  if (batch.length === 0) return;
+
+  _domOffset[id] = loadFrom;
+
+  // Remember scroll position to maintain it after prepend
+  var oldHeight = box.scrollHeight;
+
+  var frag = document.createDocumentFragment();
+  for (var i = 0; i < batch.length; i++) {
+    var el = document.createElement('div');
+    el.className = 'log-line stdout';
+    el.innerHTML = ansiToHtml(batch[i]);
+    frag.appendChild(el);
   }
+  box.insertBefore(frag, box.firstChild);
+
+  // Restore scroll position
+  box.scrollTop = box.scrollHeight - oldHeight + box.scrollTop;
+}
+
+function applyFullSnapshot(id, lines) {
+  _trimEmpty(lines);
+  _snapshotCache[id] = lines;
+  _renderFull(id, lines);  // Always full rebuild
+}
+
+function applyTailSnapshot(id, tail, offset, total) {
+  var cache = _snapshotCache[id] || [];
+  // If offset doesn't match cache (capture size changed), treat as full
+  if (offset > cache.length) {
+    _snapshotCache[id] = tail;
+    _renderFull(id, tail);
+    return;
+  }
+  var updated = cache.slice(0, offset).concat(tail);
+  _trimEmpty(updated);
+  if (updated.length > total) updated = updated.slice(updated.length - total);
+  _snapshotCache[id] = updated;
+  _renderTail(id, updated, offset);  // Incremental, knows exactly what changed
 }
 
 var _ovRefreshTimer = null;
@@ -83,6 +176,10 @@ function initWS() {
   ws.onopen = () => {
     document.getElementById('status-dot').classList.remove('off');
     sendResize();
+    // Inform server which tab is active on (re)connect
+    if (activeTab) {
+      ws.send(JSON.stringify({ type: 'active', id: activeTab }));
+    }
   };
   ws.onclose = () => {
     document.getElementById('status-dot').classList.add('off');
@@ -99,7 +196,7 @@ function handleMsg(d) {
   if (d.type === 'aiState') updateAIState(d.id, d.state);
   if (d.type === 'info') updateInfo(d.id, d.process, d.createdAt, d.memKB);
   if (d.type === 'snapshot') {
-    scheduleSnapshot(d.id, d.lines);
+    scheduleSnapshot(d.id, d);
   }
 }
 

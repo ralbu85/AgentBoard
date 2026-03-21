@@ -184,26 +184,102 @@ function isPDF(name) {
   return name.toLowerCase().endsWith('.pdf');
 }
 
+var _pdfDoc = null;
+var _pdfPage = 1;
+
 function openPDF(filePath) {
   var url = '/api/file-raw?path=' + encodeURIComponent(filePath);
-  // Hide everything first
   destroyCodeMirror();
+  var editor = document.getElementById('sp-editor');
+  editor.classList.add('pdf-mode');
   document.getElementById('sp-editor-name').textContent = filePath.split('/').pop();
   document.getElementById('sp-editor-name').title = filePath;
-  document.getElementById('sp-editor-area').style.display = 'none';
-  document.getElementById('sp-editor-preview').style.display = 'none';
-  // Remove old iframe if any
-  var old = document.getElementById('sp-pdf-frame');
+
+  // Remove old viewer
+  var old = document.getElementById('sp-pdf-viewer');
   if (old) old.remove();
-  var iframe = document.createElement('iframe');
-  iframe.id = 'sp-pdf-frame';
-  iframe.src = url;
-  iframe.style.cssText = 'flex:1;border:none;background:#0d1117;';
-  document.getElementById('sp-editor').appendChild(iframe);
+
+  // Create viewer
+  var viewer = document.createElement('div');
+  viewer.id = 'sp-pdf-viewer';
+  viewer.innerHTML =
+    '<div id="sp-pdf-nav">' +
+      '<button id="sp-pdf-prev" class="sp-btn">← Prev</button>' +
+      '<span id="sp-pdf-info">Loading...</span>' +
+      '<button id="sp-pdf-next" class="sp-btn">Next →</button>' +
+    '</div>' +
+    '<div id="sp-pdf-canvas-wrap"><canvas id="sp-pdf-canvas"></canvas></div>';
+  editor.appendChild(viewer);
+
   _spCurrentFile = null;
   _spPreviewMode = false;
   showEditorBackBtn();
   switchSPTab('editor');
+
+  // Load PDF
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  pdfjsLib.getDocument(url).promise.then(function(pdf) {
+    _pdfDoc = pdf;
+    _pdfPage = 1;
+    var info = document.getElementById('sp-pdf-info');
+    info.textContent = pdf.numPages + ' pages';
+    document.getElementById('sp-pdf-prev').onclick = function() { gotoPdfPage(_pdfPage - 1); };
+    document.getElementById('sp-pdf-next').onclick = function() { gotoPdfPage(_pdfPage + 1); };
+    renderAllPages();
+  }).catch(function() {
+    document.getElementById('sp-pdf-info').textContent = 'Failed to load PDF';
+  });
+}
+
+function gotoPdfPage(num) {
+  if (!_pdfDoc || num < 1 || num > _pdfDoc.numPages) return;
+  _pdfPage = num;
+  var el = document.getElementById('sp-pdf-page-' + num);
+  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  document.getElementById('sp-pdf-info').textContent = _pdfPage + ' / ' + _pdfDoc.numPages;
+}
+
+function renderAllPages() {
+  if (!_pdfDoc) return;
+  var wrap = document.getElementById('sp-pdf-canvas-wrap');
+  if (!wrap) return;
+  wrap.innerHTML = '';
+  var containerWidth = wrap.clientWidth || 350;
+  var dpr = window.devicePixelRatio || 1;
+
+  for (var p = 1; p <= _pdfDoc.numPages; p++) {
+    (function(pageNum) {
+      var canvas = document.createElement('canvas');
+      canvas.id = 'sp-pdf-page-' + pageNum;
+      canvas.className = 'sp-pdf-page';
+      wrap.appendChild(canvas);
+
+      _pdfDoc.getPage(pageNum).then(function(page) {
+        var ctx = canvas.getContext('2d');
+        var baseViewport = page.getViewport({ scale: 1 });
+        var scale = containerWidth / baseViewport.width;
+        var viewport = page.getViewport({ scale: scale * dpr });
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        canvas.style.width = (viewport.width / dpr) + 'px';
+        canvas.style.height = (viewport.height / dpr) + 'px';
+        page.render({ canvasContext: ctx, viewport: viewport });
+      });
+    })(p);
+  }
+
+  // Update page number on scroll
+  wrap.onscroll = function() {
+    var pages = wrap.querySelectorAll('.sp-pdf-page');
+    var wrapTop = wrap.scrollTop + wrap.clientHeight / 3;
+    for (var i = pages.length - 1; i >= 0; i--) {
+      if (pages[i].offsetTop <= wrapTop) {
+        _pdfPage = i + 1;
+        document.getElementById('sp-pdf-info').textContent = _pdfPage + ' / ' + _pdfDoc.numPages;
+        break;
+      }
+    }
+  };
 }
 
 function isEditableFile(name) {
@@ -340,13 +416,15 @@ function resetEditor() {
   _spDirty = false;
   _spPreviewMode = false;
   destroyCodeMirror();
+  document.getElementById('sp-editor').classList.remove('pdf-mode');
   document.getElementById('sp-editor-name').textContent = 'No file open';
   document.getElementById('sp-editor-area').value = '';
   document.getElementById('sp-editor-area').style.display = 'block';
   document.getElementById('sp-editor-preview').style.display = 'none';
   document.getElementById('sp-editor-preview').innerHTML = '';
-  var oldPdf = document.getElementById('sp-pdf-frame');
+  var oldPdf = document.getElementById('sp-pdf-viewer');
   if (oldPdf) oldPdf.remove();
+  _pdfDoc = null;
   var backBtn = document.querySelector('.sp-back-btn');
   if (backBtn) backBtn.remove();
   document.getElementById('sp-preview-btn').classList.remove('active');
@@ -365,8 +443,10 @@ function showEditorBackBtn() {
 function openFileInEditor(filePath) {
   if (_spDirty && !confirm('Unsaved changes will be lost. Continue?')) return;
   // Clean up PDF iframe if present
-  var oldPdf = document.getElementById('sp-pdf-frame');
+  var oldPdf = document.getElementById('sp-pdf-viewer');
   if (oldPdf) oldPdf.remove();
+  _pdfDoc = null;
+  document.getElementById('sp-editor').classList.remove('pdf-mode');
   apiGet('/api/file?path=' + encodeURIComponent(filePath))
     .then(function(data) {
       _spCurrentFile = data.path;
@@ -777,8 +857,12 @@ document.querySelectorAll('.sp-tab').forEach(function(btn) {
 });
 
 document.querySelector('.sp-close').addEventListener('click', toggleSidePanel);
+document.getElementById('sp-files-refresh').addEventListener('click', function() { loadSPFiles(_spBrowsePath); });
 
 document.getElementById('sp-save-btn').addEventListener('click', saveCurrentFile);
+document.getElementById('sp-refresh-btn').addEventListener('click', function() {
+  if (_spCurrentFile) openFileInEditor(_spCurrentFile);
+});
 
 document.getElementById('sp-preview-btn').addEventListener('click', function() {
   setPreviewMode(!_spPreviewMode);

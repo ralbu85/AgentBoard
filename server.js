@@ -6,7 +6,7 @@ const crypto = require("crypto");
 const { WebSocketServer } = require("ws");
 
 const { tmux, tmuxAsyncRaw } = require("./server/tmux");
-const { workers, setBroadcast, spawnWorker, killWorker, sendInput, pollOutput, pollAll, recoverSessions, lastCapture } = require("./server/workers");
+const { workers, setBroadcast, setActiveSession, spawnWorker, killWorker, sendInput, pollOutput, pollAll, recoverSessions, lastCapture } = require("./server/workers");
 const { setupRoutes } = require("./server/routes");
 const tunnel = require("./server/tunnel");
 
@@ -80,6 +80,7 @@ wss.on('connection', ws => {
       }
 
       if (msg.type === 'active') {
+        setActiveSession(msg.id || null);
         const size = clientSizes.get(ws);
         if (msg.id) {
           const w = workers.get(msg.id);

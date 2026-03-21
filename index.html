@@ -25,6 +25,7 @@
 <script src="https://cdn.jsdelivr.net/npm/codemirror@5/addon/edit/closebrackets.min.js"></script>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
 <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <link rel="stylesheet" href="/style.css?v=28">
 </head>
 <body>
@@ -85,12 +86,16 @@
           <button class="sp-close">&times;</button>
         </div>
         <div id="sp-files" class="sp-content">
-          <div id="sp-files-path" class="sp-path"></div>
+          <div id="sp-files-header" style="display:flex;align-items:center">
+            <div id="sp-files-path" class="sp-path" style="flex:1"></div>
+            <button id="sp-files-refresh" class="sp-btn" style="margin:0 6px" title="Refresh">↻</button>
+          </div>
           <div id="sp-files-list" class="sp-list"></div>
         </div>
         <div id="sp-editor" class="sp-content" style="display:none">
           <div id="sp-editor-bar">
             <span id="sp-editor-name">No file open</span>
+            <button id="sp-refresh-btn" class="sp-btn" title="Reload file">↻</button>
             <button id="sp-preview-btn" class="sp-btn">Preview</button>
             <button id="sp-save-btn" class="sp-btn">Save</button>
           </div>

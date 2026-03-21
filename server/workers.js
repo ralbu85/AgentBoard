@@ -5,6 +5,7 @@ const workers = new Map();
 let nextId = 1;
 let lastCapture = {};
 let broadcastFn = () => {};
+let activeSessionId = null;
 
 const IDLE_THRESHOLD = 5000;
 const POLL_FAST = 500;
@@ -15,6 +16,7 @@ function setBroadcast(fn) { broadcastFn = fn; }
 function getWorkers() { return workers; }
 function getNextId() { return nextId; }
 function setNextId(n) { nextId = n; }
+function setActiveSession(id) { activeSessionId = id; }
 
 function stripAnsi(str) {
   return str.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '');
@@ -36,6 +38,7 @@ function spawnWorker(cwd, cmd) {
   const id = String(nextId++);
   const sessionName = "term-" + id;
   tmux(`new-session -d -s ${sessionName} -c "${cwd}"`);
+  try { tmux(`set-option -t ${sessionName} history-limit 10000`); } catch (e) {}
   if (cmd) {
     tmux(`send-keys -t ${sessionName} ${JSON.stringify(cmd)} Enter`);
   }
@@ -83,10 +86,12 @@ async function pollOutput(id) {
 
   const cols = w.cols || 80;
   const rows = w.rows || 50;
+  // Active tab: 2000 lines, background: 500 lines
+  const captureStart = (id === activeSessionId) ? "-2000" : "-500";
 
   const [, output, currentCwd] = await Promise.all([
     tmuxAsyncRaw(["resize-window", "-t", w.sessionName, "-x", String(cols), "-y", String(rows)]),
-    tmuxAsyncRaw(["capture-pane", "-t", w.sessionName, "-p", "-e", "-S", "-100", "-J"]),
+    tmuxAsyncRaw(["capture-pane", "-t", w.sessionName, "-p", "-e", "-S", captureStart, "-J"]),
     tmuxAsyncRaw(["display-message", "-t", w.sessionName, "-p", "#{pane_current_path}|#{pane_current_command}|#{session_created}|#{pane_pid}"]),
   ]);
 
@@ -135,12 +140,25 @@ async function pollOutput(id) {
     return;
   }
 
+  const oldOutput = lastCapture[id] || "";
   lastCapture[id] = output;
   w.lastChangeTime = Date.now();
   const lines = output.split("\n");
   w.logs = lines.slice(-200).map(text => ({ src: "stdout", text, ts: Date.now() }));
 
-  broadcastFn({ type: "snapshot", id, lines });
+  // Diff: find common prefix, send only changed tail
+  const oldLines = oldOutput ? oldOutput.split("\n") : [];
+  let commonTop = 0;
+  const minLen = Math.min(oldLines.length, lines.length);
+  while (commonTop < minLen && oldLines[commonTop] === lines[commonTop]) commonTop++;
+
+  if (commonTop > 0 && oldLines.length > 0) {
+    // Partial: only send changed lines from commonTop
+    broadcastFn({ type: "snapshot", id, tail: lines.slice(commonTop), offset: commonTop, total: lines.length });
+  } else {
+    // Full snapshot (first load or big change)
+    broadcastFn({ type: "snapshot", id, lines });
+  }
 
   const waiting = detectWaiting(output);
   const aiState = waiting ? 'waiting' : 'working';
@@ -183,6 +201,7 @@ function recoverSessions() {
     const numId = parseInt(id);
     if (isNaN(numId)) continue;
     if (workers.has(id)) continue;
+    try { tmux(`set-option -t ${sessionName} history-limit 10000`); } catch (e) {}
     workers.set(id, { sessionName, cwd, cmd, logs: [], cols: 80, rows: 24 });
     if (numId >= nextId) nextId = numId + 1;
   }
@@ -193,6 +212,6 @@ function recoverSessions() {
 
 module.exports = {
   workers, getWorkers, getNextId, setNextId,
-  setBroadcast, spawnWorker, killWorker, sendInput,
+  setBroadcast, setActiveSession, spawnWorker, killWorker, sendInput,
   pollOutput, pollAll, recoverSessions, lastCapture
 };
