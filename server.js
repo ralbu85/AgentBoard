@@ -91,6 +91,13 @@ wss.on('connection', ws => {
         }
       }
 
+      if (msg.type === 'resync') {
+        if (msg.id && lastCapture[msg.id]) {
+          const lines = lastCapture[msg.id].split("\n");
+          ws.send(JSON.stringify({ type: "snapshot", id: msg.id, lines }));
+        }
+      }
+
       if (msg.type === 'key') {
         const w = workers.get(msg.id);
         if (w) {

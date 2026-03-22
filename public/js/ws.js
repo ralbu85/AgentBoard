@@ -50,6 +50,9 @@ function _renderFull(id, allLines) {
 
   document.querySelectorAll('#logs-' + id).forEach(function(box) {
     _bindScroll(id, box);
+    var wasAtBottom = isNearBottom(box);
+    var distFromBottom = box.scrollHeight - box.scrollTop;
+
     var frag = document.createDocumentFragment();
     for (var i = 0; i < renderLines.length; i++) {
       var el = document.createElement('div');
@@ -58,7 +61,13 @@ function _renderFull(id, allLines) {
       frag.appendChild(el);
     }
     box.replaceChildren(frag);
-    box.scrollTop = box.scrollHeight;
+
+    if (wasAtBottom || !box.scrollTop) {
+      box.scrollTop = box.scrollHeight;
+    } else {
+      // Preserve scroll position relative to bottom
+      box.scrollTop = box.scrollHeight - distFromBottom;
+    }
   });
   _refreshOV();
 }
@@ -100,6 +109,7 @@ function _renderTail(id, allLines, changeOffset) {
       if (wasAtBottom) box.scrollTop = box.scrollHeight;
     } else {
       // Fallback to full rebuild
+      var distFromBottom = box.scrollHeight - box.scrollTop;
       var frag = document.createDocumentFragment();
       for (var i = 0; i < renderLines.length; i++) {
         var el = document.createElement('div');
@@ -108,7 +118,11 @@ function _renderTail(id, allLines, changeOffset) {
         frag.appendChild(el);
       }
       box.replaceChildren(frag);
-      box.scrollTop = box.scrollHeight;
+      if (wasAtBottom) {
+        box.scrollTop = box.scrollHeight;
+      } else {
+        box.scrollTop = box.scrollHeight - distFromBottom;
+      }
     }
   });
   _refreshOV();
@@ -147,17 +161,25 @@ function _onLogsScroll(id, box) {
 
 function applyFullSnapshot(id, lines) {
   _trimEmpty(lines);
+  var existing = _snapshotCache[id];
+  // If we already have more lines and the tail matches, skip — just a capture window reduction
+  if (existing && existing.length > lines.length && lines.length > 0) {
+    var lastNew = lines[lines.length - 1];
+    var lastOld = existing[existing.length - 1];
+    if (lastNew === lastOld) return;  // Same content, smaller window — keep existing cache
+  }
   _snapshotCache[id] = lines;
-  _renderFull(id, lines);  // Always full rebuild
+  _renderFull(id, lines);
 }
 
 function applyTailSnapshot(id, tail, offset, total) {
   var cache = _snapshotCache[id] || [];
-  // If offset doesn't match cache (capture size changed), treat as full
+  // If offset doesn't match cache, request full resync from server
   if (offset > cache.length) {
-    _snapshotCache[id] = tail;
-    _renderFull(id, tail);
-    return;
+    if (ws && ws.readyState === 1) {
+      ws.send(JSON.stringify({ type: 'resync', id: id }));
+    }
+    return;  // Skip render, wait for full snapshot
   }
   var updated = cache.slice(0, offset).concat(tail);
   _trimEmpty(updated);

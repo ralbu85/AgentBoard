@@ -4,6 +4,7 @@ const { isAlive, tmux, tmuxAsyncRaw } = require("./tmux");
 const workers = new Map();
 let nextId = 1;
 let lastCapture = {};
+let lastCaptureMode = {};  // track capture size per session
 let broadcastFn = () => {};
 let activeSessionId = null;
 
@@ -141,23 +142,28 @@ async function pollOutput(id) {
   }
 
   const oldOutput = lastCapture[id] || "";
+  const modeChanged = lastCaptureMode[id] !== captureStart;
   lastCapture[id] = output;
+  lastCaptureMode[id] = captureStart;
   w.lastChangeTime = Date.now();
   const lines = output.split("\n");
   w.logs = lines.slice(-200).map(text => ({ src: "stdout", text, ts: Date.now() }));
 
-  // Diff: find common prefix, send only changed tail
-  const oldLines = oldOutput ? oldOutput.split("\n") : [];
-  let commonTop = 0;
-  const minLen = Math.min(oldLines.length, lines.length);
-  while (commonTop < minLen && oldLines[commonTop] === lines[commonTop]) commonTop++;
-
-  if (commonTop > 0 && oldLines.length > 0) {
-    // Partial: only send changed lines from commonTop
-    broadcastFn({ type: "snapshot", id, tail: lines.slice(commonTop), offset: commonTop, total: lines.length });
-  } else {
-    // Full snapshot (first load or big change)
+  // Force full snapshot when capture window changed
+  if (modeChanged) {
     broadcastFn({ type: "snapshot", id, lines });
+  } else {
+    // Diff: find common prefix, send only changed tail
+    const oldLines = oldOutput ? oldOutput.split("\n") : [];
+    let commonTop = 0;
+    const minLen = Math.min(oldLines.length, lines.length);
+    while (commonTop < minLen && oldLines[commonTop] === lines[commonTop]) commonTop++;
+
+    if (commonTop > 0 && oldLines.length > 0) {
+      broadcastFn({ type: "snapshot", id, tail: lines.slice(commonTop), offset: commonTop, total: lines.length });
+    } else {
+      broadcastFn({ type: "snapshot", id, lines });
+    }
   }
 
   const waiting = detectWaiting(output);
