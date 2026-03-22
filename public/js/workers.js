@@ -4,6 +4,7 @@ var _notifyEnabled = localStorage.getItem('notifyEnabled') !== 'false';
 var _titleBlinkTimer = null;
 var _prevStatuses = {};
 var _prevAIStates = {};
+var _cardElements = {}; // id -> card DOM element
 
 function playBeep(type) {
   try {
@@ -64,10 +65,10 @@ function startTitleBlink(msg) {
 }
 
 function flashTab(id) {
-  var tab = document.querySelector('.tab[data-id="' + id + '"]');
-  if (!tab) return;
-  tab.classList.add('tab-flash');
-  setTimeout(function() { tab.classList.remove('tab-flash'); }, 3000);
+  var item = document.querySelector('.session-item[data-id="' + id + '"]');
+  if (!item) return;
+  item.classList.add('session-flash');
+  setTimeout(function() { item.classList.remove('session-flash'); }, 3000);
 }
 
 function notifyUser(title, body, type, id) {
@@ -84,7 +85,7 @@ function notifyUser(title, body, type, id) {
 
 function shouldNotify(id) {
   if (document.hidden) return true;
-  // In tab mode, notify if the changed session is not the active tab
+  // Notify if the changed session is not the active tab
   if (id && activeTab && String(activeTab) !== String(id)) return true;
   return false;
 }
@@ -109,24 +110,26 @@ function getTitleBase(id, cmd) {
 function trimTitle(text) {
   const max = 24;
   if (text.length <= max) return text;
-  return text.slice(0, max - 1) + '…';
+  return text.slice(0, max - 1) + '\u2026';
 }
 
 function renderTitle(id, cwd, cmd) {
-  const tab = document.querySelector('.tab[data-id="' + id + '"]');
-  const tabCwd = cwd || (tab && tab.dataset.cwd) || '';
-  const tabCmd = cmd || (tab && tab.dataset.cmd) || 'claude';
-  const folder = tabCwd.replace(/\/$/, '').split('/').pop() || tabCwd;
-  let text = '';
+  var item = document.querySelector('.session-item[data-id="' + id + '"]');
+  var tabCwd = cwd || (item && item.dataset.cwd) || '';
+  var tabCmd = cmd || (item && item.dataset.cmd) || 'claude';
+  var folder = tabCwd.replace(/\/$/, '').split('/').pop() || tabCwd;
+  var text = '';
   if (customTitles[id]) {
     text = '#' + id + ' ' + customTitles[id];
   } else {
-    text = '#' + id + ' ' + tabCmd + ' · ' + folder;
+    text = '#' + id + ' ' + tabCmd + ' \u00b7 ' + folder;
   }
-  ['tab-label-' + id, 'card-title-' + id].forEach(function(elId) {
-    document.querySelectorAll('#' + elId).forEach(function(el) {
-      el.textContent = text;
-    });
+  // Update session title in sidebar
+  var titleEl = item ? item.querySelector('.session-title') : null;
+  if (titleEl) titleEl.textContent = text;
+  // Update card title
+  document.querySelectorAll('#card-title-' + id).forEach(function(el) {
+    el.textContent = text;
   });
 }
 
@@ -140,15 +143,16 @@ function killBtnHtml(id, status) {
 function ensureCard(id, cwd, status, logs, cmd) {
   // Seed prev state so future changes trigger notifications
   if (!_prevStatuses[id]) _prevStatuses[id] = status;
-  if (document.getElementById('card-' + id)) return;
+  if (_cardElements[id]) return;
 
   const cmdLabel = cmd || 'claude';
   const card = document.createElement('div');
   card.className = 'card';
   card.id = 'card-' + id;
+  card.style.display = 'none'; // hidden by default until selected
   card.innerHTML =
     '<div class="card-header">' +
-      '<span class="card-title" id="card-title-' + id + '">#' + id + ' ' + cmdLabel + ' · ' + (cwd.replace(/\/$/, '').split('/').pop() || cwd) + '</span>' +
+      '<span class="card-title" id="card-title-' + id + '">#' + id + ' ' + cmdLabel + ' \u00b7 ' + (cwd.replace(/\/$/, '').split('/').pop() || cwd) + '</span>' +
       '<span class="badge' + (status === 'stopped' ? ' stopped' : '') + (status === 'completed' ? ' completed' : '') + '" id="badge-' + id + '">' + status + '</span>' +
       killBtnHtml(id, status) +
       '<button class="search-btn" onclick="toggleSearch(\'' + id + '\')">&#128269;</button>' +
@@ -160,69 +164,84 @@ function ensureCard(id, cwd, status, logs, cmd) {
       '<textarea id="inp-' + id + '" placeholder="Enter command..." rows="1"></textarea>' +
       '<div class="quick-keys">' +
         '<button class="qk-btn" id="key-esc-' + id + '">Esc</button>' +
-        '<button class="qk-btn" id="key-up-' + id + '">↑</button>' +
-        '<button class="qk-btn" id="key-down-' + id + '">↓</button>' +
-        '<button class="qk-btn" id="key-enter-' + id + '">↵</button>' +
+        '<button class="qk-btn" id="key-up-' + id + '">\u2191</button>' +
+        '<button class="qk-btn" id="key-down-' + id + '">\u2193</button>' +
+        '<button class="qk-btn" id="key-enter-' + id + '">\u21b5</button>' +
         '<button class="qk-btn" id="key-tab-' + id + '">Tab</button>' +
-        '<button class="qk-btn" id="key-ctrlc-' + id + '">⌃C</button>' +
+        '<button class="qk-btn" id="key-ctrlc-' + id + '">\u2303C</button>' +
       '</div>' +
       '<button class="send-btn" id="send-' + id + '">Send</button>' +
     '</div>';
 
-  const panel = document.createElement('div');
-  panel.className = 'tab-panel';
-  panel.dataset.id = id;
-  panel.appendChild(card.cloneNode(true));
-  document.getElementById('tab-content').appendChild(panel);
+  // Store card element
+  _cardElements[id] = card;
 
-  const splitCard = card;
-  document.getElementById('split-content').appendChild(splitCard);
-  bindSplitDrag(splitCard);
-  updateSplitGrid();
-
-  const tab = document.createElement('div');
-  tab.className = 'tab';
-  tab.dataset.id = id;
-  tab.dataset.cwd = cwd;
-  tab.dataset.cmd = cmdLabel;
-  var folder = cwd.replace(/\/$/, '').split('/').pop() || cwd;
-  tab.innerHTML = '<span class="tab-dot' + (status === 'stopped' ? ' stopped' : '') + (status === 'completed' ? ' completed' : '') + '" id="tab-dot-' + id + '"></span><span class="tab-label" id="tab-label-' + id + '">#' + id + ' ' + (cmd || 'claude') + ' · ' + folder + '</span>';
-  tab.addEventListener('click', () => selectTab(id));
-  tab.addEventListener('dblclick', e => {
-    e.stopPropagation();
-    const current = customTitles[id] || cmdLabel;
-    const next = prompt('Tab title', current);
-    if (next === null) return;
-    const trimmed = next.trim();
-    if (!trimmed) {
-      delete customTitles[id];
-    } else {
-      customTitles[id] = trimTitle(trimmed);
+  // Place card in terminal panel body (via panel system)
+  if (typeof ensureTerminalPanel === 'function') {
+    var termPanel = ensureTerminalPanel();
+    if (termPanel && termPanel.body) {
+      termPanel.body.appendChild(card);
     }
-    saveCustomTitles();
-    renderTitle(id);
-  });
-  bindTabDrag(tab);
-  document.getElementById('tab-bar').appendChild(tab);
+  } else {
+    // Fallback: place in panel-container directly
+    var container = document.getElementById('panel-container');
+    if (container) container.appendChild(card);
+  }
 
-  selectTab(id);
+  // Create session item in sidebar
+  var sessionList = document.getElementById('session-list');
+  if (sessionList) {
+    var item = document.createElement('div');
+    item.className = 'session-item';
+    item.dataset.id = String(id);
+    item.dataset.cwd = cwd;
+    item.dataset.cmd = cmdLabel;
+    var folder = cwd.replace(/\/$/, '').split('/').pop() || cwd;
+    var state = getEffectiveState(id);
+    item.innerHTML =
+      '<span class="session-dot ' + state + '"></span>' +
+      '<div class="session-info">' +
+        '<span class="session-title">#' + id + ' ' + cmdLabel + ' \u00b7 ' + folder + '</span>' +
+        '<span class="session-cwd">' + displayPath(cwd) + '</span>' +
+      '</div>' +
+      '<span class="session-badge ' + state + '">' + state + '</span>';
+    item.addEventListener('click', function() { selectSession(id); });
+    item.addEventListener('dblclick', function(e) {
+      e.stopPropagation();
+      var current = customTitles[id] || cmdLabel;
+      var next = prompt('Session title', current);
+      if (next === null) return;
+      var trimmed = next.trim();
+      if (!trimmed) {
+        delete customTitles[id];
+      } else {
+        customTitles[id] = trimTitle(trimmed);
+      }
+      saveCustomTitles();
+      renderTitle(id);
+    });
+    sessionList.appendChild(item);
+  }
 
-  bindCard(id, panel);
-  bindCard(id, splitCard);
+  // Auto-select if first session or no active tab
+  if (!activeTab || Object.keys(_cardElements).length === 1) {
+    selectSession(id);
+  }
+
+  bindCard(id, card);
 
   if (status === 'stopped') {
-    document.querySelectorAll('#kill-' + id).forEach(btn => {
-      btn.onclick = () => removeWorker(id);
-    });
-    document.querySelectorAll('#input-row-' + id).forEach(el => el.style.display = 'none');
+    var killBtn = card.querySelector('#kill-' + id);
+    if (killBtn) killBtn.onclick = function() { removeWorker(id); };
+    var inputRow = card.querySelector('#input-row-' + id);
+    if (inputRow) inputRow.style.display = 'none';
   }
 
   renderTitle(id, cwd, cmdLabel);
-  if (logs) logs.forEach(l => appendLog(id, l.src, l.text));
+  // Skip initial logs — snapshot will arrive via WebSocket immediately
   setTimeout(sendResize, 100);
   updateCardBorder(id);
   updateSummaryBar();
-  if (layout === 'overview') renderOverview();
 }
 
 function bindCard(id, root) {
@@ -240,22 +259,22 @@ function bindCard(id, root) {
         e.preventDefault();
         if (inp.value.trim()) { sendInput(id); } else { sendSpecialKey(id, 'Enter'); }
       }
-      // Ctrl+Enter → send Enter to tmux
+      // Ctrl+Enter -> send Enter to tmux
       if (e.key === 'Enter' && e.ctrlKey) {
         e.preventDefault();
         sendSpecialKey(id, 'Enter');
       }
-      // Escape → send Escape to tmux
+      // Escape -> send Escape to tmux
       if (e.key === 'Escape') {
         e.preventDefault();
         sendSpecialKey(id, 'Escape');
       }
-      // Ctrl+[ → send Escape to tmux (alternative)
+      // Ctrl+[ -> send Escape to tmux (alternative)
       if (e.key === '[' && e.ctrlKey) {
         e.preventDefault();
         sendSpecialKey(id, 'Escape');
       }
-      // Ctrl+↑/↓ → send Up/Down to tmux
+      // Ctrl+Up/Down -> send Up/Down to tmux
       if (e.key === 'ArrowUp' && e.ctrlKey) {
         e.preventDefault();
         sendSpecialKey(id, 'Up');
@@ -350,16 +369,15 @@ function appendLog(id, src, text) {
 
 function markPrompt(line, text) {
   const trimmed = text.trim();
-  if (!/^[❯>›]/.test(trimmed)) { line.textContent = text; return; }
+  if (!/^[\u276f>\u203a]/.test(trimmed)) { line.textContent = text; return; }
   const idx = text.indexOf(trimmed[0]);
-  const before = text.slice(0, idx);
   const symbol = trimmed[0];
   const after = text.slice(idx + symbol.length);
   const mark = document.createElement('span');
   mark.className = 'prompt-mark';
   mark.textContent = symbol;
   line.textContent = '';
-  if (before) line.appendChild(document.createTextNode(before));
+  if (idx > 0) line.appendChild(document.createTextNode(text.slice(0, idx)));
   line.appendChild(mark);
   line.appendChild(document.createTextNode(after));
 }
@@ -368,17 +386,23 @@ function updateStatus(id, status) {
   var prev = _prevStatuses[id];
   _prevStatuses[id] = status;
   if (shouldNotify(id) && prev && prev !== status) {
-    if (status === 'completed') notifyUser('#' + id + ' 세션 완료', 'Session completed', 'done', id);
-    else if (status === 'stopped') notifyUser('#' + id + ' 세션 중지', 'Session stopped', 'done', id);
+    if (status === 'completed') notifyUser('#' + id + ' \uc138\uc158 \uc644\ub8cc', 'Session completed', 'done', id);
+    else if (status === 'stopped') notifyUser('#' + id + ' \uc138\uc158 \uc911\uc9c0', 'Session stopped', 'done', id);
   }
   var isStopped = status === 'stopped' || status === 'completed';
   document.querySelectorAll('#badge-' + id).forEach(el => {
     el.textContent = status;
     el.className = 'badge' + (status === 'stopped' ? ' stopped' : '') + (status === 'completed' ? ' completed' : '');
   });
-  document.querySelectorAll('#tab-dot-' + id).forEach(el => {
-    el.className = 'tab-dot' + (status === 'stopped' ? ' stopped' : '') + (status === 'completed' ? ' completed' : '');
-  });
+  // Update session dot in sidebar
+  var sessionItem = document.querySelector('.session-item[data-id="' + id + '"]');
+  if (sessionItem) {
+    var dot = sessionItem.querySelector('.session-dot');
+    if (dot) {
+      var state = getEffectiveState(id);
+      dot.className = 'session-dot ' + state;
+    }
+  }
   if (isStopped) {
     document.querySelectorAll('#kill-' + id).forEach(btn => {
       btn.textContent = 'Remove';
@@ -412,37 +436,42 @@ function updateStatus(id, status) {
   }
   updateCardBorder(id);
   updateSummaryBar();
-  if (layout === 'overview') renderOverview();
+  renderSidebar();
 }
 
 function updateCardBorder(id) {
-  document.querySelectorAll('#card-' + id + ', .tab-panel[data-id="' + id + '"] .card').forEach(function(card) {
-    card.classList.remove('status-completed', 'status-stopped', 'status-waiting', 'status-idle', 'status-running');
-    var s = _prevStatuses[id];
-    var ai = _prevAIStates[id];
-    if (s === 'completed') card.classList.add('status-completed');
-    else if (s === 'stopped') card.classList.add('status-stopped');
-    else if (ai === 'waiting') card.classList.add('status-waiting');
-    else if (ai === 'idle') card.classList.add('status-idle');
-    else card.classList.add('status-running');
-  });
+  var card = _cardElements[id];
+  if (!card) return;
+  card.classList.remove('status-completed', 'status-stopped', 'status-waiting', 'status-idle', 'status-running');
+  var s = _prevStatuses[id];
+  var ai = _prevAIStates[id];
+  if (s === 'completed') card.classList.add('status-completed');
+  else if (s === 'stopped') card.classList.add('status-stopped');
+  else if (ai === 'waiting') card.classList.add('status-waiting');
+  else if (ai === 'idle') card.classList.add('status-idle');
+  else card.classList.add('status-running');
 }
 
 function updateAIState(id, state) {
   var prev = _prevAIStates[id];
   _prevAIStates[id] = state;
   if (shouldNotify(id) && prev && prev !== state && state === 'waiting') {
-    notifyUser('#' + id + ' 입력 대기', 'Waiting for input', 'waiting', id);
+    notifyUser('#' + id + ' \uc785\ub825 \ub300\uae30', 'Waiting for input', 'waiting', id);
   }
   // Skip if worker is stopped/completed
   var badge = document.querySelector('#badge-' + id);
   if (badge && (badge.classList.contains('stopped') || badge.classList.contains('completed'))) return;
 
-  document.querySelectorAll('#tab-dot-' + id).forEach(function(el) {
-    el.classList.remove('ai-idle', 'ai-waiting');
-    if (state === 'idle') el.classList.add('ai-idle');
-    else if (state === 'waiting') el.classList.add('ai-waiting');
-  });
+  // Update session dot in sidebar
+  var sessionItem = document.querySelector('.session-item[data-id="' + id + '"]');
+  if (sessionItem) {
+    var dot = sessionItem.querySelector('.session-dot');
+    if (dot) {
+      dot.classList.remove('ai-idle', 'ai-waiting');
+      if (state === 'idle') dot.classList.add('ai-idle');
+      else if (state === 'waiting') dot.classList.add('ai-waiting');
+    }
+  }
 
   document.querySelectorAll('#badge-' + id).forEach(function(el) {
     el.classList.remove('ai-idle', 'ai-waiting');
@@ -458,41 +487,46 @@ function updateAIState(id, state) {
   });
   updateCardBorder(id);
   updateSummaryBar();
-  if (layout === 'overview') renderOverview();
+  renderSidebar();
 }
 
 function removeWorker(id) {
   apiPost('/api/remove', { id });
 
-  const panel = document.querySelector('.tab-panel[data-id="' + id + '"]');
-  if (panel) panel.remove();
-  const tab = document.querySelector('.tab[data-id="' + id + '"]');
-  if (tab) {
-    const wasActive = tab.classList.contains('active');
-    tab.remove();
+  // Remove session item from sidebar
+  var item = document.querySelector('.session-item[data-id="' + id + '"]');
+  if (item) {
+    var wasActive = item.classList.contains('active');
+    item.remove();
     if (wasActive) {
-      const first = document.querySelector('.tab');
-      if (first) selectTab(first.dataset.id);
+      var first = document.querySelector('.session-item');
+      if (first) selectSession(first.dataset.id);
       else activeTab = null;
     }
   }
-  const card = document.getElementById('card-' + id);
+
+  // Remove card
+  var card = _cardElements[id];
   if (card) card.remove();
-  updateSplitGrid();
+  delete _cardElements[id];
+
   updateSummaryBar();
-  if (layout === 'overview') renderOverview();
 }
 
 function updateCwd(id, cwd) {
-  document.querySelectorAll('#card-' + id + ' .card-cwd').forEach(el => {
-    el.textContent = displayPath(cwd);
-  });
-  // Also update card inside tab-panel
-  document.querySelectorAll('.tab-panel[data-id="' + id + '"] .card-cwd').forEach(el => {
-    el.textContent = displayPath(cwd);
-  });
-  const tab = document.querySelector('.tab[data-id="' + id + '"]');
-  if (tab) tab.dataset.cwd = cwd;
+  // Update card cwd
+  var card = _cardElements[id];
+  if (card) {
+    var cwdEl = card.querySelector('.card-cwd');
+    if (cwdEl) cwdEl.textContent = displayPath(cwd);
+  }
+  // Update session item data
+  var item = document.querySelector('.session-item[data-id="' + id + '"]');
+  if (item) {
+    item.dataset.cwd = cwd;
+    var cwdSpan = item.querySelector('.session-cwd');
+    if (cwdSpan) cwdSpan.textContent = displayPath(cwd);
+  }
   renderTitle(id, cwd);
 }
 
@@ -635,12 +669,12 @@ function triggerAutocomplete(inp, id) {
     return;
   }
 
-  // Check for @ — navigate into subdirs like @src/components/
+  // Check for @ -- navigate into subdirs like @src/components/
   var atMatch = before.match(/(^|\s)(@\S*)$/);
   if (atMatch) {
     var raw = atMatch[2].slice(1); // remove @
-    var tab = document.querySelector('.tab[data-id="' + id + '"]');
-    var cwd = tab ? tab.dataset.cwd : '';
+    var item = document.querySelector('.session-item[data-id="' + id + '"]');
+    var cwd = item ? item.dataset.cwd : '';
     if (!cwd) { hideAutocomplete(); return; }
 
     // Split into dir path + partial filename
@@ -691,7 +725,7 @@ function bindAutocomplete(inp, id) {
 function uploadFile(id, file) {
   var name = file.name || ('paste-' + Date.now() + '.png');
   var size = file.size;
-  var logMsg = '📎 Uploading: ' + name + ' (' + formatUploadSize(size) + ')...';
+  var logMsg = '\ud83d\udcce Uploading: ' + name + ' (' + formatUploadSize(size) + ')...';
   appendLog(id, 'stdin', logMsg);
 
   return new Promise(function(resolve, reject) {
@@ -747,7 +781,7 @@ function handleFileDrop(id, e) {
   var files = e.dataTransfer ? e.dataTransfer.files : [];
   for (var i = 0; i < files.length; i++) {
     uploadFile(id, files[i]).then(function(d) {
-      if (d.ok) appendLog(id, 'stdin', '📎 Uploaded: ' + d.name + ' → ' + d.path);
+      if (d.ok) appendLog(id, 'stdin', '\ud83d\udcce Uploaded: ' + d.name + ' \u2192 ' + d.path);
     });
   }
 }
@@ -763,7 +797,7 @@ function handlePaste(id, e) {
       var ext = file.type.split('/')[1] || 'png';
       var named = new File([file], 'screenshot-' + Date.now() + '.' + ext, { type: file.type });
       uploadFile(id, named).then(function(d) {
-        if (d.ok) appendLog(id, 'stdin', '📎 Screenshot saved: ' + d.name + ' → ' + d.path);
+        if (d.ok) appendLog(id, 'stdin', '\ud83d\udcce Screenshot saved: ' + d.name + ' \u2192 ' + d.path);
       });
       return;
     }
@@ -775,22 +809,23 @@ function handlePaste(id, e) {
 var _searchOpen = {};
 
 function toggleSearch(id) {
-  var rows = document.querySelectorAll('.tab-panel[data-id="' + id + '"] .search-row, #card-' + id + ' .search-row');
-  if (!rows.length) return;
-  var open = rows[0].style.display !== 'none';
-  rows.forEach(function(row) {
-    row.style.display = open ? 'none' : 'flex';
-    if (!open) {
-      var inp = row.querySelector('.search-inp');
-      if (inp) inp.focus();
-    }
-  });
+  var card = _cardElements[id];
+  if (!card) return;
+  var row = card.querySelector('.search-row');
+  if (!row) return;
+  var open = row.style.display !== 'none';
+  row.style.display = open ? 'none' : 'flex';
+  if (!open) {
+    var inp = row.querySelector('.search-inp');
+    if (inp) inp.focus();
+  }
   if (open) clearSearch(id);
 }
 
 function doSearch(id) {
-  var row = document.querySelector('.tab-panel[data-id="' + id + '"] .search-row') ||
-            document.querySelector('#card-' + id + ' .search-row');
+  var card = _cardElements[id];
+  if (!card) return;
+  var row = card.querySelector('.search-row');
   if (!row) return;
   var term = row.querySelector('.search-inp').value.trim().toLowerCase();
   if (!term) { clearSearch(id); return; }
@@ -867,7 +902,7 @@ function spawnSession() {
     .catch(() => { alert('Failed to create worker.'); });
 }
 
-var _workerInfo = {}; // id → { process, createdAt, memKB }
+var _workerInfo = {}; // id -> { process, createdAt, memKB }
 
 function formatUptime(seconds) {
   if (seconds < 60) return '<1m';
@@ -894,14 +929,13 @@ function updateInfo(id, process, createdAt, memKB) {
   var uptime = info.createdAt ? formatUptime(now - info.createdAt) : '';
   var mem = formatMem(info.memKB);
   var parts = [process || '', uptime, mem].filter(Boolean);
-  var text = parts.length ? ' · ' + parts.join(' · ') : '';
-  // Update in both tab-panel and split-content cards
-  document.querySelectorAll('#card-' + id + ' .card-info').forEach(function(el) {
-    el.textContent = text;
-  });
-  document.querySelectorAll('.tab-panel[data-id="' + id + '"] .card-info').forEach(function(el) {
-    el.textContent = text;
-  });
+  var text = parts.length ? ' \u00b7 ' + parts.join(' \u00b7 ') : '';
+  // Update card info
+  var card = _cardElements[id];
+  if (card) {
+    var infoEl = card.querySelector('.card-info');
+    if (infoEl) infoEl.textContent = text;
+  }
 }
 
 function refreshUptimes() {
@@ -915,14 +949,14 @@ setInterval(refreshUptimes, 60000);
 
 function scanSessions() {
   const btn = document.getElementById('scan-btn');
-  btn.textContent = '⏳';
+  btn.textContent = '\u23f3';
   apiGet('/api/scan')
     .then(found => {
-      btn.textContent = '🔍';
+      btn.textContent = '\ud83d\udd0d';
       if (!found.length) { alert('No new tmux sessions found.'); return; }
-      const names = found.map(f => '• ' + f.sessionName + ' (' + displayPath(f.cwd) + ')').join('\n');
+      const names = found.map(f => '\u2022 ' + f.sessionName + ' (' + displayPath(f.cwd) + ')').join('\n');
       if (!confirm('Add these sessions to dashboard?\n\n' + names)) return;
       found.forEach(f => apiPost('/api/attach', { sessionName: f.sessionName, cwd: f.cwd }));
     })
-    .catch(() => { btn.textContent = '🔍'; });
+    .catch(() => { btn.textContent = '\ud83d\udd0d'; });
 }

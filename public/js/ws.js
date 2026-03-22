@@ -37,9 +37,7 @@ function _bindScroll(id, box) {
 }
 
 function _refreshOV() {
-  if (layout === 'overview' && !_ovRefreshTimer) {
-    _ovRefreshTimer = setTimeout(function() { _ovRefreshTimer = null; renderOverview(); }, 2000);
-  }
+  // No-op: overview mode removed in sidebar layout redesign
 }
 
 // Full rebuild — used for first load, tab switch, capture size change
@@ -251,20 +249,10 @@ function _doResize() {
   if (!ch.w || !ch.h) return;
 
   // Send per-session resize based on each visible .logs width
-  document.querySelectorAll('.tab').forEach(function(t) {
+  document.querySelectorAll('.session-item').forEach(function(t) {
     var id = t.dataset.id;
-    var box = null;
-
-    // In split mode, use the split-content card's .logs
-    if (layout === 'split') {
-      var card = document.querySelector('#split-content #card-' + id);
-      if (card) box = card.querySelector('.logs');
-    }
-    // In tab mode, use the active panel's .logs
-    if (!box) {
-      var panel = document.querySelector('.tab-panel[data-id="' + id + '"]');
-      if (panel) box = panel.querySelector('.logs');
-    }
+    var card = _cardElements ? _cardElements[id] : null;
+    var box = card ? card.querySelector('.logs') : null;
 
     var w = box && box.clientWidth > 0 ? box.clientWidth : refBox.clientWidth;
     var h = box && box.clientHeight > 0 ? box.clientHeight : refBox.clientHeight;

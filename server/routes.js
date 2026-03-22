@@ -184,7 +184,7 @@ function setupRoutes(server, { auth, broadcast, PASSWORD, AUTH_TOKEN, loadConfig
       const params = new URLSearchParams(req.url.split("?")[1] || "");
       const filePath = path.resolve(params.get("path") || "");
       const ext = path.extname(filePath).toLowerCase();
-      const mimeMap = { ".pdf": "application/pdf", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif" };
+      const mimeMap = { ".pdf": "application/pdf", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif", ".svg": "image/svg+xml", ".webp": "image/webp", ".bmp": "image/bmp", ".ico": "image/x-icon" };
       try {
         const st = fs.statSync(filePath);
         res.writeHead(200, { "Content-Type": mimeMap[ext] || "application/octet-stream", "Content-Length": st.size });

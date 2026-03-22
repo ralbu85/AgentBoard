@@ -1,87 +1,682 @@
-// ── Layout & Tab Management ──
+// ── Layout & Sidebar Management ──
 
-let layout = localStorage.getItem('layout') || 'overview';
 let activeTab = null;
+let sidebarWidth = parseInt(localStorage.getItem('sidebarWidth')) || 220;
 
-function setLayout(mode) {
-  layout = mode;
-  localStorage.setItem('layout', mode);
-  document.getElementById('overview-mode').style.display = mode === 'overview' ? '' : 'none';
-  document.getElementById('tab-mode').style.display = mode === 'tab' ? 'flex' : 'none';
-  document.getElementById('split-mode').style.display = mode === 'split' ? 'block' : 'none';
-  document.getElementById('split-content').style.display = mode === 'split' ? 'grid' : 'none';
-  document.getElementById('layout-overview-btn').classList.toggle('layout-active', mode === 'overview');
-  document.getElementById('layout-tab-btn').classList.toggle('layout-active', mode === 'tab');
-  document.getElementById('layout-split-btn').classList.toggle('layout-active', mode === 'split');
-  if (mode === 'overview') {
-    renderOverview();
-    // No active tab in overview — all sessions use 100-line capture
-    if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'active', id: null }));
-  }
-  updateSplitGrid();
+// ── Sidebar Collapsible Sections ──
+
+function initSidebarSections() {
+  document.querySelectorAll('.sidebar-section-header').forEach(function(header) {
+    header.addEventListener('click', function() {
+      var section = header.parentElement;
+      section.classList.toggle('collapsed');
+      var name = header.dataset.section;
+      var collapsed = section.classList.contains('collapsed');
+      localStorage.setItem('sidebar-' + name, collapsed ? 'collapsed' : 'expanded');
+    });
+    // Restore saved state
+    var name = header.dataset.section;
+    var saved = localStorage.getItem('sidebar-' + name);
+    if (saved === 'collapsed') {
+      header.parentElement.classList.add('collapsed');
+    }
+  });
 }
 
-function updateSplitGrid() {
-  const sc = document.getElementById('split-content');
-  const cards = sc.querySelectorAll('.card');
-  const n = cards.length;
-  if (n === 0) return;
+// ── Panel System ──
 
-  let cols, rows;
-  if (n <= 3) {
-    cols = n; rows = 1;
+var _panels = [];       // [{id, type, sessionId, filePath, fileName, fileType, el}]
+var _panelCounter = 0;
+var _terminalPanelId = null; // the panel that holds the terminal card
+var MAX_PANELS = 4;
+var _sessionPanels = {};  // sessionId -> [{filePath, fileName, fileType}] saved viewer panels per session
+
+function getTerminalPanel() {
+  return _panels.find(function(p) { return p.id === _terminalPanelId; });
+}
+
+function ensureTerminalPanel() {
+  // Create or return the terminal panel
+  if (_terminalPanelId) {
+    var existing = _panels.find(function(p) { return p.id === _terminalPanelId; });
+    if (existing) return existing;
+  }
+  var panel = createPanel('terminal', {});
+  _terminalPanelId = panel.id;
+  return panel;
+}
+
+function createPanel(type, data) {
+  if (_panels.length >= MAX_PANELS) return null;
+
+  _panelCounter++;
+  var panelId = 'panel-' + _panelCounter;
+  var container = document.getElementById('panel-container');
+
+  // Add resize handle if not first panel
+  if (_panels.length > 0) {
+    var handle = document.createElement('div');
+    handle.className = 'panel-resize';
+    handle.id = 'resize-' + panelId;
+    container.appendChild(handle);
+  }
+
+  // Create panel element
+  var el = document.createElement('div');
+  el.className = 'panel';
+  el.id = panelId;
+  el.dataset.panelType = type;
+
+  // Header
+  var header = document.createElement('div');
+  header.className = 'panel-header';
+
+  var title = document.createElement('span');
+  title.className = 'panel-title';
+
+  if (type === 'terminal') {
+    title.textContent = 'Terminal';
   } else {
-    cols = Math.ceil(n / 2); rows = 2;
+    title.textContent = (data && data.fileName) || 'Viewer';
   }
 
-  sc.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
-  sc.style.gridTemplateRows = `repeat(${rows}, 1fr)`;
+  header.appendChild(title);
+
+  // Close button (not for terminal panel if it's the only one)
+  if (type !== 'terminal') {
+    var closeBtn = document.createElement('button');
+    closeBtn.className = 'panel-close';
+    closeBtn.innerHTML = '&times;';
+    closeBtn.title = 'Close panel';
+    (function(pid) {
+      closeBtn.onclick = function() { closePanel(pid); };
+    })(panelId);
+    header.appendChild(closeBtn);
+  }
+
+  el.appendChild(header);
+
+  // Body
+  var body = document.createElement('div');
+  body.className = 'panel-body';
+  el.appendChild(body);
+
+  container.appendChild(el);
+
+  var panelObj = {
+    id: panelId,
+    type: type,
+    sessionId: data ? data.sessionId : null,
+    filePath: data ? data.filePath : null,
+    fileName: data ? data.fileName : null,
+    fileType: data ? data.fileType : null,
+    el: el,
+    body: body,
+    titleEl: title
+  };
+
+  _panels.push(panelObj);
+
+  // Bind resize handles
+  if (_panels.length > 1) {
+    var handle = document.getElementById('resize-' + panelId);
+    var leftPanel = _panels[_panels.length - 2];
+    bindPanelResize(handle, leftPanel.el, el);
+  }
+
+  return panelObj;
 }
 
-function selectTab(id) {
+function closePanel(panelId) {
+  // Don't close the terminal panel
+  if (panelId === _terminalPanelId) return;
+
+  var idx = _panels.findIndex(function(p) { return p.id === panelId; });
+  if (idx === -1) return;
+
+  var panel = _panels[idx];
+  var filePath = panel.filePath;
+
+  // Remove from array first
+  _panels.splice(idx, 1);
+
+  // Rebuild DOM: nuke container, re-add remaining panels with fresh handles
+  var container = document.getElementById('panel-container');
+  while (container.firstChild) container.removeChild(container.firstChild);
+
+  _panels.forEach(function(p, i) {
+    if (i > 0) {
+      var handle = document.createElement('div');
+      handle.className = 'panel-resize';
+      handle.id = 'resize-' + p.id;
+      container.appendChild(handle);
+    }
+    p.el.style.flex = '1';
+    p.el.style.flexBasis = '';
+    container.appendChild(p.el);
+  });
+
+  // Rebind resize handles
+  for (var i = 1; i < _panels.length; i++) {
+    var h = document.getElementById('resize-' + _panels[i].id);
+    if (h) bindPanelResize(h, _panels[i - 1].el, _panels[i].el);
+  }
+
+  // Update session panel state
+  if (activeTab && _sessionPanels[activeTab] && filePath) {
+    _sessionPanels[activeTab] = _sessionPanels[activeTab].filter(function(s) {
+      return s.filePath !== filePath;
+    });
+  }
+
+  if (typeof sendResize === 'function') sendResize();
+}
+
+function openFileInPanel(filePath, fileName) {
+  if (!filePath || !fileName) return;
+
+  // Determine file type
+  var ext = fileName.split('.').pop().toLowerCase();
+  var fileType = 'code';
+  if (ext === 'pdf') fileType = 'pdf';
+  else if (['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'bmp', 'ico'].indexOf(ext) !== -1) fileType = 'image';
+  else if (ext === 'md') fileType = 'markdown';
+
+  // Check if this file is already open in a panel
+  var existing = _panels.find(function(p) {
+    return p.type === 'viewer' && p.filePath === filePath;
+  });
+  if (existing) {
+    // Already open — just focus it visually
+    existing.el.classList.add('panel-focus');
+    setTimeout(function() { existing.el.classList.remove('panel-focus'); }, 500);
+    return;
+  }
+
+  // Check max panels
+  if (_panels.length >= MAX_PANELS) {
+    alert('Maximum ' + MAX_PANELS + ' panels. Close one first.');
+    return;
+  }
+
+  var panel = createPanel('viewer', {
+    filePath: filePath,
+    fileName: fileName,
+    fileType: fileType
+  });
+
+  if (!panel) return;
+
+  var body = panel.body;
+
+  if (fileType === 'pdf') {
+    loadPDFInPanel(body, filePath);
+  } else if (fileType === 'image') {
+    loadImageInPanel(body, filePath);
+  } else if (fileType === 'markdown') {
+    loadCodeInPanel(body, filePath, fileName, ext, true);
+  } else {
+    loadCodeInPanel(body, filePath, fileName, ext, false);
+  }
+}
+
+function loadPDFInPanel(body, filePath) {
+  var url = '/api/file-raw?path=' + encodeURIComponent(filePath);
+  body.classList.add('viewer-content');
+
+  var viewer = document.createElement('div');
+  viewer.className = 'panel-pdf-viewer';
+  viewer.innerHTML =
+    '<div class="panel-pdf-nav">' +
+      '<button class="sp-btn panel-pdf-prev">Prev</button>' +
+      '<span class="panel-pdf-info">Loading...</span>' +
+      '<button class="sp-btn panel-pdf-next">Next</button>' +
+    '</div>' +
+    '<div class="panel-pdf-canvas-wrap"></div>';
+  body.appendChild(viewer);
+
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  pdfjsLib.getDocument(url).promise.then(function(pdf) {
+    var currentPage = 1;
+    var info = viewer.querySelector('.panel-pdf-info');
+    info.textContent = pdf.numPages + ' pages';
+
+    var wrap = viewer.querySelector('.panel-pdf-canvas-wrap');
+
+    // Render all pages
+    var containerWidth = wrap.clientWidth || 500;
+    var dpr = window.devicePixelRatio || 1;
+
+    for (var p = 1; p <= pdf.numPages; p++) {
+      (function(pageNum) {
+        var canvas = document.createElement('canvas');
+        canvas.className = 'sp-pdf-page';
+        canvas.id = 'panel-pdf-page-' + pageNum + '-' + Date.now();
+        wrap.appendChild(canvas);
+
+        pdf.getPage(pageNum).then(function(page) {
+          var ctx = canvas.getContext('2d');
+          var baseViewport = page.getViewport({ scale: 1 });
+          var scale = containerWidth / baseViewport.width;
+          var viewport = page.getViewport({ scale: scale * dpr });
+          canvas.width = viewport.width;
+          canvas.height = viewport.height;
+          canvas.style.width = (viewport.width / dpr) + 'px';
+          canvas.style.height = (viewport.height / dpr) + 'px';
+          page.render({ canvasContext: ctx, viewport: viewport });
+        });
+      })(p);
+    }
+
+    // Navigation
+    viewer.querySelector('.panel-pdf-prev').onclick = function() {
+      if (currentPage > 1) {
+        currentPage--;
+        var el = wrap.querySelectorAll('.sp-pdf-page')[currentPage - 1];
+        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        info.textContent = currentPage + ' / ' + pdf.numPages;
+      }
+    };
+    viewer.querySelector('.panel-pdf-next').onclick = function() {
+      if (currentPage < pdf.numPages) {
+        currentPage++;
+        var el = wrap.querySelectorAll('.sp-pdf-page')[currentPage - 1];
+        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        info.textContent = currentPage + ' / ' + pdf.numPages;
+      }
+    };
+
+    // Track current page on scroll
+    wrap.onscroll = function() {
+      var pages = wrap.querySelectorAll('.sp-pdf-page');
+      var wrapTop = wrap.scrollTop + wrap.clientHeight / 3;
+      for (var i = pages.length - 1; i >= 0; i--) {
+        if (pages[i].offsetTop <= wrapTop) {
+          currentPage = i + 1;
+          info.textContent = currentPage + ' / ' + pdf.numPages;
+          break;
+        }
+      }
+    };
+  }).catch(function() {
+    viewer.querySelector('.panel-pdf-info').textContent = 'Failed to load PDF';
+  });
+}
+
+function loadImageInPanel(body, filePath) {
+  body.classList.add('viewer-content');
+  var img = document.createElement('img');
+  img.src = '/api/file-raw?path=' + encodeURIComponent(filePath);
+  img.style.maxWidth = '100%';
+  img.style.height = 'auto';
+  img.style.display = 'block';
+  img.style.margin = '10px auto';
+  body.appendChild(img);
+}
+
+function loadCodeInPanel(body, filePath, fileName, ext, isMarkdown) {
+  body.classList.add('viewer-content');
+  body.style.position = 'relative';
+
+  // Toolbar
+  var toolbar = document.createElement('div');
+  toolbar.className = 'panel-editor-bar';
+
+  var nameSpan = document.createElement('span');
+  nameSpan.className = 'panel-editor-name';
+  nameSpan.textContent = fileName;
+  nameSpan.title = filePath;
+  toolbar.appendChild(nameSpan);
+
+  if (isMarkdown) {
+    var previewBtn = document.createElement('button');
+    previewBtn.className = 'sp-btn';
+    previewBtn.textContent = 'Preview';
+    toolbar.appendChild(previewBtn);
+  }
+
+  var saveBtn = document.createElement('button');
+  saveBtn.className = 'sp-btn';
+  saveBtn.textContent = 'Save';
+  toolbar.appendChild(saveBtn);
+
+  body.appendChild(toolbar);
+
+  // Editor area
+  var editorWrap = document.createElement('div');
+  editorWrap.className = 'panel-editor-wrap';
+  body.appendChild(editorWrap);
+
+  // Preview area (for markdown)
+  var previewDiv = null;
+  if (isMarkdown) {
+    previewDiv = document.createElement('div');
+    previewDiv.className = 'panel-editor-preview';
+    previewDiv.style.display = 'none';
+    body.appendChild(previewDiv);
+  }
+
+  // Load file content
+  apiGet('/api/file?path=' + encodeURIComponent(filePath))
+    .then(function(data) {
+      var cmModes = {
+        tex: 'stex', sty: 'stex', cls: 'stex', bib: 'stex',
+        js: 'javascript', jsx: 'javascript', ts: 'javascript', tsx: 'javascript',
+        py: 'python', css: 'css', html: 'htmlmixed', xml: 'xml',
+        md: 'markdown', yml: 'yaml', yaml: 'yaml',
+        sh: 'shell', bash: 'shell', zsh: 'shell',
+        sql: 'sql', json: { name: 'javascript', json: true }
+      };
+      var mode = cmModes[ext] || 'text';
+      var dirty = false;
+
+      if (typeof CodeMirror !== 'undefined') {
+        var cm = CodeMirror(editorWrap, {
+          value: data.content || '',
+          mode: mode,
+          theme: 'material-darker',
+          lineNumbers: true,
+          matchBrackets: true,
+          autoCloseBrackets: true,
+          indentUnit: 2,
+          tabSize: 2,
+          indentWithTabs: false,
+          lineWrapping: true,
+          extraKeys: {
+            'Ctrl-S': function() { doSave(); },
+            'Cmd-S': function() { doSave(); }
+          }
+        });
+        cm.on('change', function() { dirty = true; });
+        cm.getWrapperElement().style.flex = '1';
+        cm.getWrapperElement().style.overflow = 'hidden';
+        setTimeout(function() { cm.refresh(); }, 100);
+
+        // Save function
+        function doSave() {
+          var content = cm.getValue();
+          apiPost('/api/file', { path: filePath, content: content })
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+              if (d.ok) {
+                dirty = false;
+                nameSpan.style.color = '#3fb950';
+                setTimeout(function() { nameSpan.style.color = ''; }, 1500);
+              } else {
+                alert('Save failed: ' + (d.error || 'unknown'));
+              }
+            });
+        }
+
+        saveBtn.onclick = doSave;
+
+        // Markdown preview toggle
+        if (isMarkdown && previewBtn && previewDiv) {
+          var showingPreview = false;
+          previewBtn.onclick = function() {
+            showingPreview = !showingPreview;
+            previewBtn.classList.toggle('active', showingPreview);
+            if (showingPreview) {
+              cm.getWrapperElement().style.display = 'none';
+              previewDiv.style.display = 'block';
+              previewDiv.style.flex = '1';
+              previewDiv.style.overflow = 'auto';
+              if (typeof renderMarkdownPreview === 'function') {
+                var html;
+                if (typeof marked !== 'undefined') {
+                  html = marked.parse(cm.getValue());
+                } else {
+                  html = '<pre>' + cm.getValue() + '</pre>';
+                }
+                previewDiv.innerHTML = html;
+              }
+            } else {
+              cm.getWrapperElement().style.display = '';
+              previewDiv.style.display = 'none';
+              cm.refresh();
+            }
+          };
+        }
+      } else {
+        // Fallback textarea
+        var ta = document.createElement('textarea');
+        ta.className = 'panel-editor-textarea';
+        ta.value = data.content || '';
+        ta.addEventListener('input', function() { dirty = true; });
+        editorWrap.appendChild(ta);
+
+        saveBtn.onclick = function() {
+          apiPost('/api/file', { path: filePath, content: ta.value })
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+              if (d.ok) {
+                dirty = false;
+                nameSpan.style.color = '#3fb950';
+                setTimeout(function() { nameSpan.style.color = ''; }, 1500);
+              }
+            });
+        };
+      }
+    })
+    .catch(function() {
+      editorWrap.innerHTML = '<div style="padding:10px;color:#f87171">Cannot open file</div>';
+    });
+}
+
+// ── Panel Resize ──
+
+function bindPanelResize(handle, leftPanel, rightPanel) {
+  handle.addEventListener('mousedown', function(e) {
+    e.preventDefault();
+    handle.classList.add('dragging');
+
+    var container = document.getElementById('panel-container');
+    var containerRect = container.getBoundingClientRect();
+    var startX = e.clientX;
+    var leftStart = leftPanel.getBoundingClientRect().width;
+    var rightStart = rightPanel.getBoundingClientRect().width;
+    var totalWidth = leftStart + rightStart;
+
+    function onMove(e) {
+      var dx = e.clientX - startX;
+      var newLeft = leftStart + dx;
+      var newRight = rightStart - dx;
+
+      // Enforce minimums
+      if (newLeft < 200) { newLeft = 200; newRight = totalWidth - 200; }
+      if (newRight < 200) { newRight = 200; newLeft = totalWidth - 200; }
+
+      // Set as flex-basis percentages relative to container
+      var containerW = containerRect.width;
+      leftPanel.style.flex = '0 0 ' + newLeft + 'px';
+      rightPanel.style.flex = '0 0 ' + newRight + 'px';
+    }
+
+    function onUp() {
+      handle.classList.remove('dragging');
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+
+      // Refresh CodeMirror instances in both panels
+      [leftPanel, rightPanel].forEach(function(p) {
+        var cms = p.querySelectorAll('.CodeMirror');
+        cms.forEach(function(w) {
+          if (w.CodeMirror) w.CodeMirror.refresh();
+        });
+      });
+
+      if (typeof sendResize === 'function') sendResize();
+    }
+
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  });
+}
+
+// ── Session Sidebar ──
+
+function renderSidebar() {
+  var list = document.getElementById('session-list');
+  if (!list) return;
+
+  var items = list.querySelectorAll('.session-item');
+  var existingIds = {};
+  items.forEach(function(el) { existingIds[el.dataset.id] = el; });
+
+  // Get all session IDs from _prevStatuses (or _cardElements)
+  var ids = Object.keys(_cardElements || {});
+  if (ids.length === 0) {
+    // No sessions — leave list empty
+    return;
+  }
+
+  ids.forEach(function(id) {
+    var item = existingIds[id];
+    if (!item) return; // session-item created in ensureCard
+
+    var state = getEffectiveState(id);
+    var info = _workerInfo[id] || {};
+    var cwd = item.dataset.cwd || '';
+    var folder = cwd.replace(/\/$/, '').split('/').pop() || cwd;
+
+    // Update status dot
+    var dot = item.querySelector('.session-dot');
+    if (dot) {
+      dot.className = 'session-dot ' + state;
+    }
+
+    // Update state badge
+    var badge = item.querySelector('.session-badge');
+    if (badge) {
+      badge.className = 'session-badge ' + state;
+      badge.textContent = state;
+    }
+
+    // Update cwd
+    var cwdEl = item.querySelector('.session-cwd');
+    if (cwdEl) cwdEl.textContent = displayPath(cwd);
+
+    // Active class
+    item.classList.toggle('active', String(activeTab) === String(id));
+  });
+}
+
+function _saveSessionPanels() {
+  if (!activeTab) return;
+  var viewers = [];
+  _panels.forEach(function(p) {
+    if (p.type === 'viewer' && p.filePath) {
+      viewers.push({ filePath: p.filePath, fileName: p.fileName, fileType: p.fileType });
+    }
+  });
+  _sessionPanels[activeTab] = viewers;
+}
+
+function _clearViewerPanels() {
+  var container = document.getElementById('panel-container');
+  if (!container) return;
+
+  var termPanel = _panels.find(function(p) { return p.id === _terminalPanelId; });
+
+  // Nuke everything from container
+  while (container.firstChild) container.removeChild(container.firstChild);
+
+  // Re-add only the terminal panel
+  if (termPanel) {
+    container.appendChild(termPanel.el);
+    termPanel.el.style.flex = '1';
+    termPanel.el.style.flexBasis = '';
+    _panels = [termPanel];
+  } else {
+    _panels = [];
+  }
+}
+
+function _restoreSessionPanels(sessionId) {
+  var saved = _sessionPanels[sessionId];
+  if (!saved || saved.length === 0) return;
+  saved.forEach(function(s) {
+    openFileInPanel(s.filePath, s.fileName);
+  });
+}
+
+function selectSession(id) {
+  // Save current session's viewer panels
+  if (activeTab && activeTab !== id) {
+    _saveSessionPanels();
+    _clearViewerPanels();
+  }
+
   activeTab = id;
-  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.id === id));
-  document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.dataset.id === id));
+
+  // Update sidebar active state
+  document.querySelectorAll('.session-item').forEach(function(el) {
+    el.classList.toggle('active', el.dataset.id === String(id));
+  });
+
+  // Ensure terminal panel exists
+  var termPanel = ensureTerminalPanel();
+  var body = termPanel.body;
+
+  // Hide all cards in the terminal panel body
+  var cards = body.querySelectorAll('.card');
+  cards.forEach(function(c) { c.style.display = 'none'; });
+
+  // Show the selected card
+  var card = _cardElements[id];
+  if (card) {
+    if (card.parentElement !== body) {
+      body.appendChild(card);
+    }
+    card.style.display = 'flex';
+    card.classList.add('status-seen');
+  }
+
+  // Update terminal panel title
+  var sessionItem = document.querySelector('.session-item[data-id="' + id + '"]');
+  if (sessionItem && termPanel.titleEl) {
+    var titleText = sessionItem.querySelector('.session-title');
+    termPanel.titleEl.textContent = titleText ? titleText.textContent : 'Terminal #' + id;
+  }
+
   // Notify server to poll this session immediately
   if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'active', id: id }));
-  // Mark completed card as seen — stop pulsing
-  var card = document.querySelector('#card-' + id);
-  if (card) card.classList.add('status-seen');
-  var panelCard = document.querySelector('.tab-panel[data-id="' + id + '"] .card');
-  if (panelCard) panelCard.classList.add('status-seen');
 
-  // Refresh side panel for new tab
-  if (_spOpen && typeof refreshSPFiles === 'function') {
+  // Refresh explorer file browser for new tab
+  if (typeof refreshSPFiles === 'function') {
     _spBrowseInitialized[id] = false;
     refreshSPFiles();
-    // Reset editor
-    if (typeof resetEditor === 'function') resetEditor();
-    switchSPTab('files');
   }
 
-  // Scroll logs to bottom after tab becomes visible
+  // Restore viewer panels for this session
+  _restoreSessionPanels(id);
+
+  // Scroll logs to bottom after card becomes visible
   requestAnimationFrame(function() {
-    var panel = document.querySelector('.tab-panel[data-id="' + id + '"]');
-    if (panel) {
-      var box = panel.querySelector('.logs');
+    var card = _cardElements[id];
+    if (card) {
+      var box = card.querySelector('.logs');
       if (box) box.scrollTop = box.scrollHeight;
     }
   });
 }
 
+// Backward compat alias
+function selectTab(id) { selectSession(id); }
+
 function switchTab(delta) {
-  const tabs = Array.from(document.querySelectorAll('.tab'));
-  if (!tabs.length) return;
+  var items = Array.from(document.querySelectorAll('.session-item'));
+  if (!items.length) return;
   if (!activeTab) {
-    selectTab(tabs[0].dataset.id);
+    selectSession(items[0].dataset.id);
     return;
   }
-  const idx = tabs.findIndex(t => t.dataset.id === activeTab);
-  const next = idx === -1 ? 0 : (idx + delta + tabs.length) % tabs.length;
-  selectTab(tabs[next].dataset.id);
+  var idx = items.findIndex(function(el) { return el.dataset.id === String(activeTab); });
+  var next = idx === -1 ? 0 : (idx + delta + items.length) % items.length;
+  selectSession(items[next].dataset.id);
 }
 
-// ── Overview Mode ──
+// ── State helpers ──
 
 function getEffectiveState(id) {
   var status = _prevStatuses[id] || 'running';
@@ -92,90 +687,18 @@ function getEffectiveState(id) {
   return 'running';
 }
 
-function renderOverview() {
-  var container = document.getElementById('overview-content');
-  if (!container) return;
-
-  var tabs = Array.from(document.querySelectorAll('.tab'));
-  if (tabs.length === 0) {
-    container.innerHTML = '<div style="color:#484f58;text-align:center;padding:48px 0;font-size:14px">No sessions yet. Click <span style="color:#a78bfa;font-weight:600">+</span> to create one.</div>';
-    return;
-  }
-
-  container.innerHTML = '';
-  tabs.forEach(function(tab) {
-    var id = tab.dataset.id;
-    var state = getEffectiveState(id);
-    var title = tab.querySelector('.tab-label');
-    var titleText = title ? title.textContent : '#' + id;
-    var info = _workerInfo[id] || {};
-
-    var card = document.createElement('div');
-    card.className = 'ov-card' + (state === 'waiting' ? ' ov-waiting' : '') + (state === 'stopped' ? ' ov-stopped' : '');
-    card.onclick = function() { setLayout('tab'); selectTab(id); };
-
-    // Header
-    var header = document.createElement('div');
-    header.className = 'ov-header';
-    header.innerHTML =
-      '<span class="ov-dot ' + state + '"></span>' +
-      '<span class="ov-title">' + titleText + '</span>' +
-      '<span class="ov-badge ' + state + '">' + state + '</span>';
-    card.appendChild(header);
-
-    // CWD
-    var cwd = document.createElement('div');
-    cwd.className = 'ov-cwd';
-    cwd.textContent = displayPath(tab.dataset.cwd || '');
-    card.appendChild(cwd);
-
-    // Preview — last 3 lines from snapshot cache
-    var preview = document.createElement('div');
-    preview.className = 'ov-preview';
-    var cached = _snapshotCache[id];
-    if (cached && cached.length > 0) {
-      // Get last 3 non-empty lines
-      var lines = cached.filter(function(l) { return l.trim() !== ''; });
-      var last3 = lines.slice(-3);
-      last3.forEach(function(line) {
-        var el = document.createElement('div');
-        el.className = 'log-line';
-        el.innerHTML = ansiToHtml(line);
-        preview.appendChild(el);
-      });
-    } else {
-      preview.innerHTML = '<span style="color:#484f58">No output yet</span>';
-    }
-    card.appendChild(preview);
-
-    // Info bar
-    if (info.createdAt || info.process) {
-      var infoEl = document.createElement('div');
-      infoEl.className = 'ov-info';
-      var parts = [];
-      if (info.process) parts.push(info.process);
-      if (info.createdAt) parts.push(formatUptime(Math.floor(Date.now() / 1000) - info.createdAt));
-      if (info.memKB) parts.push(formatMem(info.memKB));
-      infoEl.textContent = parts.join(' · ');
-      card.appendChild(infoEl);
-    }
-
-    container.appendChild(card);
-  });
-}
-
 // ── Summary Bar ──
 
 function updateSummaryBar() {
   var bar = document.getElementById('summary-bar');
   if (!bar) return;
 
-  var tabs = Array.from(document.querySelectorAll('.tab'));
-  if (tabs.length === 0) { bar.innerHTML = ''; return; }
+  var ids = Object.keys(_cardElements || {});
+  if (ids.length === 0) { bar.innerHTML = ''; return; }
 
   var counts = { running: 0, waiting: 0, idle: 0, completed: 0, stopped: 0 };
-  tabs.forEach(function(tab) {
-    var state = getEffectiveState(tab.dataset.id);
+  ids.forEach(function(id) {
+    var state = getEffectiveState(id);
     counts[state] = (counts[state] || 0) + 1;
   });
 
@@ -193,116 +716,38 @@ function updateSummaryBar() {
   bar.innerHTML = html;
 }
 
-// ── Split Card Drag ──
+// ── Sidebar Resize ──
 
-function bindSplitDrag(card) {
-  var header = card.querySelector('.card-header');
-  if (!header) return;
-  header.draggable = true;
-  header.style.cursor = 'grab';
+function initSidebarDrag() {
+  var handle = document.getElementById('sidebar-drag');
+  var sidebar = document.getElementById('sidebar');
+  if (!handle || !sidebar) return;
 
-  header.addEventListener('dragstart', function(e) {
-    card.classList.add('split-dragging');
-    e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('text/plain', card.id);
-  });
+  // Apply saved width
+  sidebar.style.width = sidebarWidth + 'px';
 
-  header.addEventListener('dragend', function() {
-    card.classList.remove('split-dragging');
-    document.querySelectorAll('#split-content .card').forEach(function(c) {
-      c.classList.remove('split-drop-before', 'split-drop-after');
-    });
-  });
-
-  card.addEventListener('dragover', function(e) {
+  handle.addEventListener('mousedown', function(e) {
     e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-    var rect = card.getBoundingClientRect();
-    var mid = rect.left + rect.width / 2;
-    var before = e.clientX < mid;
-    card.classList.toggle('split-drop-before', before);
-    card.classList.toggle('split-drop-after', !before);
-  });
+    handle.classList.add('dragging');
+    var startX = e.clientX;
+    var startW = sidebar.offsetWidth;
 
-  card.addEventListener('dragleave', function() {
-    card.classList.remove('split-drop-before', 'split-drop-after');
-  });
-
-  card.addEventListener('drop', function(e) {
-    e.preventDefault();
-    card.classList.remove('split-drop-before', 'split-drop-after');
-    var draggedId = e.dataTransfer.getData('text/plain');
-    var dragged = document.getElementById(draggedId);
-    if (!dragged || dragged === card) return;
-
-    var container = document.getElementById('split-content');
-    var rect = card.getBoundingClientRect();
-    var before = e.clientX < rect.left + rect.width / 2;
-    if (before) {
-      container.insertBefore(dragged, card);
-    } else {
-      container.insertBefore(dragged, card.nextSibling);
+    function onMove(e) {
+      var newW = startW + (e.clientX - startX);
+      newW = Math.max(140, Math.min(newW, 500));
+      sidebar.style.width = newW + 'px';
+      sidebarWidth = newW;
     }
-    updateSplitGrid();
-  });
-}
 
-// ── Tab Drag ──
-
-function bindTabDrag(tab) {
-  tab.draggable = true;
-  tab.addEventListener('dragstart', e => {
-    tab.classList.add('dragging');
-    e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('text/plain', tab.dataset.id);
-  });
-  tab.addEventListener('dragend', () => {
-    tab.classList.remove('dragging');
-  });
-}
-
-function getDragAfterElement(container, x) {
-  const els = [...container.querySelectorAll('.tab:not(.dragging)')];
-  let closest = { offset: Number.NEGATIVE_INFINITY, element: null };
-  els.forEach(el => {
-    const box = el.getBoundingClientRect();
-    const offset = x - box.left - box.width / 2;
-    if (offset < 0 && offset > closest.offset) {
-      closest = { offset, element: el };
+    function onUp() {
+      handle.classList.remove('dragging');
+      localStorage.setItem('sidebarWidth', sidebarWidth);
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      sendResize();
     }
-  });
-  return closest.element;
-}
 
-const tabBar = document.getElementById('tab-bar');
-if (tabBar) {
-  const indicator = document.createElement('div');
-  indicator.id = 'tab-drop-indicator';
-  tabBar.appendChild(indicator);
-
-  tabBar.addEventListener('dragover', e => {
-    e.preventDefault();
-    const dragging = document.querySelector('.tab.dragging');
-    if (!dragging) return;
-    const after = getDragAfterElement(tabBar, e.clientX);
-    if (!after) tabBar.appendChild(dragging);
-    else tabBar.insertBefore(dragging, after);
-
-    const target = after || tabBar.lastElementChild;
-    if (!target) return;
-    const rect = target.getBoundingClientRect();
-    const barRect = tabBar.getBoundingClientRect();
-    const x = after ? rect.left - barRect.left : rect.right - barRect.left;
-    indicator.style.transform = `translateX(${x}px)`;
-    indicator.classList.add('show');
-  });
-
-  tabBar.addEventListener('dragleave', e => {
-    if (e.relatedTarget && tabBar.contains(e.relatedTarget)) return;
-    indicator.classList.remove('show');
-  });
-
-  tabBar.addEventListener('drop', () => {
-    indicator.classList.remove('show');
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
   });
 }

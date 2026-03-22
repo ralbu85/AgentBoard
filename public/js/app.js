@@ -3,8 +3,11 @@
 function enterApp(workerList) {
   document.getElementById('login').style.display = 'none';
   document.getElementById('app').style.display = 'flex';
+  document.getElementById('workspace').style.display = 'flex';
   loadConfig();
   initWS();
+  initSidebarDrag();
+  initSidebarSections();
   // Request notification permission
   if ('Notification' in window && Notification.permission === 'default') {
     Notification.requestPermission();
@@ -18,7 +21,6 @@ function enterApp(workerList) {
   } else {
     loadAll();
   }
-  setLayout(layout);
   setTimeout(updateSummaryBar, 500);
 }
 
@@ -45,11 +47,7 @@ document.getElementById('login-btn').addEventListener('click', doLogin);
 document.getElementById('pw').addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
 document.getElementById('toggle-toolbar-btn').addEventListener('click', toggleSpawnPanel);
 document.getElementById('scan-btn').addEventListener('click', scanSessions);
-document.getElementById('layout-overview-btn').addEventListener('click', () => setLayout('overview'));
-document.getElementById('layout-tab-btn').addEventListener('click', () => setLayout('tab'));
-document.getElementById('layout-split-btn').addEventListener('click', () => setLayout('split'));
 document.getElementById('notify-btn').addEventListener('click', toggleNotify);
-document.getElementById('sidepanel-btn').addEventListener('click', toggleSidePanel);
 
 function toggleNotify() {
   _notifyEnabled = !_notifyEnabled;
@@ -59,7 +57,7 @@ function toggleNotify() {
 
 function updateNotifyBtn() {
   var btn = document.getElementById('notify-btn');
-  if (btn) btn.textContent = _notifyEnabled ? '🔔' : '🔕';
+  if (btn) btn.textContent = _notifyEnabled ? '\ud83d\udd14' : '\ud83d\udd15';
 }
 
 window.addEventListener('resize', sendResize);
@@ -81,14 +79,21 @@ document.addEventListener('keydown', e => {
     return;
   }
 
-  // Ctrl+B / Cmd+B → side panel toggle
+  // Ctrl+B / Cmd+B -> toggle sidebar
   if (e.key === 'b' && (e.ctrlKey || e.metaKey) && !inInput) {
     e.preventDefault();
-    toggleSidePanel();
+    var sb = document.getElementById('sidebar');
+    var drag = document.getElementById('sidebar-drag');
+    if (sb) {
+      var hidden = sb.style.display === 'none';
+      sb.style.display = hidden ? '' : 'none';
+      if (drag) drag.style.display = hidden ? '' : 'none';
+      setTimeout(sendResize, 100);
+    }
     return;
   }
 
-  // Ctrl+F / Cmd+F → terminal search
+  // Ctrl+F / Cmd+F -> terminal search
   if (e.key === 'f' && (e.ctrlKey || e.metaKey)) {
     e.preventDefault();
     toggleSearch(activeTab);
