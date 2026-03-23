@@ -6,7 +6,7 @@ const crypto = require("crypto");
 const { WebSocketServer } = require("ws");
 
 const { tmux, tmuxAsyncRaw } = require("./server/tmux");
-const { workers, setBroadcast, setActiveSession, spawnWorker, killWorker, sendInput, pollOutput, pollAll, recoverSessions, lastCapture } = require("./server/workers");
+const { workers, setBroadcast, setActiveSession, spawnWorker, killWorker, sendInput, pollOutput, pollAll, recoverSessions, lastCapture, sessionTitles, saveSessionTitles } = require("./server/workers");
 const { setupRoutes } = require("./server/routes");
 const tunnel = require("./server/tunnel");
 
@@ -65,6 +65,11 @@ wss.on('connection', ws => {
     }
   });
 
+  // Send all session titles
+  if (Object.keys(sessionTitles).length > 0) {
+    ws.send(JSON.stringify({ type: "titles", titles: sessionTitles }));
+  }
+
   ws.on('message', raw => {
     try {
       const msg = JSON.parse(raw);
@@ -95,6 +100,18 @@ wss.on('connection', ws => {
         if (msg.id && lastCapture[msg.id]) {
           const lines = lastCapture[msg.id].split("\n");
           ws.send(JSON.stringify({ type: "snapshot", id: msg.id, lines }));
+        }
+      }
+
+      if (msg.type === 'title') {
+        if (msg.id) {
+          if (msg.title) {
+            sessionTitles[msg.id] = msg.title;
+          } else {
+            delete sessionTitles[msg.id];
+          }
+          saveSessionTitles();
+          broadcast({ type: "title", id: msg.id, title: msg.title || null });
         }
       }
 

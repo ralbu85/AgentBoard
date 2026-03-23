@@ -66,13 +66,18 @@ function setupRoutes(server, { auth, broadcast, PASSWORD, AUTH_TOKEN, loadConfig
     // ── Worker API ──
 
     if (method === "GET" && url === "/api/workers") {
-      const list = [...workers.entries()].map(([id, w]) => ({
-        id, cwd: w.cwd, cmd: w.cmd || "claude",
-        status: isAlive(w.sessionName) ? "running" : (w.status || "stopped"),
-        sessionName: w.sessionName, logs: w.logs,
-        aiState: w.aiState || null, process: w.process || null,
-        createdAt: w.createdAt || null, memKB: w.memKB || 0
-      }));
+      const list = [...workers.entries()].map(([id, w]) => {
+        const alive = isAlive(w.sessionName);
+        let status = alive ? "running" : (w.status || "stopped");
+        // Reflect aiState in status for accurate initial display
+        if (alive && w.aiState === 'idle') status = 'running'; // tmux alive but idle
+        return {
+          id, cwd: w.cwd, cmd: w.cmd || "claude",
+          status, sessionName: w.sessionName, logs: w.logs,
+          aiState: w.aiState || null, process: w.process || null,
+          createdAt: w.createdAt || null, memKB: w.memKB || 0
+        };
+      });
       return json(res, 200, list);
     }
 

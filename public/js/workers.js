@@ -93,14 +93,11 @@ function shouldNotify(id) {
 // ── Worker Card UI ──
 
 let customTitles = {};
-try {
-  customTitles = JSON.parse(localStorage.getItem('tabTitles') || '{}');
-} catch (e) {
-  customTitles = {};
-}
 
-function saveCustomTitles() {
-  localStorage.setItem('tabTitles', JSON.stringify(customTitles));
+function saveCustomTitle(id) {
+  if (ws && ws.readyState === 1) {
+    ws.send(JSON.stringify({ type: 'title', id: id, title: customTitles[id] || null }));
+  }
 }
 
 function getTitleBase(id, cmd) {
@@ -193,6 +190,7 @@ function ensureCard(id, cwd, status, logs, cmd) {
   if (sessionList) {
     var item = document.createElement('div');
     item.className = 'session-item';
+    item.draggable = true;
     item.dataset.id = String(id);
     item.dataset.cwd = cwd;
     item.dataset.cmd = cmdLabel;
@@ -217,7 +215,7 @@ function ensureCard(id, cwd, status, logs, cmd) {
       } else {
         customTitles[id] = trimTitle(trimmed);
       }
-      saveCustomTitles();
+      saveCustomTitle(id);
       renderTitle(id);
     });
     sessionList.appendChild(item);
@@ -385,9 +383,20 @@ function markPrompt(line, text) {
 function updateStatus(id, status) {
   var prev = _prevStatuses[id];
   _prevStatuses[id] = status;
-  if (shouldNotify(id) && prev && prev !== status) {
-    if (status === 'completed') notifyUser('#' + id + ' \uc138\uc158 \uc644\ub8cc', 'Session completed', 'done', id);
-    else if (status === 'stopped') notifyUser('#' + id + ' \uc138\uc158 \uc911\uc9c0', 'Session stopped', 'done', id);
+  if (prev && prev !== status) {
+    // Completed/stopped always notify (even when viewing)
+    if (status === 'completed') {
+      notifyUser('#' + id + ' 세션 완료', 'Session completed', 'done', id);
+      flashTab(id);
+    } else if (status === 'stopped') {
+      if (shouldNotify(id)) notifyUser('#' + id + ' 세션 중지', 'Session stopped', 'done', id);
+    }
+  }
+  // If user is already viewing this session, auto-acknowledge completed → idle
+  if (status === 'completed' && String(activeTab) === String(id)) {
+    _prevStatuses[id] = 'idle';
+    _prevAIStates[id] = 'idle';
+    status = 'idle';
   }
   var isStopped = status === 'stopped' || status === 'completed';
   document.querySelectorAll('#badge-' + id).forEach(el => {
@@ -455,39 +464,34 @@ function updateCardBorder(id) {
 function updateAIState(id, state) {
   var prev = _prevAIStates[id];
   _prevAIStates[id] = state;
-  if (shouldNotify(id) && prev && prev !== state && state === 'waiting') {
-    notifyUser('#' + id + ' \uc785\ub825 \ub300\uae30', 'Waiting for input', 'waiting', id);
-  }
-  // Skip if worker is stopped/completed
-  var badge = document.querySelector('#badge-' + id);
-  if (badge && (badge.classList.contains('stopped') || badge.classList.contains('completed'))) return;
 
-  // Update session dot in sidebar
-  var sessionItem = document.querySelector('.session-item[data-id="' + id + '"]');
-  if (sessionItem) {
-    var dot = sessionItem.querySelector('.session-dot');
-    if (dot) {
-      dot.classList.remove('ai-idle', 'ai-waiting');
-      if (state === 'idle') dot.classList.add('ai-idle');
-      else if (state === 'waiting') dot.classList.add('ai-waiting');
+  // Notify on transitions (only if not initial load)
+  if (prev && prev !== state) {
+    if (prev === 'working' && state === 'idle') {
+      notifyUser('#' + id + ' 작업 완료', 'Complete', 'done', id);
+      flashTab(id);
+    }
+    if (state === 'waiting') {
+      notifyUser('#' + id + ' 입력 대기', 'Waiting', 'waiting', id);
+      flashTab(id);
     }
   }
 
+  // Skip if worker is stopped/completed (tmux dead)
+  var s = _prevStatuses[id];
+  if (s === 'stopped' || s === 'completed') return;
+
+  // Update badge
+  var badgeText = state === 'idle' ? 'idle' : state === 'waiting' ? 'waiting' : 'running';
+  var badgeClass = state === 'idle' ? 'badge ai-idle' : state === 'waiting' ? 'badge ai-waiting' : 'badge';
   document.querySelectorAll('#badge-' + id).forEach(function(el) {
-    el.classList.remove('ai-idle', 'ai-waiting');
-    if (state === 'idle') {
-      el.classList.add('ai-idle');
-      el.textContent = 'idle';
-    } else if (state === 'waiting') {
-      el.classList.add('ai-waiting');
-      el.textContent = 'waiting';
-    } else {
-      el.textContent = 'running';
-    }
+    el.textContent = badgeText;
+    el.className = badgeClass;
   });
+
   updateCardBorder(id);
-  updateSummaryBar();
   renderSidebar();
+  updateSummaryBar();
 }
 
 function removeWorker(id) {

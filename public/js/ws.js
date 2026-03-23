@@ -59,13 +59,8 @@ function _renderFull(id, allLines) {
       frag.appendChild(el);
     }
     box.replaceChildren(frag);
-
-    if (wasAtBottom || !box.scrollTop) {
-      box.scrollTop = box.scrollHeight;
-    } else {
-      // Preserve scroll position relative to bottom
-      box.scrollTop = box.scrollHeight - distFromBottom;
-    }
+    // Full rebuild always scrolls to bottom (content replaced entirely)
+    box.scrollTop = box.scrollHeight;
   });
   _refreshOV();
 }
@@ -106,8 +101,7 @@ function _renderTail(id, allLines, changeOffset) {
       }
       if (wasAtBottom) box.scrollTop = box.scrollHeight;
     } else {
-      // Fallback to full rebuild
-      var distFromBottom = box.scrollHeight - box.scrollTop;
+      // Fallback to full rebuild — scroll to bottom
       var frag = document.createDocumentFragment();
       for (var i = 0; i < renderLines.length; i++) {
         var el = document.createElement('div');
@@ -116,11 +110,7 @@ function _renderTail(id, allLines, changeOffset) {
         frag.appendChild(el);
       }
       box.replaceChildren(frag);
-      if (wasAtBottom) {
-        box.scrollTop = box.scrollHeight;
-      } else {
-        box.scrollTop = box.scrollHeight - distFromBottom;
-      }
+      box.scrollTop = box.scrollHeight;
     }
   });
   _refreshOV();
@@ -159,13 +149,6 @@ function _onLogsScroll(id, box) {
 
 function applyFullSnapshot(id, lines) {
   _trimEmpty(lines);
-  var existing = _snapshotCache[id];
-  // If we already have more lines and the tail matches, skip — just a capture window reduction
-  if (existing && existing.length > lines.length && lines.length > 0) {
-    var lastNew = lines[lines.length - 1];
-    var lastOld = existing[existing.length - 1];
-    if (lastNew === lastOld) return;  // Same content, smaller window — keep existing cache
-  }
   _snapshotCache[id] = lines;
   _renderFull(id, lines);
 }
@@ -217,6 +200,20 @@ function handleMsg(d) {
   if (d.type === 'info') updateInfo(d.id, d.process, d.createdAt, d.memKB);
   if (d.type === 'snapshot') {
     scheduleSnapshot(d.id, d);
+  }
+  // Session title sync
+  if (d.type === 'title') {
+    if (d.title) {
+      customTitles[d.id] = d.title;
+    } else {
+      delete customTitles[d.id];
+    }
+    renderTitle(d.id);
+  }
+  if (d.type === 'titles') {
+    // Bulk sync on connect
+    customTitles = d.titles || {};
+    Object.keys(customTitles).forEach(function(id) { renderTitle(id); });
   }
 }
 

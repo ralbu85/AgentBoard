@@ -73,6 +73,10 @@ header h1 {
   color: #e6edf3;
 }
 
+.mobile-only {
+  display: none !important;
+}
+
 .header-btn.accent {
   background: #7c3aed;
   border-color: #7c3aed;
@@ -294,10 +298,20 @@ header h1 {
   flex-shrink: 0;
 }
 
-.session-dot.running { background: #a78bfa; }
+.session-dot.running { background: #a78bfa; animation: runningPulse 2s ease-in-out infinite; }
+
+@keyframes runningPulse {
+  0%, 100% { box-shadow: 0 0 3px #a78bfa44; }
+  50% { box-shadow: 0 0 8px #a78bfaaa; transform: scale(1.2); }
+}
 .session-dot.waiting { background: #fbbf24; animation: pulse 1.5s ease-in-out infinite; }
 .session-dot.idle { background: #34d399; }
-.session-dot.completed { background: #34d399; }
+.session-dot.completed { background: #34d399; animation: completedDotPulse 1.5s ease-in-out infinite; box-shadow: 0 0 6px #34d39966; }
+
+@keyframes completedDotPulse {
+  0%, 100% { box-shadow: 0 0 4px #34d39944; transform: scale(1); }
+  50% { box-shadow: 0 0 10px #34d399aa; transform: scale(1.3); }
+}
 .session-dot.stopped { background: #f87171; }
 .session-dot.ai-idle { background: #34d399; }
 .session-dot.ai-waiting { background: #fbbf24; animation: pulse 1.5s ease-in-out infinite; }
@@ -340,8 +354,28 @@ header h1 {
 .session-badge.running { background: #a78bfa22; color: #a78bfa; }
 .session-badge.waiting { background: #fbbf2422; color: #fbbf24; }
 .session-badge.idle { background: #34d39922; color: #34d399; }
-.session-badge.completed { background: #34d39922; color: #34d399; }
+.session-badge.completed { background: #34d39922; color: #34d399; animation: pulse 1.5s ease-in-out infinite; }
 .session-badge.stopped { background: #f8717122; color: #f87171; }
+
+.session-dragging {
+  opacity: 0.4;
+}
+
+.session-drop-above {
+  border-top: 2px solid #a78bfa !important;
+}
+
+.session-drop-below {
+  border-bottom: 2px solid #a78bfa !important;
+}
+
+.session-item[draggable="true"] {
+  cursor: grab;
+}
+
+.session-item[draggable="true"]:active {
+  cursor: grabbing;
+}
 
 .session-flash {
   animation: sessionFlash 0.5s ease-in-out 4;
@@ -1030,7 +1064,12 @@ header h1 {
 
 .card.status-running {
   border-color: #c084fc;
-  box-shadow: 0 0 16px #c084fc55;
+  animation: runningCardPulse 2s ease-in-out infinite;
+}
+
+@keyframes runningCardPulse {
+  0%, 100% { box-shadow: 0 0 10px #c084fc33; }
+  50% { box-shadow: 0 0 22px #c084fc77; }
 }
 
 .card.status-idle {
@@ -1404,22 +1443,7 @@ header h1 {
     padding-right: env(safe-area-inset-right);
   }
 
-  /* Stack panels vertically on mobile */
-  #panel-container {
-    flex-direction: column;
-  }
-
-  .panel {
-    min-width: 0;
-    min-height: 150px;
-  }
-
-  .panel-resize {
-    width: auto;
-    height: 4px;
-    cursor: row-resize;
-  }
-
+  /* ── Header ── */
   header {
     padding: 6px 10px;
     gap: 6px;
@@ -1429,13 +1453,9 @@ header h1 {
     font-size: 13px;
   }
 
-  .header-divider {
-    display: none;
-  }
-
   .header-btn {
-    height: 32px;
-    min-width: 32px;
+    height: 34px;
+    min-width: 34px;
     padding: 0 6px;
     font-size: 14px;
   }
@@ -1452,15 +1472,118 @@ header h1 {
     overflow-x: auto;
   }
 
-  /* Sidebar collapses on mobile */
+  .mobile-only {
+    display: inline-flex !important;
+  }
+
+  /* ── Sidebar: slide-over overlay on mobile ── */
   #sidebar {
-    display: none;
+    position: fixed;
+    top: 0;
+    left: -100%;
+    width: 80vw !important;
+    max-width: 320px !important;
+    min-width: 0 !important;
+    height: 100dvh;
+    z-index: 200;
+    transition: left 0.25s ease;
+    box-shadow: 4px 0 24px #00000066;
+  }
+
+  #sidebar.mobile-open {
+    left: 0;
   }
 
   #sidebar-drag {
     display: none;
   }
 
+  /* Backdrop when sidebar is open */
+  .mobile-backdrop {
+    display: none;
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: #00000088;
+    z-index: 199;
+  }
+
+  .mobile-backdrop.active {
+    display: block;
+  }
+
+  /* Sidebar items bigger for touch */
+  .session-item {
+    padding: 12px 14px;
+    gap: 10px;
+    min-height: 48px;
+  }
+
+  .session-title {
+    font-size: 14px;
+  }
+
+  .session-cwd {
+    font-size: 11px;
+  }
+
+  .session-badge {
+    font-size: 10px;
+    padding: 3px 8px;
+  }
+
+  .sidebar-section-header {
+    padding: 12px 14px;
+    font-size: 12px;
+  }
+
+  #sidebar-new-btn {
+    padding: 10px 0;
+    font-size: 14px;
+  }
+
+  /* Sidebar file browser */
+  #sidebar-files .sp-file {
+    padding: 10px 10px;
+    font-size: 13px;
+    min-height: 40px;
+  }
+
+  /* ── Panels: full-screen stacked on mobile ── */
+  #panel-container {
+    flex-direction: column;
+    position: relative;
+  }
+
+  .panel {
+    min-width: 0;
+    min-height: 0;
+  }
+
+  /* When viewer panels exist, they take full screen and hide terminal */
+  #panel-container .panel[data-panel-type="viewer"] {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    z-index: 10;
+    background: #0d1117;
+  }
+
+  /* Hide resize handles on mobile — panels are full-screen */
+  .panel-resize {
+    display: none;
+  }
+
+  .panel-header {
+    padding: 8px 10px;
+  }
+
+  .panel-close {
+    font-size: 20px;
+    padding: 2px 10px;
+    min-width: 34px;
+    min-height: 34px;
+  }
+
+  /* ── Cards ── */
   .card-header {
     padding: 6px 10px;
     gap: 6px;
@@ -1486,6 +1609,7 @@ header h1 {
     min-height: 80px;
   }
 
+  /* ── Input ── */
   .input-row {
     flex-wrap: wrap;
     padding: 6px;
@@ -1515,11 +1639,12 @@ header h1 {
 
   .input-row .qk-btn {
     flex: 1;
-    height: 32px;
+    height: 34px;
     font-size: 12px;
     min-width: 0;
   }
 
+  /* ── Spawn Panel ── */
   #spawn-panel {
     padding: 8px 10px;
   }
@@ -1532,7 +1657,7 @@ header h1 {
   .browse-item {
     padding: 10px 12px;
     font-size: 14px;
-    min-height: 40px;
+    min-height: 44px;
   }
 
   .browse-list {
@@ -1577,13 +1702,28 @@ header h1 {
     padding: 2px 6px;
   }
 
-  /* Context menu mobile */
+  /* ── Context menu ── */
   .sp-context-menu {
-    min-width: 160px;
+    min-width: 180px;
   }
 
   .sp-ctx-item {
-    padding: 10px 16px;
+    padding: 12px 16px;
     font-size: 14px;
+  }
+
+  /* ── Viewer panels ── */
+  .viewer-content .CodeMirror {
+    font-size: 13px;
+  }
+
+  .panel-editor-bar {
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+
+  .panel-pdf-nav button {
+    min-width: 44px;
+    min-height: 34px;
   }
 }

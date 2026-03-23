@@ -8,6 +8,7 @@ function enterApp(workerList) {
   initWS();
   initSidebarDrag();
   initSidebarSections();
+  initSessionDrag();
   // Request notification permission
   if ('Notification' in window && Notification.permission === 'default') {
     Notification.requestPermission();
@@ -15,6 +16,8 @@ function enterApp(workerList) {
   updateNotifyBtn();
   if (workerList) {
     workerList.forEach(w => {
+      // Pre-set AI state before creating card so initial display is correct
+      if (w.aiState) _prevAIStates[w.id] = w.aiState;
       ensureCard(w.id, w.cwd, w.status, w.logs, w.cmd);
       if (w.aiState) updateAIState(w.id, w.aiState);
     });
@@ -48,6 +51,24 @@ document.getElementById('pw').addEventListener('keydown', e => { if (e.key === '
 document.getElementById('toggle-toolbar-btn').addEventListener('click', toggleSpawnPanel);
 document.getElementById('scan-btn').addEventListener('click', scanSessions);
 document.getElementById('notify-btn').addEventListener('click', toggleNotify);
+
+// ── Mobile Sidebar Toggle ──
+
+function toggleMobileSidebar(open) {
+  var sb = document.getElementById('sidebar');
+  var bd = document.getElementById('mobile-backdrop');
+  if (!sb) return;
+  var isOpen = sb.classList.contains('mobile-open');
+  var shouldOpen = (open !== undefined) ? open : !isOpen;
+  sb.classList.toggle('mobile-open', shouldOpen);
+  if (bd) bd.classList.toggle('active', shouldOpen);
+}
+
+var mobileMenuBtn = document.getElementById('mobile-menu-btn');
+if (mobileMenuBtn) mobileMenuBtn.addEventListener('click', function() { toggleMobileSidebar(); });
+
+var mobileBackdrop = document.getElementById('mobile-backdrop');
+if (mobileBackdrop) mobileBackdrop.addEventListener('click', function() { toggleMobileSidebar(false); });
 
 function toggleNotify() {
   _notifyEnabled = !_notifyEnabled;

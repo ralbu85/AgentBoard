@@ -1,4 +1,6 @@
 const { execFile } = require("child_process");
+const fs = require("fs");
+const path = require("path");
 const { isAlive, tmux, tmuxAsyncRaw } = require("./tmux");
 
 const workers = new Map();
@@ -7,6 +9,15 @@ let lastCapture = {};
 let lastCaptureMode = {};  // track capture size per session
 let broadcastFn = () => {};
 let activeSessionId = null;
+
+// Session titles — persisted to disk
+const TITLES_FILE = path.join(__dirname, '..', '.session-titles.json');
+let sessionTitles = {};
+try { sessionTitles = JSON.parse(fs.readFileSync(TITLES_FILE, 'utf8')); } catch (e) {}
+
+function saveSessionTitles() {
+  try { fs.writeFileSync(TITLES_FILE, JSON.stringify(sessionTitles), 'utf8'); } catch (e) {}
+}
 
 const IDLE_THRESHOLD = 5000;
 const POLL_FAST = 500;
@@ -33,6 +44,24 @@ function detectWaiting(output) {
   if (/\([Yy]\/[Nn]\)/.test(recent) || /\[[Yy]\/[Nn]\]/.test(recent) || /\[[yY]\/[nN]\]/.test(recent)) return true;
   if (/approve|confirm|accept/i.test(recent) && /\?/.test(recent)) return true;
   return false;
+}
+
+function detectState(out, process) {
+  const shells = ['bash', 'zsh', 'sh', 'fish', 'dash', 'csh', 'tcsh', 'tmux', 'login'];
+  if (shells.indexOf(process) !== -1) return 'idle';
+  if (detectWaiting(out)) return 'waiting';
+  // Claude CLI: empty ❯ prompt (no user input after it) = idle
+  // ❯ with text after it = user typed something, could be working
+  var stripped = stripAnsi(out);
+  if (/^\s*❯\s*$/m.test(stripped)) {
+    // Found an empty ❯ line — check it's near the bottom (last 15 lines)
+    var lines = stripped.split("\n");
+    var last15 = lines.slice(-15);
+    if (last15.some(function(l) { return /^\s*❯\s*$/.test(l); })) {
+      return 'idle';
+    }
+  }
+  return 'working';
 }
 
 function spawnWorker(cwd, cmd) {
@@ -126,21 +155,18 @@ async function pollOutput(id) {
     broadcastFn({ type: "info", id, process: curProcess, createdAt, memKB });
   }
 
+  var newAiState = detectState(output, curProcess);
+
   if (output === lastCapture[id]) {
-    if (w.aiState !== 'idle' && w.aiState !== 'waiting' && w.lastChangeTime) {
-      const elapsed = Date.now() - w.lastChangeTime;
-      if (elapsed >= IDLE_THRESHOLD) {
-        const waiting = detectWaiting(output);
-        const newState = waiting ? 'waiting' : 'idle';
-        if (newState !== w.aiState) {
-          w.aiState = newState;
-          broadcastFn({ type: "aiState", id, state: newState });
-        }
-      }
+    // Output unchanged — just update state if needed
+    if (newAiState !== w.aiState) {
+      w.aiState = newAiState;
+      broadcastFn({ type: "aiState", id, state: newAiState });
     }
     return;
   }
 
+  // Output changed — send snapshot
   const oldOutput = lastCapture[id] || "";
   const modeChanged = lastCaptureMode[id] !== captureStart;
   lastCapture[id] = output;
@@ -149,16 +175,13 @@ async function pollOutput(id) {
   const lines = output.split("\n");
   w.logs = lines.slice(-200).map(text => ({ src: "stdout", text, ts: Date.now() }));
 
-  // Force full snapshot when capture window changed
   if (modeChanged) {
     broadcastFn({ type: "snapshot", id, lines });
   } else {
-    // Diff: find common prefix, send only changed tail
     const oldLines = oldOutput ? oldOutput.split("\n") : [];
     let commonTop = 0;
     const minLen = Math.min(oldLines.length, lines.length);
     while (commonTop < minLen && oldLines[commonTop] === lines[commonTop]) commonTop++;
-
     if (commonTop > 0 && oldLines.length > 0) {
       broadcastFn({ type: "snapshot", id, tail: lines.slice(commonTop), offset: commonTop, total: lines.length });
     } else {
@@ -166,11 +189,10 @@ async function pollOutput(id) {
     }
   }
 
-  const waiting = detectWaiting(output);
-  const aiState = waiting ? 'waiting' : 'working';
-  if (aiState !== w.aiState) {
-    w.aiState = aiState;
-    broadcastFn({ type: "aiState", id, state: aiState });
+  // Update AI state
+  if (newAiState !== w.aiState) {
+    w.aiState = newAiState;
+    broadcastFn({ type: "aiState", id, state: newAiState });
   }
 }
 
@@ -208,7 +230,21 @@ function recoverSessions() {
     if (isNaN(numId)) continue;
     if (workers.has(id)) continue;
     try { tmux(`set-option -t ${sessionName} history-limit 10000`); } catch (e) {}
-    workers.set(id, { sessionName, cwd, cmd, logs: [], cols: 80, rows: 24 });
+    // Detect initial AI state: shell → idle, otherwise check prompt
+    const shellProcesses = ['bash', 'zsh', 'sh', 'fish', 'dash', 'csh', 'tcsh', 'tmux', 'login'];
+    let initAiState = 'working';
+    if (shellProcesses.indexOf(cmd) !== -1) {
+      initAiState = 'idle';
+    } else {
+      // Check if CLI is at prompt by capturing output
+      try {
+        const snap = tmux(`capture-pane -t ${sessionName} -p -S -50`);
+        // Use same detectState logic
+        const testState = detectState(snap, cmd);
+        if (testState === 'idle') initAiState = 'idle';
+      } catch (e) {}
+    }
+    workers.set(id, { sessionName, cwd, cmd, logs: [], cols: 80, rows: 24, aiState: initAiState });
     if (numId >= nextId) nextId = numId + 1;
   }
   if (workers.size > 0) {
@@ -219,5 +255,5 @@ function recoverSessions() {
 module.exports = {
   workers, getWorkers, getNextId, setNextId,
   setBroadcast, setActiveSession, spawnWorker, killWorker, sendInput,
-  pollOutput, pollAll, recoverSessions, lastCapture
+  pollOutput, pollAll, recoverSessions, lastCapture, sessionTitles, saveSessionTitles
 };

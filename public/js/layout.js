@@ -614,6 +614,11 @@ function selectSession(id) {
     el.classList.toggle('active', el.dataset.id === String(id));
   });
 
+  // Close mobile sidebar on session select
+  if (typeof toggleMobileSidebar === 'function' && window.innerWidth <= 768) {
+    toggleMobileSidebar(false);
+  }
+
   // Ensure terminal panel exists
   var termPanel = ensureTerminalPanel();
   var body = termPanel.body;
@@ -680,10 +685,12 @@ function switchTab(delta) {
 
 function getEffectiveState(id) {
   var status = _prevStatuses[id] || 'running';
-  if (status === 'stopped' || status === 'completed') return status;
+  if (status === 'stopped') return 'stopped';
+  // AI state takes priority for live sessions
   var aiState = _prevAIStates[id];
   if (aiState === 'waiting') return 'waiting';
   if (aiState === 'idle') return 'idle';
+  if (aiState === 'working') return 'running';
   return 'running';
 }
 
@@ -696,15 +703,15 @@ function updateSummaryBar() {
   var ids = Object.keys(_cardElements || {});
   if (ids.length === 0) { bar.innerHTML = ''; return; }
 
-  var counts = { running: 0, waiting: 0, idle: 0, completed: 0, stopped: 0 };
+  var counts = { running: 0, waiting: 0, idle: 0, stopped: 0 };
   ids.forEach(function(id) {
     var state = getEffectiveState(id);
     counts[state] = (counts[state] || 0) + 1;
   });
 
   var html = '';
-  var order = ['running', 'waiting', 'idle', 'completed', 'stopped'];
-  var labels = { running: 'Running', waiting: 'Waiting', idle: 'Idle', completed: 'Done', stopped: 'Stopped' };
+  var order = ['running', 'waiting', 'idle', 'stopped'];
+  var labels = { running: 'Running', waiting: 'Waiting', idle: 'Idle', stopped: 'Stopped' };
   order.forEach(function(key) {
     if (counts[key] > 0) {
       html += '<span class="summary-item">' +
@@ -714,6 +721,67 @@ function updateSummaryBar() {
     }
   });
   bar.innerHTML = html;
+}
+
+// ── Session Drag Reorder ──
+
+function initSessionDrag() {
+  var list = document.getElementById('session-list');
+  if (!list) return;
+  var dragItem = null;
+
+  list.addEventListener('dragstart', function(e) {
+    var item = e.target.closest('.session-item');
+    if (!item) return;
+    dragItem = item;
+    item.classList.add('session-dragging');
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', item.dataset.id);
+  });
+
+  list.addEventListener('dragend', function(e) {
+    if (dragItem) dragItem.classList.remove('session-dragging');
+    list.querySelectorAll('.session-item').forEach(function(el) {
+      el.classList.remove('session-drop-above', 'session-drop-below');
+    });
+    dragItem = null;
+  });
+
+  list.addEventListener('dragover', function(e) {
+    e.preventDefault();
+    if (!dragItem) return;
+    var target = e.target.closest('.session-item');
+    if (!target || target === dragItem) return;
+    // Clear all indicators
+    list.querySelectorAll('.session-item').forEach(function(el) {
+      el.classList.remove('session-drop-above', 'session-drop-below');
+    });
+    // Determine above/below
+    var rect = target.getBoundingClientRect();
+    var mid = rect.top + rect.height / 2;
+    if (e.clientY < mid) {
+      target.classList.add('session-drop-above');
+    } else {
+      target.classList.add('session-drop-below');
+    }
+  });
+
+  list.addEventListener('drop', function(e) {
+    e.preventDefault();
+    if (!dragItem) return;
+    var target = e.target.closest('.session-item');
+    if (!target || target === dragItem) return;
+    var rect = target.getBoundingClientRect();
+    var mid = rect.top + rect.height / 2;
+    if (e.clientY < mid) {
+      list.insertBefore(dragItem, target);
+    } else {
+      list.insertBefore(dragItem, target.nextSibling);
+    }
+    list.querySelectorAll('.session-item').forEach(function(el) {
+      el.classList.remove('session-drop-above', 'session-drop-below');
+    });
+  });
 }
 
 // ── Sidebar Resize ──
