@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>AgentBoard v2</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cascadia+Code&display=swap">
+
+<!-- xterm.js -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.min.css">
+<script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@xterm/addon-search@0.15.0/lib/addon-search.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@xterm/addon-web-links@0.11.0/lib/addon-web-links.min.js"></script>
+
+<!-- Editors & Viewers -->
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/codemirror@5/lib/codemirror.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/codemirror@5/theme/material-darker.css">
+<script src="https://cdn.jsdelivr.net/npm/codemirror@5/lib/codemirror.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/codemirror@5/mode/stex/stex.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/codemirror@5/mode/javascript/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/codemirror@5/mode/python/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/codemirror@5/mode/css/css.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/codemirror@5/mode/htmlmixed/htmlmixed.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/codemirror@5/mode/xml/xml.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/codemirror@5/mode/markdown/markdown.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/codemirror@5/mode/yaml/yaml.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/codemirror@5/mode/shell/shell.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/codemirror@5/mode/sql/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/codemirror@5/addon/edit/matchbrackets.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/codemirror@5/addon/edit/closebrackets.min.js"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+<div id="login" style="display:none">
+  <h2 style="font-size:20px">AgentBoard v2</h2>
+  <input id="pw" type="password" placeholder="Password" />
+  <button id="login-btn">Login</button>
+  <span id="login-err">Incorrect password</span>
+</div>
+
+<div id="app" style="display:none;flex-direction:column;height:100dvh;overflow:hidden">
+  <header>
+    <button id="mobile-menu-btn" class="header-btn mobile-only">&#9776;</button>
+    <div id="status-dot" class="off"></div>
+    <h1>AgentBoard</h1>
+    <button id="notify-btn" class="header-btn">&#128276;</button>
+    <button id="scan-btn" class="header-btn">&#128269;</button>
+    <button id="toggle-toolbar-btn" class="header-btn accent">+</button>
+  </header>
+  <div id="mobile-backdrop" class="mobile-backdrop"></div>
+
+  <div id="summary-bar"></div>
+
+  <div id="spawn-panel" style="display:none">
+    <div class="browse-path" id="browse-path">/</div>
+    <div class="browse-list" id="browse-list"></div>
+    <div class="spawn-panel-footer">
+      <div class="bookmark-list" id="bookmark-list"></div>
+      <div class="spawn-panel-actions">
+        <button class="bookmark-add" onclick="AB.favorites.addBookmark()">+ Bookmark</button>
+        <button class="spawn-create-btn" onclick="AB.favorites.spawnFromBrowser()">Open here</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="workspace" style="display:none">
+    <div id="sidebar">
+      <div class="sidebar-section" id="sidebar-sessions-section">
+        <div class="sidebar-section-header" data-section="sessions">
+          <span class="sidebar-collapse-icon">&#9660;</span>
+          <span>SESSIONS</span>
+        </div>
+        <div class="sidebar-section-body" id="session-list"></div>
+      </div>
+      <div class="sidebar-section" id="sidebar-explorer-section">
+        <div class="sidebar-section-header" data-section="explorer">
+          <span class="sidebar-collapse-icon">&#9660;</span>
+          <span>EXPLORER</span>
+        </div>
+        <div class="sidebar-section-body" id="sidebar-files">
+          <div id="sp-files-header" style="display:flex;align-items:center">
+            <div id="sp-files-path" class="sp-path" style="flex:1"></div>
+            <button id="sp-files-refresh" class="sp-btn" style="margin:0 6px" title="Refresh">&#8635;</button>
+          </div>
+          <div id="sp-files-list" class="sp-list"></div>
+        </div>
+      </div>
+      <div id="sidebar-footer">
+        <button id="sidebar-new-btn" onclick="document.getElementById('toggle-toolbar-btn').click()">+ New</button>
+      </div>
+    </div>
+    <div id="sidebar-drag"></div>
+    <div id="main-area">
+      <div id="terminal-pane">
+        <div id="terminal-pane-header" class="pane-header">
+          <span id="terminal-pane-title" class="pane-title">Terminal</span>
+        </div>
+        <div id="terminal-pane-body"></div>
+        <div id="terminal-pane-input"></div>
+      </div>
+      <div id="terminal-viewer-drag"></div>
+      <div id="viewer-pane"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Module load order: dependencies first -->
+<script src="/js/store.js"></script>
+<script src="/js/api.js"></script>
+<script src="/js/terminal.js"></script>
+<script src="/js/ws.js"></script>
+<script src="/js/sidebar.js"></script>
+<script src="/js/panels.js"></script>
+<script src="/js/editor.js"></script>
+<script src="/js/files.js"></script>
+<script src="/js/notify.js"></script>
+<script src="/js/favorites.js"></script>
+<script src="/js/app.js"></script>
+</body>
+</html>

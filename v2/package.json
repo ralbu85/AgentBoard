@@ -1,0 +1,16 @@
+{
+  "name": "agentboard-v2",
+  "version": "2.0.0",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js"
+  },
+  "dependencies": {
+    "dotenv": "^17.3.1",
+    "ws": "^8.19.0"
+  },
+  "keywords": ["claude", "claude-code", "terminal", "dashboard", "tmux", "ai-agent", "xterm"],
+  "author": "ralbu85",
+  "license": "MIT",
+  "description": "Browser-based dashboard for managing multiple AI coding sessions — v2 with xterm.js"
+}
