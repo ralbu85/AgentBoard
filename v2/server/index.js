@@ -41,8 +41,29 @@ let wss;
 
 function broadcast(obj) {
   if (!wss) return;
-  const msg = JSON.stringify(obj);
-  wss.clients.forEach(c => { if (c.readyState === 1) c.send(msg); });
+  // For output messages, send truncated version to mobile clients
+  if (obj.type === 'output') {
+    var fullMsg = JSON.stringify(obj);
+    var mobileObj = null;
+    var mobileMsg = null;
+    wss.clients.forEach(c => {
+      if (c.readyState !== 1) return;
+      if (clientMobile.get(c)) {
+        if (!mobileObj) {
+          // Last 200 lines only for mobile
+          var lines = obj.data.split('\n');
+          mobileObj = { type: 'output', id: obj.id, data: lines.slice(-200).join('\n') };
+          mobileMsg = JSON.stringify(mobileObj);
+        }
+        c.send(mobileMsg);
+      } else {
+        c.send(fullMsg);
+      }
+    });
+  } else {
+    var msg = JSON.stringify(obj);
+    wss.clients.forEach(c => { if (c.readyState === 1) c.send(msg); });
+  }
 }
 
 // Wire up broadcast
@@ -57,11 +78,9 @@ setupRoutes(server, { auth, broadcast, PASSWORD, AUTH_TOKEN, loadConfig });
 
 wss = new WebSocketServer({ server });
 const clientSizes = new Map();
+const clientMobile = new Map();
 
 wss.on('connection', ws => {
-  // Don't send cached output on connect — wait for client to send resize+active
-  // so tmux gets resized first and capture-pane output matches xterm cols.
-  // Only send titles on connect.
   if (Object.keys(sessionTitles).length > 0) {
     ws.send(JSON.stringify({ type: "titles", titles: sessionTitles }));
   }
@@ -69,6 +88,10 @@ wss.on('connection', ws => {
   ws.on('message', raw => {
     try {
       const msg = JSON.parse(raw);
+
+      if (msg.type === 'client-info') {
+        if (msg.mobile) clientMobile.set(ws, true);
+      }
 
       if (msg.type === 'resize') {
         clientSizes.set(ws, { cols: msg.cols, rows: msg.rows });
@@ -124,6 +147,31 @@ wss.on('connection', ws => {
         }
       }
 
+      // Direct terminal keystroke input (from xterm.js onData)
+      if (msg.type === 'terminal-input') {
+        const s = sessions.get(msg.id);
+        if (s && msg.data) {
+          const data = msg.data;
+          // Map xterm.js escape sequences to tmux key names
+          const SEQ_MAP = {
+            '\r': 'Enter', '\x1b': 'Escape', '\t': 'Tab',
+            '\x1b[A': 'Up', '\x1b[B': 'Down', '\x1b[C': 'Right', '\x1b[D': 'Left',
+            '\x7f': 'BSpace', '\x08': 'BSpace',
+            '\x03': 'C-c', '\x04': 'C-d', '\x1a': 'C-z',
+            '\x1b[H': 'Home', '\x1b[F': 'End',
+            '\x1b[5~': 'PageUp', '\x1b[6~': 'PageDown',
+            '\x1b[3~': 'DC', // Delete
+          };
+          if (SEQ_MAP[data]) {
+            tmuxAsyncRaw(["send-keys", "-t", s.sessionName, SEQ_MAP[data]]);
+          } else {
+            // Literal text (regular characters)
+            tmuxAsyncRaw(["send-keys", "-t", s.sessionName, "-l", data]);
+          }
+          setTimeout(() => pollOutput(msg.id), 80);
+        }
+      }
+
       if (msg.type === 'input') {
         const s = sessions.get(msg.id);
         if (s) {
@@ -141,7 +189,7 @@ wss.on('connection', ws => {
     } catch (e) {}
   });
 
-  ws.on('close', () => clientSizes.delete(ws));
+  ws.on('close', () => { clientSizes.delete(ws); clientMobile.delete(ws); });
 });
 
 // ── Start ──

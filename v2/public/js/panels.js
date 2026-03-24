@@ -12,31 +12,47 @@
   // ── Terminal ──
 
   function selectSession(id, prevId) {
+    var isMobile = window.innerWidth <= 768;
+
+    if (isMobile) {
+      document.getElementById('sidebar').classList.remove('mobile-open');
+      document.getElementById('mobile-backdrop').classList.remove('active');
+      AB.terminal.create(id);
+      AB.terminal.open(id, document.getElementById('terminal-pane-body'));
+      AB.terminal.show(id);
+      var s = AB.store.get(id);
+      var tl = document.getElementById('terminal-pane-title');
+      if (s && tl) tl.textContent = AB.getTitle(id, s.cwd, s.cmd);
+      if (AB.files) AB.files.refresh(id);
+      AB.ws.send({ type: 'active', id: id });
+      return;
+    }
+
+    // Desktop
     if (prevId && prevId !== id) {
       _saveSessionViewers(prevId);
       _clearAll();
     }
-    var termBody = document.getElementById('terminal-pane-body');
-    var termTitle = document.getElementById('terminal-pane-title');
+
     AB.terminal.create(id);
-    AB.terminal.open(id, termBody);
+    AB.terminal.open(id, document.getElementById('terminal-pane-body'));
     AB.terminal.show(id);
+
     var s = AB.store.get(id);
+    var termTitle = document.getElementById('terminal-pane-title');
     if (s && termTitle) termTitle.textContent = AB.getTitle(id, s.cwd, s.cmd);
-    if (window.innerWidth <= 768) {
-      var sb = document.getElementById('sidebar');
-      if (sb) sb.classList.remove('mobile-open');
-      var bd = document.getElementById('mobile-backdrop');
-      if (bd) bd.classList.remove('active');
+
+    {
+      // Desktop: full flow
+      if (AB.files) AB.files.refresh(id);
+      _restoreSessionViewers(id);
+      requestAnimationFrame(function() {
+        var size = AB.terminal.resize(id);
+        if (size && size.cols > 0 && size.rows > 0)
+          AB.ws.send({ type: 'resize', id: id, cols: size.cols, rows: size.rows });
+        AB.ws.notifyActive(id);
+      });
     }
-    if (AB.files) AB.files.refresh(id);
-    _restoreSessionViewers(id);
-    requestAnimationFrame(function() {
-      var size = AB.terminal.resize(id);
-      if (size && size.cols > 0 && size.rows > 0)
-        AB.ws.send({ type: 'resize', id: id, cols: size.cols, rows: size.rows });
-      AB.ws.notifyActive(id);
-    });
   }
 
   function switchSession(delta) {
@@ -257,6 +273,13 @@
     var empty = cell.body.querySelector('.viewer-empty-cell');
     if (empty) empty.style.display = 'none';
 
+    _updateViewerVisibility();
+
+    // Mobile: auto-switch to Files view
+    if (window.innerWidth <= 768 && AB._setMobileView) {
+      AB._setMobileView('viewer');
+    }
+
     // Load content
     if (fileType === 'pdf') AB.editor.loadPDF(contentEl, filePath, tabId);
     else if (fileType === 'image') AB.editor.loadImage(contentEl, filePath, tabId);
@@ -287,6 +310,7 @@
       cell.activeTabId = null;
       var empty = cell.body.querySelector('.viewer-empty-cell');
       if (empty) empty.style.display = '';
+      _updateViewerVisibility();
       if (_cells.length > 1) _removeCell(cell);
     } else if (cell.activeTabId === tabId) {
       _activateTab(cell, cell.tabs[Math.min(idx, cell.tabs.length - 1)].id);
@@ -315,6 +339,7 @@
       from.activeTabId = null;
       var emptyFrom = from.body.querySelector('.viewer-empty-cell');
       if (emptyFrom) emptyFrom.style.display = '';
+      _updateViewerVisibility();
       if (_cells.length > 1) _removeCell(from);
     } else if (from.activeTabId === tabId) {
       _activateTab(from, from.tabs[0].id);
@@ -332,6 +357,16 @@
 
   function _findCell(cellId) {
     return _cells.find(function(c) { return c.id === cellId; }) || null;
+  }
+
+  function _updateViewerVisibility() {
+    var pane = document.getElementById('viewer-pane');
+    var hasTabs = _cells.some(function(c) { return c.tabs.length > 0; });
+    pane.classList.toggle('has-tabs', hasTabs);
+    // Mobile: auto-switch back to terminal when all tabs closed
+    if (!hasTabs && window.innerWidth <= 768 && AB._setMobileView) {
+      AB._setMobileView('terminal');
+    }
   }
 
   // ── Open (from click) ──
@@ -353,6 +388,7 @@
     var c = _createCell();
     _cells.push(c);
     _render();
+    _updateViewerVisibility();
   }
 
   function closeAllViewers() { _clearAll(); }

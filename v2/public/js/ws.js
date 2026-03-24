@@ -12,11 +12,16 @@
 
     ws.onopen = function() {
       document.getElementById('status-dot').classList.remove('off');
-      // Send resize for active session if already selected
+      // Tell server if this is a mobile client
+      if (window.innerWidth <= 768) {
+        send({ type: 'client-info', mobile: true });
+      }
       if (AB.store.activeId) {
-        var size = AB.terminal.resize(AB.store.activeId);
-        if (size && size.cols > 0 && size.rows > 0) {
-          send({ type: 'resize', id: AB.store.activeId, cols: size.cols, rows: size.rows });
+        if (window.innerWidth > 768) {
+          var size = AB.terminal.resize(AB.store.activeId);
+          if (size && size.cols > 0 && size.rows > 0) {
+            send({ type: 'resize', id: AB.store.activeId, cols: size.cols, rows: size.rows });
+          }
         }
         send({ type: 'active', id: AB.store.activeId });
       }
@@ -83,6 +88,8 @@
   }
 
   function sendResize() {
+    // Mobile: never resize tmux — just display what server sends
+    if (window.innerWidth <= 768) return;
     clearTimeout(_resizeTimer);
     _resizeTimer = setTimeout(function() {
       var activeId = AB.store.activeId;

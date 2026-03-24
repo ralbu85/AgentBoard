@@ -10,7 +10,7 @@
   function createSessionItem(id, data) {
     var item = document.createElement('div');
     item.className = 'session-item';
-    item.draggable = true;
+    item.draggable = (window.innerWidth > 768);
     item.dataset.id = String(id);
     item.dataset.cwd = data.cwd;
     item.dataset.cmd = data.cmd || 'claude';
@@ -25,35 +25,27 @@
       '</div>' +
       '<span class="session-badge ' + state + '">' + state + '</span>' +
       '<button class="session-close" title="Remove session">&times;</button>';
+    // Instant tap on mobile (touchend), normal click on desktop
+    function doSelect() { store.setActive(id); }
+    item.addEventListener('touchend', function(e) {
+      if (e.target.closest('.session-close')) return;
+      e.preventDefault();
+      doSelect();
+    });
     item.addEventListener('click', function(e) {
-      if (e.target.classList.contains('session-close')) return;
-      store.setActive(id);
+      e.stopPropagation();
+      if (e.target.closest('.session-close')) return;
+      doSelect();
     });
     item.querySelector('.session-close').addEventListener('click', function(e) {
       e.stopPropagation();
       var s = store.get(id);
       var isRunning = s && s.status === 'running';
-      var msg = isRunning ? 'Stop and remove session #' + id + '?' : 'Remove session #' + id + '?';
-      if (!confirm(msg)) return;
+      if (!confirm((isRunning ? 'Stop and remove' : 'Remove') + ' #' + id + '?')) return;
       if (isRunning) AB.api.post('/api/kill', { id: id });
       AB.api.post('/api/remove', { id: id });
       store.remove(id);
       AB.terminal.destroy(id);
-    });
-    item.addEventListener('dblclick', function(e) {
-      e.stopPropagation();
-      var current = (AB._customTitles && AB._customTitles[id]) || data.cmd || 'claude';
-      var next = prompt('Session title', current);
-      if (next === null) return;
-      var trimmed = next.trim();
-      if (!trimmed) {
-        delete AB._customTitles[id];
-      } else {
-        if (trimmed.length > 24) trimmed = trimmed.slice(0, 23) + '\u2026';
-        AB._customTitles[id] = trimmed;
-      }
-      AB.ws.send({ type: 'title', id: id, title: AB._customTitles[id] || null });
-      updateSessionItem(id);
     });
     return item;
   }
@@ -205,6 +197,39 @@
     });
   }
 
+  // ── Mobile Session Tabs ──
+
+  function _addMobileTab(id, data) {
+    var tabs = document.getElementById('mobile-session-tabs');
+    if (!tabs) return;
+    var tab = document.createElement('div');
+    tab.className = 'mobile-tab';
+    tab.dataset.id = String(id);
+    var state = store.effectiveState(id);
+    var folder = (data.cwd || '').replace(/\/$/, '').split('/').pop() || id;
+    tab.innerHTML = '<span class="mobile-tab-dot ' + state + '"></span><span class="mobile-tab-name">' + folder + '</span>';
+    tab.addEventListener('touchend', function(e) { e.preventDefault(); store.setActive(id); });
+    tab.addEventListener('click', function(e) { e.stopPropagation(); store.setActive(id); });
+    tabs.appendChild(tab);
+  }
+
+  function _updateMobileTabs() {
+    var tabs = document.getElementById('mobile-session-tabs');
+    if (!tabs) return;
+    tabs.querySelectorAll('.mobile-tab').forEach(function(tab) {
+      var id = tab.dataset.id;
+      var s = store.get(id);
+      if (!s) return;
+      var state = store.effectiveState(id);
+      var dot = tab.querySelector('.mobile-tab-dot');
+      if (dot) dot.className = 'mobile-tab-dot ' + state;
+      tab.classList.toggle('active', String(store.activeId) === String(id));
+    });
+    // Scroll active tab into view
+    var active = tabs.querySelector('.mobile-tab.active');
+    if (active) active.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+  }
+
   // ── Init ──
 
   function init() {
@@ -214,13 +239,12 @@
     initSidebarDrag();
     initSessionDrag();
 
-    // Store event listeners
     store.addEventListener('session-added', function(e) {
       var id = e.detail.id;
       var data = e.detail.data;
       var list = document.getElementById('session-list');
       if (list) list.appendChild(createSessionItem(id, data));
-      // Auto-select if first session
+      _addMobileTab(id, data);
       if (store.size === 1 || !store.activeId) {
         store.setActive(id);
       }
@@ -230,20 +254,25 @@
     store.addEventListener('session-removed', function(e) {
       var item = document.querySelector('.session-item[data-id="' + e.detail.id + '"]');
       if (item) item.remove();
+      var tab = document.querySelector('.mobile-tab[data-id="' + e.detail.id + '"]');
+      if (tab) tab.remove();
       updateSummaryBar();
     });
 
     store.addEventListener('active-changed', function(e) {
       updateAllSessionItems();
+      _updateMobileTabs();
     });
 
     store.addEventListener('status-changed', function(e) {
       updateSessionItem(e.detail.id);
+      _updateMobileTabs();
       updateSummaryBar();
     });
 
     store.addEventListener('state-changed', function(e) {
       updateSessionItem(e.detail.id);
+      _updateMobileTabs();
       updateSummaryBar();
     });
 

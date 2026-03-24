@@ -241,7 +241,6 @@
   }
 
   function sendKey(id, key) {
-    AB.ws.notifyActive(id);
     AB.ws.send({ type: 'key', id: id, key: key });
   }
 
@@ -254,7 +253,6 @@
     if (!text) return;
     inp.value = '';
     inp.style.height = 'auto';
-    AB.ws.notifyActive(id);
     AB.ws.send({ type: 'input', id: id, text: text });
   }
 
@@ -418,13 +416,11 @@
       var card = createInputCard(id);
       var target = document.getElementById('terminal-pane-input');
       if (target) target.appendChild(card);
-      // Create xterm terminal for this session
       AB.terminal.create(id);
-      // Apply initial state class
       updateInputCardState(id);
-      // Auto-select
-      if (AB.store.size === 1 || !AB.store.activeId) {
-        AB.store.setActive(id);
+      // Show card if this is the active session (may have been set before card existed)
+      if (AB.store.activeId === id) {
+        card.style.display = '';
       }
     });
 
@@ -435,6 +431,14 @@
       Object.keys(_inputCards).forEach(function(k) {
         _inputCards[k].style.display = (k === id) ? '' : 'none';
       });
+      // Update mobile session label
+      var label = document.getElementById('mobile-session-label');
+      if (label && id) {
+        var s = AB.store.get(id);
+        var state = AB.store.effectiveState(id);
+        var dot = state === 'running' ? '\u25cf ' : state === 'idle' ? '\u25cb ' : state === 'waiting' ? '\u25d4 ' : '\u25cb ';
+        label.textContent = dot + '#' + id + ' ' + ((s && s.cwd) ? s.cwd.split('/').pop() : '');
+      }
       if (id) AB.panels.selectSession(id, prev);
     });
 
@@ -444,6 +448,16 @@
 
     AB.store.addEventListener('state-changed', function(e) {
       updateInputCardState(e.detail.id);
+      // Update mobile label if this is the active session
+      if (e.detail.id === AB.store.activeId) {
+        var label = document.getElementById('mobile-session-label');
+        if (label) {
+          var s = AB.store.get(e.detail.id);
+          var state = AB.store.effectiveState(e.detail.id);
+          var dot = state === 'running' ? '\u25cf ' : state === 'idle' ? '\u25cb ' : state === 'waiting' ? '\u25d4 ' : '\u25cb ';
+          label.textContent = dot + '#' + e.detail.id + ' ' + ((s && s.cwd) ? s.cwd.split('/').pop() : '');
+        }
+      }
     });
 
     AB.store.addEventListener('cwd-changed', function(e) {
@@ -538,6 +552,29 @@
   if (mobileBackdrop) mobileBackdrop.addEventListener('click', function() { toggleMobileSidebar(false); });
 
   window.addEventListener('resize', function() { AB.ws.sendResize(); });
+
+  // ── Mobile view toggle (header button) ──
+  AB._setMobileView = function(view) {
+    var mainArea = document.getElementById('main-area');
+    var filesBtn = document.getElementById('mobile-files-btn');
+    if (view === 'viewer') {
+      mainArea.classList.add('mobile-viewer-mode');
+      if (filesBtn) filesBtn.classList.add('active');
+    } else {
+      mainArea.classList.remove('mobile-viewer-mode');
+      if (filesBtn) filesBtn.classList.remove('active');
+      setTimeout(function() { AB.ws.sendResize(); }, 100);
+    }
+  };
+
+  var mobileFilesBtn = document.getElementById('mobile-files-btn');
+  if (mobileFilesBtn) {
+    mobileFilesBtn.addEventListener('click', function() {
+      var mainArea = document.getElementById('main-area');
+      var isViewer = mainArea.classList.contains('mobile-viewer-mode');
+      AB._setMobileView(isViewer ? 'terminal' : 'viewer');
+    });
+  }
 
   // ── Terminal ↔ Viewer drag resize ──
   (function() {
