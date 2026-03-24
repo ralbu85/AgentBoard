@@ -9,8 +9,9 @@
 </p>
 
 <p align="center">
-  <strong>Run AI agents on your server. Monitor from anywhere.</strong><br>
-  A self-hosted, browser-based dashboard for managing multiple AI coding agents remotely.
+  <strong>Run AI agents on your server. Monitor from any browser, anywhere.</strong><br>
+  No install. No desktop app. Just open a URL — from your laptop, phone, or tablet.<br>
+  A self-hosted web dashboard for managing multiple AI coding agents remotely.
 </p>
 
 <p align="center">
@@ -40,17 +41,20 @@ AI coding agents are getting powerful enough to run autonomously for hours. But 
 
 The problem: **you can't sit in front of the terminal all day.**
 
-**AgentBoard is a web dashboard that runs where your agents run.** Deploy it on your server, open a browser tab, and manage everything from anywhere — desktop or phone.
+Other tools (cmux, Cursor, Superset) require a desktop app and only work locally. **What if your agents run on a remote server?**
+
+**AgentBoard is a pure web app — no install, no desktop client.** Deploy it on any server with Node.js and tmux, open a browser from any device, and you're in. Works through Tailscale, Cloudflare Tunnel, or ngrok for secure remote access.
 
 ### How It Compares
 
 | | cmux | Cursor | Superset | **AgentBoard** |
 |---|---|---|---|---|
+| **No install (just a URL)** | ❌ | ❌ | ❌ | ✅ |
+| **Remote server access** | ❌ | ❌ | ❌ | ✅ |
+| **Phone/tablet** | ❌ | ❌ | ❌ | ✅ |
 | Multi-agent sessions | ✅ | ❌ | ✅ | ✅ |
-| Remote access (browser) | ❌ | ❌ | ❌ | ✅ |
 | Cross-platform | macOS | Desktop | Desktop | Any browser |
 | File editor + PDF viewer | ❌ | Built-in | Diff view | Built-in |
-| Phone/tablet access | ❌ | ❌ | ❌ | ✅ |
 | Self-hosted | N/A | N/A | N/A | ✅ |
 | Price | Free | $20/mo | Paid | Free |
 
