@@ -99,7 +99,10 @@
       });
     }
 
-    if (sendBtn) sendBtn.addEventListener('click', function() { doSendInput(id); });
+    if (sendBtn) {
+      sendBtn.addEventListener('touchend', function(e) { e.preventDefault(); doSendInput(id); });
+      sendBtn.addEventListener('click', function() { doSendInput(id); });
+    }
 
     if (inp) {
       inp.addEventListener('keydown', function(e) {
@@ -126,6 +129,7 @@
 
     // Quick key buttons
     card.querySelectorAll('.qk-btn').forEach(function(btn) {
+      btn.addEventListener('touchend', function(e) { e.preventDefault(); sendKey(id, btn.dataset.key); });
       btn.addEventListener('click', function() { sendKey(id, btn.dataset.key); });
     });
 
@@ -392,6 +396,7 @@
   // ── App Init ──
 
   function enterApp(workerList) {
+    if (AB._perfMark) AB._perfMark('enter-app', workerList ? workerList.length + ' sessions' : 'no list');
     document.getElementById('login').style.display = 'none';
     document.getElementById('app').style.display = 'flex';
     document.getElementById('workspace').style.display = 'flex';
@@ -534,8 +539,12 @@
   // ── Boot ──
 
   // Try auto-login first
+  if (AB._perfMark) AB._perfMark('boot-start');
   fetch('/api/workers', { credentials: 'include' })
-    .then(function(r) { if (r.ok) return r.json(); throw new Error(); })
+    .then(function(r) {
+      if (AB._perfMark) AB._perfMark('api-response', r.status);
+      if (r.ok) return r.json(); throw new Error();
+    })
     .then(function(list) { enterApp(list); })
     .catch(function() { document.getElementById('login').style.display = ''; });
 

@@ -9,6 +9,7 @@
   function init() {
     var proto = location.protocol === 'https:' ? 'wss' : 'ws';
     ws = new WebSocket(proto + '://' + location.host);
+    if (AB._perfHookWs) AB._perfHookWs(ws);
 
     ws.onopen = function() {
       document.getElementById('status-dot').classList.remove('off');
@@ -44,9 +45,14 @@
       store.add(d.id, { cwd: d.cwd, cmd: d.cmd, status: d.status, sessionName: d.sessionName });
     }
 
-    if (d.type === 'output') {
-      // Write raw output to xterm.js terminal
-      AB.terminal.write(d.id, d.data);
+    // Snapshot: initial load of terminal (capture-pane)
+    if (d.type === 'snapshot') {
+      AB.terminal.writeSnapshot(d.id, d.data);
+    }
+
+    // Stream: real-time output from pipe-pane
+    if (d.type === 'stream') {
+      AB.terminal.writeStream(d.id, d.data);
     }
 
     if (d.type === 'log') {

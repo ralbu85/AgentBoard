@@ -1,0 +1,21 @@
+@font-face {
+  font-family: 'D2Coding';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: local('D2Coding ligature Bold'),
+    url('fonts/d2coding-ligature-bold-subset.woff2') format('woff2'),
+    url('fonts/d2coding-ligature-bold-subset.woff') format('woff'),
+    url('fonts/d2coding-ligature-bold-subset.ttf') format('truetype');
+}
+
+@font-face {
+  font-family: 'D2Coding';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: local('D2Coding ligature Regular'),
+    url('fonts/d2coding-ligature-subset.woff2') format('woff2'),
+    url('fonts/d2coding-ligature-subset.woff') format('woff'),
+    url('fonts/d2coding-ligature-subset.ttf') format('truetype');
+}

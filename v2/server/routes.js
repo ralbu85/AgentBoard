@@ -44,7 +44,7 @@ function setupRoutes(server, { auth, broadcast, PASSWORD, AUTH_TOKEN, loadConfig
       return res.end(html);
     }
 
-    const MIME = { ".css": "text/css", ".js": "application/javascript" };
+    const MIME = { ".css": "text/css", ".js": "application/javascript", ".woff2": "font/woff2", ".woff": "font/woff", ".ttf": "font/ttf" };
     const ext = path.extname(url);
     if (method === "GET" && MIME[ext]) {
       const safePath = path.normalize(url).replace(/^(\.\.[\/\\])+/, '');
@@ -277,6 +277,20 @@ function setupRoutes(server, { auth, broadcast, PASSWORD, AUTH_TOKEN, loadConfig
 
     if (method === "GET" && url === "/api/tunnel") {
       return json(res, 200, { url: null });
+    }
+
+    if (method === "POST" && url === "/api/perf") {
+      const body = JSON.parse(await readBody(req));
+      const fs = require('fs');
+      const logFile = require('path').join(__dirname, '..', 'perf.log');
+      const entry = '\n' + new Date().toISOString() +
+        ' | ' + (body.mobile ? 'MOBILE' : 'DESKTOP') +
+        ' | ' + body.screen +
+        ' | ' + (body.userAgent || '').slice(0, 60) + '\n' +
+        (body.marks || []).map(m => '  +' + m.t + 'ms\t' + m.name + (m.detail ? '\t' + m.detail : '')).join('\n') + '\n';
+      fs.appendFileSync(logFile, entry);
+      console.log('[perf] Client report received (' + (body.mobile ? 'mobile' : 'desktop') + ')');
+      return json(res, 200, { ok: true });
     }
 
     json(res, 404, { error: "not found" });

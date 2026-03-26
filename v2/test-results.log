@@ -1,0 +1,147 @@
+
+2026-03-26T03:11:12.706Z | 34 passed, 0 failed
+  ✓ Auth wall blocks unauthorized
+  ✓ Workers: 9 sessions
+  ✓ Worker fields complete
+  ✓ Static /
+  ✓ Static /style.css
+  ✓ Static /js/app.js
+  ✓ Static /js/terminal.js
+  ✓ Static /vendor/pdf.min.js
+  ✓ Config endpoint
+  ✓ Browse directory
+  ✓ First output: 14.0KB, 500 lines
+  ✓ Messages: 1 fulls, 0 diffs (active session may produce fulls)
+  ✓ State detection valid
+  ✓ Input API: 14ms
+  ✓ Output after input received
+  ✓ Mobile output: type=output-full
+  ✓ Mobile diffs: 0, fulls: 0
+  ✓ Session 11 output
+  ✓ Switch to 12: 4ms
+  ✓ Spawn: #19
+  ✓ Kill
+  ✓ Remove
+  ✓ 1 messages in 5s, avg 22.4KB
+  ✓ Full: 1, Diff: 0
+  ✓ Server RSS: 98MB
+  ✓ Test client RSS: 56MB
+  ✓ Initial lines: 500 (≤1000)
+  ✓ Max append: 0 lines
+  ✓ 3 rapid switches: 303ms
+  ✓ Input response received
+  ✓ Desktop and mobile get same lines: 500
+  ✓ Last lines contain prompt/activity indicator
+  ✓ Reconnect content matches (20/20 lines)
+  ✓ Buffer grew: 500 → 500
+
+
+2026-03-26T03:17:00.235Z | 34 passed, 0 failed
+  ✓ Auth wall blocks unauthorized
+  ✓ Workers: 9 sessions
+  ✓ Worker fields complete
+  ✓ Static /
+  ✓ Static /style.css
+  ✓ Static /js/app.js
+  ✓ Static /js/terminal.js
+  ✓ Static /vendor/pdf.min.js
+  ✓ Config endpoint
+  ✓ Browse directory
+  ✓ First output: 1.6KB, 75 lines
+  ✓ Messages: 2 fulls, 0 diffs (active session may produce fulls)
+  ✓ State detection valid
+  ✓ Input API: 15ms
+  ✓ Output after input received
+  ✓ Mobile output: type=output-full
+  ✓ Mobile diffs: 0, fulls: 0
+  ✓ Session 11 output
+  ✓ Switch to 12: 4ms
+  ✓ Spawn: #16
+  ✓ Kill
+  ✓ Remove
+  ✓ 1 messages in 5s, avg 22.0KB
+  ✓ Full: 1, Diff: 0
+  ✓ Server RSS: 61MB
+  ✓ Test client RSS: 55MB
+  ✓ Initial lines: 500 (≤1000)
+  ✓ Max append: 0 lines
+  ✓ 3 rapid switches: 301ms
+  ✓ Input response received
+  ✓ Desktop and mobile get same lines: 500
+  ✓ Last lines contain prompt/activity indicator
+  ✓ Reconnect content matches (20/20 lines)
+  ✓ Buffer grew: 500 → 500
+
+
+2026-03-26T03:25:04.831Z | 31 passed, 2 failed
+  ✓ Auth wall blocks unauthorized
+  ✓ Workers: 9 sessions
+  ✓ Worker fields complete
+  ✓ Static /
+  ✓ Static /style.css
+  ✓ Static /js/app.js
+  ✓ Static /js/terminal.js
+  ✓ Static /vendor/pdf.min.js
+  ✓ Config endpoint
+  ✓ Browse directory
+  ✓ First output: 26.4KB, 541 lines
+  ✓ Messages: 0 fulls, 0 diffs (active session may produce fulls)
+  ✓ State detection valid
+  ✓ Input API: 16ms
+  ✓ Output after input received
+  ✓ Mobile output: type=snapshot
+  ✓ Mobile diffs: 0, fulls: 0
+  ✓ Session 11 output
+  ✓ Switch to 12: 23ms
+  ✓ Spawn: #16
+  ✓ Kill
+  ✓ Remove
+  ✓ 1 messages in 5s, avg 26.4KB
+  ✓ Full: 1, Diff: 0
+  ✓ Server RSS: 66MB
+  ✓ Test client RSS: 56MB
+  ✓ Initial lines: 541 (≤1000)
+  ✓ Max append: 0 lines
+  ✓ 3 rapid switches: 299ms
+  ✗ Input response: timeout
+  ✓ Desktop and mobile get same lines: 541
+  ✓ Last lines contain prompt/activity indicator
+  ✗ CRASH: Cannot read properties of undefined (reading '521')
+
+
+2026-03-26T03:26:45.527Z | 34 passed, 0 failed
+  ✓ Auth wall blocks unauthorized
+  ✓ Workers: 9 sessions
+  ✓ Worker fields complete
+  ✓ Static /
+  ✓ Static /style.css
+  ✓ Static /js/app.js
+  ✓ Static /js/terminal.js
+  ✓ Static /vendor/pdf.min.js
+  ✓ Config endpoint
+  ✓ Browse directory
+  ✓ First output: 26.2KB, 541 lines
+  ✓ Messages: 0 fulls, 0 diffs (active session may produce fulls)
+  ✓ State detection valid
+  ✓ Input API: 15ms
+  ✓ Output after input received
+  ✓ Mobile output: type=snapshot
+  ✓ Mobile diffs: 3, fulls: 0
+  ✓ Session 11 output
+  ✓ Switch to 12: 23ms
+  ✓ Spawn: #16
+  ✓ Kill
+  ✓ Remove
+  ✓ 5 messages in 5s, avg 14.0KB
+  ✓ Full: 1, Diff: 4
+  ✓ Server RSS: 62MB
+  ✓ Test client RSS: 56MB
+  ✓ Initial lines: 541 (≤1000)
+  ✓ Max append: 0 lines
+  ✓ 3 rapid switches: 302ms
+  ✓ Input response received
+  ✓ Desktop and mobile get same lines: 541
+  ✓ Last lines contain prompt/activity indicator
+  ✓ Reconnect content matches (20/20 lines)
+  ✓ Buffer grew: 541 → 541
+

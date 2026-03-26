@@ -4,31 +4,33 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>AgentBoard v2</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cascadia+Code&display=swap">
 
-<!-- Desktop-only libs: loaded conditionally -->
+<!-- Shared libs (local) -->
+<script src="/vendor/marked.min.js"></script>
+<script src="/vendor/pdf.min.js"></script>
+
+<!-- Desktop-only libs (all local) -->
 <script>
 if (window.innerWidth > 768) {
-  // xterm.js
-  document.write('<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.min.css">');
-  ['@xterm/xterm@5.5.0/lib/xterm.min.js','@xterm/addon-fit@0.10.0/lib/addon-fit.min.js','@xterm/addon-search@0.15.0/lib/addon-search.min.js','@xterm/addon-web-links@0.11.0/lib/addon-web-links.min.js','@xterm/addon-unicode11@0.8.0/lib/addon-unicode11.min.js'].forEach(function(p){document.write('<script src="https://cdn.jsdelivr.net/npm/'+p+'"><\/script>');});
-  // CodeMirror
-  document.write('<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/codemirror@5/lib/codemirror.min.css">');
-  document.write('<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/codemirror@5/theme/material-darker.css">');
-  ['lib/codemirror.min.js','mode/stex/stex.min.js','mode/javascript/javascript.min.js','mode/python/python.min.js','mode/css/css.min.js','mode/htmlmixed/htmlmixed.min.js','mode/xml/xml.min.js','mode/markdown/markdown.min.js','mode/yaml/yaml.min.js','mode/shell/shell.min.js','mode/sql/sql.min.js','addon/edit/matchbrackets.min.js','addon/edit/closebrackets.min.js'].forEach(function(p){document.write('<script src="https://cdn.jsdelivr.net/npm/codemirror@5/'+p+'"><\/script>');});
-  // Others
-  document.write('<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"><\/script>');
-  document.write('<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">');
-  document.write('<script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"><\/script>');
-  document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"><\/script>');
+  document.write('<link rel="stylesheet" href="/vendor/xterm.min.css">');
+  document.write('<link rel="stylesheet" href="/vendor/codemirror.min.css">');
+  document.write('<link rel="stylesheet" href="/vendor/material-darker.css">');
+  document.write('<link rel="stylesheet" href="/vendor/katex.min.css">');
+  ['/vendor/xterm.min.js','/vendor/addon-fit.min.js','/vendor/addon-search.min.js','/vendor/addon-web-links.min.js','/vendor/addon-unicode11.min.js','/vendor/codemirror.min.js','/vendor/cm-modes.min.js','/vendor/katex.min.js'].forEach(function(p){document.write('<script src="'+p+'"><\/script>');});
 }
 </script>
 
 <link rel="stylesheet" href="/style.css">
 </head>
 <body>
+<script src="/js/perf.js"></script>
+<script>
+// Load D2Coding font (local, fast)
+var _d2 = document.createElement('link');
+_d2.rel = 'stylesheet';
+_d2.href = '/vendor/d2coding.css';
+document.head.appendChild(_d2);
+</script>
 
 <div id="login" style="display:none">
   <h2 style="font-size:20px">AgentBoard v2</h2>
@@ -67,10 +69,7 @@ if (window.innerWidth > 768) {
   <div id="workspace" style="display:none">
     <div id="sidebar">
       <div id="mobile-session-section">
-        <div class="sidebar-section-header" data-section="mobile-sessions">
-          <span class="sidebar-collapse-icon">&#9660;</span>
-          <span>SESSIONS</span>
-        </div>
+        <div class="sidebar-section-header"><span>SESSIONS</span></div>
         <div id="mobile-session-tabs"></div>
       </div>
       <div class="sidebar-section" id="sidebar-sessions-section">

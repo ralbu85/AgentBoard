@@ -30,7 +30,10 @@
     return (bytes / 1048576).toFixed(1) + 'M';
   }
 
+  var _currentBrowseSession = null;
+
   function refresh(sessionId) {
+    _currentBrowseSession = sessionId;
     var s = AB.store.get(sessionId);
     if (!s) return;
     _spRootPath[sessionId] = s.cwd;
@@ -39,18 +42,18 @@
   }
 
   function loadFiles(dir) {
-    var activeId = AB.store.activeId;
-    var root = _spRootPath[activeId];
+    var browseId = _currentBrowseSession || AB.store.activeId;
+    var root = _spRootPath[browseId];
     if (root && !dir.startsWith(root) && dir !== '/') dir = root;
     _spBrowsePath = dir;
-    if (activeId) _spBrowsePaths[activeId] = dir;
+    if (browseId) _spBrowsePaths[browseId] = dir;
     renderPath(dir);
 
     AB.api.get('/api/files?path=' + encodeURIComponent(dir))
       .then(function(data) {
         var list = document.getElementById('sp-files-list');
         list.innerHTML = '';
-        var root = _spRootPath[activeId] || '/';
+        var root = _spRootPath[browseId] || '/';
         if (dir !== '/' && dir !== root) {
           var parent = dir.replace(/\/[^/]+\/?$/, '') || '/';
           if (parent.length < root.length) parent = root;
@@ -68,7 +71,7 @@
           var size = e.type === 'file' ? formatSize(e.size) : '';
           item.innerHTML = '<span class="sp-file-icon">' + icon + '</span><span class="sp-file-name">' + e.name + '</span><span class="sp-file-size">' + size + '</span>';
           if (e.type === 'dir') {
-            item.onclick = function() { loadFiles(fullPath); };
+            item.onclick = function(ev) { ev.stopPropagation(); loadFiles(fullPath); };
           } else if (isPDF(e.name) || isEditable(e.name) || isImage(e.name)) {
             item.onclick = function() { AB.editor.openFileInPanel(fullPath, e.name); };
             // Draggable to viewer pane for split

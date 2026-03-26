@@ -15,6 +15,11 @@
     var isMobile = window.innerWidth <= 768;
 
     if (isMobile) {
+      // Save previous session's viewers
+      if (prevId && prevId !== id) {
+        _saveSessionViewers(prevId);
+        _clearAll();
+      }
       document.getElementById('sidebar').classList.remove('mobile-open');
       document.getElementById('mobile-backdrop').classList.remove('active');
       AB.terminal.create(id);
@@ -24,6 +29,9 @@
       var tl = document.getElementById('terminal-pane-title');
       if (s && tl) tl.textContent = AB.getTitle(id, s.cwd, s.cmd);
       if (AB.files) AB.files.refresh(id);
+      _restoreSessionViewers(id);
+      // Switch to terminal view (not viewer)
+      if (AB._setMobileView) AB._setMobileView('terminal');
       AB.ws.send({ type: 'active', id: id });
       return;
     }
@@ -275,9 +283,13 @@
 
     _updateViewerVisibility();
 
-    // Mobile: auto-switch to Files view
-    if (window.innerWidth <= 768 && AB._setMobileView) {
-      AB._setMobileView('viewer');
+    // Mobile: switch to viewer + close sidebar
+    if (window.innerWidth <= 768) {
+      if (AB._setMobileView) AB._setMobileView('viewer');
+      var sb = document.getElementById('sidebar');
+      if (sb) sb.classList.remove('mobile-open');
+      var bd = document.getElementById('mobile-backdrop');
+      if (bd) bd.classList.remove('active');
     }
 
     // Load content

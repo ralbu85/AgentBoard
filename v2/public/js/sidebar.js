@@ -197,6 +197,19 @@
     });
   }
 
+  var _mobileHighlightId = null;
+
+  function _highlightMobileTab(id) {
+    _mobileHighlightId = id;
+    var tabs = document.getElementById('mobile-session-tabs');
+    if (!tabs) return;
+    tabs.querySelectorAll('.mobile-tab').forEach(function(t) {
+      t.classList.toggle('highlighted', t.dataset.id === String(id));
+    });
+    // Preview: update file browser to this session's cwd
+    if (AB.files) AB.files.refresh(id);
+  }
+
   // ── Mobile Session Tabs ──
 
   function _addMobileTab(id, data) {
@@ -207,9 +220,30 @@
     tab.dataset.id = String(id);
     var state = store.effectiveState(id);
     var folder = (data.cwd || '').replace(/\/$/, '').split('/').pop() || id;
-    tab.innerHTML = '<span class="mobile-tab-dot ' + state + '"></span><span class="mobile-tab-name">' + folder + '</span>';
-    tab.addEventListener('touchend', function(e) { e.preventDefault(); store.setActive(id); });
-    tab.addEventListener('click', function(e) { e.stopPropagation(); store.setActive(id); });
+    tab.innerHTML =
+      '<span class="mobile-tab-dot ' + state + '"></span>' +
+      '<span class="mobile-tab-name">' + folder + '</span>' +
+      '<button class="mobile-tab-go">Open</button>';
+    // Tap row = highlight (preview)
+    tab.addEventListener('touchend', function(e) {
+      if (e.target.classList.contains('mobile-tab-go')) return;
+      e.preventDefault();
+      _highlightMobileTab(id);
+    });
+    tab.addEventListener('click', function(e) {
+      if (e.target.classList.contains('mobile-tab-go')) return;
+      e.stopPropagation();
+      _highlightMobileTab(id);
+    });
+    // Open button = switch session + close sidebar
+    tab.querySelector('.mobile-tab-go').addEventListener('touchend', function(e) {
+      e.preventDefault(); e.stopPropagation();
+      store.setActive(id);
+    });
+    tab.querySelector('.mobile-tab-go').addEventListener('click', function(e) {
+      e.stopPropagation();
+      store.setActive(id);
+    });
     tabs.appendChild(tab);
   }
 

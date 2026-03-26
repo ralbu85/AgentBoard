@@ -32,7 +32,7 @@ async function pollOutput(id) {
 
   const cols = s.cols || 80;
   const rows = s.rows || 50;
-  const captureStart = (id === activeSessionId) ? "-2000" : "-500";
+  const captureStart = (id === activeSessionId) ? "-500" : "-50";
 
   // Resize FIRST, then capture — must be sequential so tmux
   // reflows content before we read it
@@ -85,12 +85,20 @@ async function pollOutput(id) {
     return;
   }
 
-  // Output changed — send raw output to clients
   lastCapture[id] = output;
   s.lastChangeTime = Date.now();
 
-  // v2: send raw output directly — xterm.js handles rendering
-  broadcastFn({ type: "output", id, data: output });
+  // Update server buffer — single source of truth
+  const buffer = require('./buffer');
+  const diff = buffer.update(id, output);
+
+  if (diff) {
+    if (diff.type === 'full') {
+      broadcastFn({ type: "output-full", id, lines: diff.lines, version: diff.version });
+    } else {
+      broadcastFn({ type: "output-append", id, lines: diff.lines, version: diff.version });
+    }
+  }
 
   // Update AI state
   if (newAiState !== s.aiState) {

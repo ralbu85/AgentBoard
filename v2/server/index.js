@@ -7,13 +7,13 @@ const { WebSocketServer } = require("ws");
 
 const { tmuxAsyncRaw } = require("./tmux");
 const { sessions, setBroadcast: setSessionsBroadcast, recoverSessions, sessionTitles, saveSessionTitles } = require("./sessions");
-const { setBroadcast: setPollerBroadcast, setActiveSession, pollOutput, pollAll, lastCapture } = require("./poller");
+const streamer = require("./streamer");
 const { setupRoutes } = require("./routes");
 const tunnel = require("./tunnel");
 
 // ── Config ──
 
-const PORT = process.env.V2_PORT || process.env.PORT || 3001;
+const PORT = process.env.V2_PORT || 3001;
 const PASSWORD = process.env.DASHBOARD_PASSWORD || "changeme";
 const DISCORD_WEBHOOK = process.env.DISCORD_WEBHOOK;
 
@@ -41,44 +41,20 @@ let wss;
 
 function broadcast(obj) {
   if (!wss) return;
-  // For output messages, send truncated version to mobile clients
-  if (obj.type === 'output') {
-    var fullMsg = JSON.stringify(obj);
-    var mobileObj = null;
-    var mobileMsg = null;
-    wss.clients.forEach(c => {
-      if (c.readyState !== 1) return;
-      if (clientMobile.get(c)) {
-        if (!mobileObj) {
-          // Last 200 lines only for mobile
-          var lines = obj.data.split('\n');
-          mobileObj = { type: 'output', id: obj.id, data: lines.slice(-200).join('\n') };
-          mobileMsg = JSON.stringify(mobileObj);
-        }
-        c.send(mobileMsg);
-      } else {
-        c.send(fullMsg);
-      }
-    });
-  } else {
-    var msg = JSON.stringify(obj);
-    wss.clients.forEach(c => { if (c.readyState === 1) c.send(msg); });
-  }
+  var msg = JSON.stringify(obj);
+  wss.clients.forEach(c => { if (c.readyState === 1) c.send(msg); });
 }
 
-// Wire up broadcast
 setSessionsBroadcast(broadcast);
-setPollerBroadcast(broadcast);
+streamer.setBroadcast(broadcast);
 tunnel.setBroadcast(broadcast);
 
-// Setup HTTP routes
 setupRoutes(server, { auth, broadcast, PASSWORD, AUTH_TOKEN, loadConfig });
 
 // ── WebSocket ──
 
 wss = new WebSocketServer({ server });
 const clientSizes = new Map();
-const clientMobile = new Map();
 
 wss.on('connection', ws => {
   if (Object.keys(sessionTitles).length > 0) {
@@ -88,10 +64,6 @@ wss.on('connection', ws => {
   ws.on('message', raw => {
     try {
       const msg = JSON.parse(raw);
-
-      if (msg.type === 'client-info') {
-        if (msg.mobile) clientMobile.set(ws, true);
-      }
 
       if (msg.type === 'resize') {
         clientSizes.set(ws, { cols: msg.cols, rows: msg.rows });
@@ -104,35 +76,36 @@ wss.on('connection', ws => {
       }
 
       if (msg.type === 'active') {
-        setActiveSession(msg.id || null);
+        streamer.setActiveSession(msg.id || null);
         const size = clientSizes.get(ws);
         if (size) {
-          // Apply client size to ALL sessions so background sessions
-          // get resized too (prevents stale 293+ cols from v1)
           sessions.forEach(s => { s.cols = size.cols; s.rows = size.rows; });
         }
         if (msg.id) {
-          // Clear cached capture so next poll sends fresh output at new size
-          delete lastCapture[msg.id];
-          pollOutput(msg.id).catch(() => {});
+          // Send snapshot + start streaming
+          streamer.getSnapshot(msg.id).then(output => {
+            if (output) {
+              ws.send(JSON.stringify({ type: 'snapshot', id: msg.id, data: output }));
+            }
+            streamer.startStream(msg.id);
+          });
         }
       }
 
       if (msg.type === 'resync') {
         if (msg.id) {
-          // Clear cache and re-poll at current (resized) dimensions
-          delete lastCapture[msg.id];
-          pollOutput(msg.id).catch(() => {});
+          streamer.getSnapshot(msg.id).then(output => {
+            if (output) {
+              ws.send(JSON.stringify({ type: 'snapshot', id: msg.id, data: output }));
+            }
+          });
         }
       }
 
       if (msg.type === 'title') {
         if (msg.id) {
-          if (msg.title) {
-            sessionTitles[msg.id] = msg.title;
-          } else {
-            delete sessionTitles[msg.id];
-          }
+          if (msg.title) sessionTitles[msg.id] = msg.title;
+          else delete sessionTitles[msg.id];
           saveSessionTitles();
           broadcast({ type: "title", id: msg.id, title: msg.title || null });
         }
@@ -140,19 +113,12 @@ wss.on('connection', ws => {
 
       if (msg.type === 'key') {
         const s = sessions.get(msg.id);
-        if (s) {
-          tmuxAsyncRaw(["send-keys", "-t", s.sessionName, msg.key]).then(() => {
-            setTimeout(() => pollOutput(msg.id), 100);
-          });
-        }
+        if (s) tmuxAsyncRaw(["send-keys", "-t", s.sessionName, msg.key]);
       }
 
-      // Direct terminal keystroke input (from xterm.js onData)
       if (msg.type === 'terminal-input') {
         const s = sessions.get(msg.id);
         if (s && msg.data) {
-          const data = msg.data;
-          // Map xterm.js escape sequences to tmux key names
           const SEQ_MAP = {
             '\r': 'Enter', '\x1b': 'Escape', '\t': 'Tab',
             '\x1b[A': 'Up', '\x1b[B': 'Down', '\x1b[C': 'Right', '\x1b[D': 'Left',
@@ -160,15 +126,13 @@ wss.on('connection', ws => {
             '\x03': 'C-c', '\x04': 'C-d', '\x1a': 'C-z',
             '\x1b[H': 'Home', '\x1b[F': 'End',
             '\x1b[5~': 'PageUp', '\x1b[6~': 'PageDown',
-            '\x1b[3~': 'DC', // Delete
+            '\x1b[3~': 'DC',
           };
-          if (SEQ_MAP[data]) {
-            tmuxAsyncRaw(["send-keys", "-t", s.sessionName, SEQ_MAP[data]]);
+          if (SEQ_MAP[msg.data]) {
+            tmuxAsyncRaw(["send-keys", "-t", s.sessionName, SEQ_MAP[msg.data]]);
           } else {
-            // Literal text (regular characters)
-            tmuxAsyncRaw(["send-keys", "-t", s.sessionName, "-l", data]);
+            tmuxAsyncRaw(["send-keys", "-t", s.sessionName, "-l", msg.data]);
           }
-          setTimeout(() => pollOutput(msg.id), 80);
         }
       }
 
@@ -182,26 +146,28 @@ wss.on('connection', ws => {
               await tmuxAsyncRaw(["send-keys", "-t", s.sessionName, "", "Enter"]);
             }
             broadcast({ type: "log", id: msg.id, src: "stdin", text: msg.text, ts: Date.now() });
-            setTimeout(() => pollOutput(msg.id), 100);
           })();
         }
       }
     } catch (e) {}
   });
 
-  ws.on('close', () => { clientSizes.delete(ws); clientMobile.delete(ws); });
+  ws.on('close', () => { clientSizes.delete(ws); });
 });
 
 // ── Start ──
 
 server.listen(PORT, () => {
   recoverSessions();
-  pollAll();
+  // Start streaming for all existing sessions
+  sessions.forEach((s, id) => { streamer.startStream(id); });
+  // Lightweight state polling (no capture-pane, just process check + last 5 lines)
+  streamer.pollStates();
   console.log(`AgentBoard v2 running on http://localhost:${PORT}`);
   console.log(`Password: ${PASSWORD}`);
   tunnel.startTunnel(PORT, DISCORD_WEBHOOK);
   setInterval(() => tunnel.checkTunnel(), 60000);
 });
 
-process.on("SIGINT", () => { tunnel.cleanup(); process.exit(); });
-process.on("SIGTERM", () => { tunnel.cleanup(); process.exit(); });
+process.on("SIGINT", () => { streamer.stopAllStreams(); tunnel.cleanup(); process.exit(); });
+process.on("SIGTERM", () => { streamer.stopAllStreams(); tunnel.cleanup(); process.exit(); });

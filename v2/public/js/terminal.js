@@ -7,6 +7,19 @@
   var terminals = {};
   var _isMobile = window.innerWidth <= 768;
 
+  // Only auto-scroll if user is near bottom (not reading history)
+  function _autoScroll(t) {
+    if (t.mobile && t._pre) {
+      var pre = t._pre;
+      var nearBottom = (pre.scrollHeight - pre.scrollTop - pre.clientHeight) < 80;
+      if (nearBottom) pre.scrollTop = pre.scrollHeight;
+    } else if (t.term) {
+      var buf = t.term.buffer.active;
+      var atBottom = buf.viewportY >= buf.baseY;
+      if (atBottom) t.term.scrollToBottom();
+    }
+  }
+
   function create(id) {
     if (terminals[id]) return terminals[id];
 
@@ -30,7 +43,7 @@
     var term = new Terminal({
       cursorBlink: true, cursorStyle: 'bar', disableStdin: false,
       scrollback: 10000, fontSize: 13, letterSpacing: 0,
-      fontFamily: '"Cascadia Code", "Cascadia Mono", "Consolas", monospace',
+      fontFamily: '"D2Coding", "Cascadia Code", "Cascadia Mono", "Consolas", monospace',
       theme: {
         background: '#0d1117', foreground: '#e6edf3', cursor: '#e6edf3',
         selectionBackground: '#264f78',
@@ -79,42 +92,79 @@
       container.appendChild(t.el);
       if (t.term) t.term.open(t.el);
       t.opened = true;
-      if (t.pendingData) { _doWrite(t, t.pendingData); t.pendingData = null; }
+      if (t._pending) {
+        if (t._pending.type === 'snapshot') writeSnapshot(id, t._pending.data);
+        t._pending = null;
+      }
+      if (t._pendingStream) {
+        writeStream(id, t._pendingStream);
+        t._pendingStream = null;
+      }
     } else if (t.el.parentElement !== container) {
       container.appendChild(t.el);
     }
   }
 
-  function _doWrite(t, data) {
-    if (t.mobile) {
-      // Fast path: skip everything if raw data identical
-      if (data === t.lastData) return;
-      if (!t._pre) {
-        t._pre = document.createElement('pre');
-        t._pre.className = 'mobile-terminal-pre';
-        t.el.appendChild(t._pre);
-      }
-      // Only process last 80 lines, trim right spaces
-      var i, lines = data.split('\n'), start = Math.max(0, lines.length - 80);
-      var buf = '';
-      for (i = start; i < lines.length; i++) {
-        if (i > start) buf += '\n';
-        buf += lines[i].replace(/\s+$/, '');
-      }
-      t._pre.innerHTML = _ansiToHtml(buf);
-      t._pre.scrollTop = t._pre.scrollHeight;
-    } else {
-      var lines = data.split('\n');
-      var out = '';
-      for (var i = 0; i < lines.length; i++) {
-        if (i > 0) out += '\r\n';
-        out += lines[i].replace(/\s+$/, '');
-      }
-      t.term.write('\x1b[2J\x1b[3J\x1b[H' + out, function() {
-        t.term.scrollToBottom();
-      });
+  // ── Unified rendering (server manages buffer, client just renders) ──
+
+  // ── Unified rendering ──
+
+  function _ensurePre(t) {
+    if (!t._pre) {
+      t._pre = document.createElement('pre');
+      t._pre.className = 'mobile-terminal-pre';
+      t.el.appendChild(t._pre);
     }
-    t.lastData = data;
+    return t._pre;
+  }
+
+  // Snapshot: initial terminal state (capture-pane output)
+  function writeSnapshot(id, data) {
+    var t = terminals[id];
+    if (!t) t = create(id);
+    if (!t.opened) { t._pending = { type: 'snapshot', data: data }; return; }
+
+    var t0 = Date.now();
+    if (t.mobile) {
+      var pre = _ensurePre(t);
+      var lines = data.split('\n');
+      if (lines.length > 200) lines = lines.slice(-200);
+      pre.innerHTML = _ansiToHtml(lines.map(function(l) { return l.replace(/\s+$/, ''); }).join('\n'));
+      _autoScroll(t);
+    } else if (t.term) {
+      // Write snapshot as-is — xterm handles ANSI natively
+      // Convert \n to \r\n for xterm
+      var converted = data.replace(/\r?\n/g, '\r\n');
+      t.term.write('\x1b[2J\x1b[H' + converted);
+      _autoScroll(t);
+    }
+    if (AB._perfMarkRender) AB._perfMarkRender('snapshot', data.split('\n').length, Date.now() - t0);
+  }
+
+  // Stream: real-time output (pipe-pane, just append)
+  function writeStream(id, data) {
+    var t = terminals[id];
+    if (!t) t = create(id);
+    if (!t.opened) {
+      // Buffer stream data
+      if (!t._pendingStream) t._pendingStream = '';
+      t._pendingStream += data;
+      return;
+    }
+
+    if (t.mobile) {
+      var pre = _ensurePre(t);
+      // Append streamed text as HTML
+      var html = _ansiToHtml(data.replace(/\s+$/gm, ''));
+      pre.insertAdjacentHTML('beforeend', html);
+      // Cap DOM size
+      while (pre.childNodes.length > 5000) pre.removeChild(pre.childNodes[0]);
+      _autoScroll(t);
+    } else if (t.term) {
+      // xterm.js handles raw stream natively — this is what it's designed for
+      t.term.write(data);
+      _autoScroll(t);
+    }
   }
 
   function _256color(n) {
@@ -148,23 +198,21 @@
       .replace(/\x1b\[[0-9;]*[a-zA-Z]/g,'');
   }
 
-  function write(id, data) {
-    var t = terminals[id];
-    if (!t) t = create(id);
-    if (data === t.lastData) return;
-    if (!t.opened) { t.pendingData = data; t.lastData = data; return; }
-    _doWrite(t, data);
-  }
+  // Legacy compat
+  function write(id, data) { writeSnapshot(id, data); }
 
   function show(id) {
     Object.keys(terminals).forEach(function(k) {
-      terminals[k].el.style.display = (k === id) ? '' : 'none';
+      var hidden = (k !== id);
+      terminals[k].el.style.display = hidden ? 'none' : '';
+      // Keep buffer and lastData — preserve scroll history on session switch
     });
     var t = terminals[id];
     if (!t || !t.opened) return;
     if (t.mobile) {
-      if (t._pre) t._pre.scrollTop = t._pre.scrollHeight;
+      if (t._pre) _autoScroll(t);
     } else {
+      // Force full re-render on next write (renderedLines cleared above if was hidden)
       requestAnimationFrame(function() { try { t.fitAddon.fit(); } catch(e) {} });
     }
   }
@@ -198,6 +246,6 @@
 
   function get(id) { return terminals[id] || null; }
 
-  AB.terminal = { create:create, open:open, write:write, show:show, resize:resize, resizeAll:resizeAll, search:search, searchNext:searchNext, searchPrev:searchPrev, destroy:destroy, get:get };
+  AB.terminal = { create:create, open:open, write:write, writeSnapshot:writeSnapshot, writeStream:writeStream, show:show, resize:resize, resizeAll:resizeAll, search:search, searchNext:searchNext, searchPrev:searchPrev, destroy:destroy, get:get };
 
 })(window.AB = window.AB || {});

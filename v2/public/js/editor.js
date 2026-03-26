@@ -22,6 +22,16 @@
   function loadPDF(body, filePath, panelId) {
     var url = '/api/file-raw?path=' + encodeURIComponent(filePath);
     body.classList.add('viewer-content');
+
+    // Mobile or no pdf.js: use iframe
+    if (typeof pdfjsLib === 'undefined') {
+      var iframe = document.createElement('iframe');
+      iframe.src = url;
+      iframe.style.cssText = 'width:100%;height:100%;border:none;flex:1';
+      body.appendChild(iframe);
+      _openEditors[panelId] = { filePath: filePath, type: 'pdf', reload: function() { iframe.src = url + '&t=' + Date.now(); } };
+      return;
+    }
     var viewer = document.createElement('div');
     viewer.className = 'panel-pdf-viewer';
     viewer.innerHTML =
