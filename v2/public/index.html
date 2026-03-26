@@ -5,18 +5,11 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>AgentBoard v2</title>
 
-<!-- Shared libs (local) -->
-<script src="/vendor/marked.min.js"></script>
-<script src="/vendor/pdf.min.js"></script>
-
-<!-- Desktop-only libs (all local) -->
+<!-- Desktop: xterm.js only (required for terminal) -->
 <script>
 if (window.innerWidth > 768) {
   document.write('<link rel="stylesheet" href="/vendor/xterm.min.css">');
-  document.write('<link rel="stylesheet" href="/vendor/codemirror.min.css">');
-  document.write('<link rel="stylesheet" href="/vendor/material-darker.css">');
-  document.write('<link rel="stylesheet" href="/vendor/katex.min.css">');
-  ['/vendor/xterm.min.js','/vendor/addon-fit.min.js','/vendor/addon-search.min.js','/vendor/addon-web-links.min.js','/vendor/addon-unicode11.min.js','/vendor/codemirror.min.js','/vendor/cm-modes.min.js','/vendor/katex.min.js'].forEach(function(p){document.write('<script src="'+p+'"><\/script>');});
+  ['/vendor/xterm.min.js','/vendor/addon-fit.min.js','/vendor/addon-search.min.js','/vendor/addon-web-links.min.js','/vendor/addon-unicode11.min.js'].forEach(function(p){document.write('<script src="'+p+'"><\/script>');});
 }
 </script>
 

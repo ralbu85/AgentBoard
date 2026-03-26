@@ -2,8 +2,24 @@
 
 (function(AB) {
 
-  // Track open panels for refresh
-  var _openEditors = {}; // panelId → { filePath, fileName, ext, type, cm, reload }
+  var _openEditors = {};
+  var _libsLoaded = false;
+
+  function _loadLibs(cb) {
+    if (_libsLoaded) { cb(); return; }
+    var scripts = ['/vendor/marked.min.js', '/vendor/pdf.min.js', '/vendor/codemirror.min.js', '/vendor/cm-modes.min.js', '/vendor/katex.min.js'];
+    var css = ['/vendor/codemirror.min.css', '/vendor/material-darker.css', '/vendor/katex.min.css'];
+    var loaded = 0, total = scripts.length;
+    css.forEach(function(h) {
+      var l = document.createElement('link'); l.rel = 'stylesheet'; l.href = h;
+      document.head.appendChild(l);
+    });
+    scripts.forEach(function(src) {
+      var s = document.createElement('script'); s.src = src;
+      s.onload = s.onerror = function() { loaded++; if (loaded >= total) { _libsLoaded = true; cb(); } };
+      document.head.appendChild(s);
+    });
+  }
 
   function openFileInPanel(filePath, fileName) {
     if (!filePath || !fileName) return;
@@ -13,8 +29,15 @@
     else if (['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'bmp', 'ico'].indexOf(ext) !== -1) fileType = 'image';
     else if (ext === 'md') fileType = 'markdown';
 
-    // Delegate to panels.openViewer — it handles tabs and dedup
-    AB.panels.openViewer(filePath, fileName, fileType);
+    // Images don't need libs
+    if (fileType === 'image') {
+      AB.panels.openViewer(filePath, fileName, fileType);
+      return;
+    }
+    // Lazy load editor libs then open
+    _loadLibs(function() {
+      AB.panels.openViewer(filePath, fileName, fileType);
+    });
   }
 
   // ── PDF Viewer with zoom ──

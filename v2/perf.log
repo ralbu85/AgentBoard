@@ -1,0 +1,24 @@
+
+2026-03-26T03:32:07.136Z | MOBILE | 440x766 | Mozilla/5.0 (iPhone; CPU iPhone OS 26_3_1 like Mac OS X) App
+  +254ms	boot-start
+  +256ms	page-load	dns=0ms tcp=251ms ttfb=309ms dom=33798ms total=0ms
+  +256ms	slow-resources	pdf.min.js=33516ms, marked.min.js=972ms, perf.js=750ms, store.js=757ms, style.css=1229ms, api.js=459ms, terminal.js=1183ms, ws.js=990ms, sidebar.js=1243ms, panels.js=1733ms, notify.js=1744ms, editor.js=1752ms, favorites.js=2197ms, files.js=2234ms, app.js=3598ms, d2coding.css=246ms
+  +256ms	total-resources	16 files, 498KB
+  +545ms	api-response	200
+  +1475ms	enter-app	9 sessions
+  +1988ms	ws-connected	510ms
+  +1989ms	session-switch	id=11
+  +1989ms	first-ws-message	titles
+  +3005ms	render-snapshot	543 lines, 21ms
+
+2026-03-26T03:32:36.663Z | DESKTOP | 1500x831 | Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36
+  +26ms	boot-start
+  +1350ms	page-load	dns=0ms tcp=0ms ttfb=219ms dom=79773ms total=0ms
+  +1351ms	slow-resources	marked.min.js=5784ms, pdf.min.js=33936ms, style.css=2298ms, perf.js=526ms, store.js=789ms, api.js=530ms, terminal.js=2152ms, ws.js=1431ms, sidebar.js=1636ms, panels.js=3203ms, editor.js=2352ms, files.js=2354ms, notify.js=2660ms, favorites.js=2863ms, app.js=3661ms, xterm.min.css=930ms, codemirror.min.css=851ms, material-darker.css=224ms, katex.min.css=2205ms, xterm.min.js=39375ms, addon-fit.min.js=546ms, addon-search.min.js=1125ms, addon-web-links.min.js=964ms, addon-unicode11.min.js=4250ms, codemirror.min.js=26385ms, cm-modes.min.js=19917ms, katex.min.js=46336ms, d2coding.css=245ms
+  +1351ms	total-resources	28 files, 1426KB
+  +1362ms	api-response	200
+  +1403ms	enter-app	9 sessions
+  +2576ms	ws-connected	1162ms
+  +2624ms	session-switch	id=11
+  +2631ms	first-ws-message	titles
+  +3731ms	render-snapshot	543 lines, 3ms
