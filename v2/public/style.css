@@ -1376,30 +1376,12 @@ header h1 {
   /* Hide pane header on mobile — save space */
   #terminal-pane .pane-header { display: none; }
 
-  /* Mobile terminal: HTML-based rendering */
-  .xterm-wrap {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    min-height: 0;
-    overflow: hidden;
-  }
-
-  .mobile-terminal-pre {
-    font-family: "Menlo", "SF Mono", "Monaco", monospace;
-    font-size: 11px;
-    line-height: 1.35;
-    color: #e6edf3;
-    background: #0d1117;
-    margin: 0;
-    padding: 6px;
-    overflow-y: auto;
-    overflow-x: hidden;
-    flex: 1;
-    min-height: 0;
-    white-space: pre-wrap;
-    word-break: break-all;
+  /* xterm.js on mobile — native momentum scroll */
+  .xterm-wrap { flex: 1; min-height: 0; overflow: hidden; }
+  .xterm-wrap .xterm-screen { pointer-events: none; }
+  .xterm-wrap .xterm-viewport {
     -webkit-overflow-scrolling: touch;
+    overflow-y: scroll !important;
   }
 
   /* Hide viewer & drag on mobile by default */

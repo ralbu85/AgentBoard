@@ -22,6 +22,7 @@
     get size() { return this.#sessions.size; }
 
     add(id, data) {
+      if (this.#sessions.has(id)) return;  // no duplicates
       this.#sessions.set(id, {
         cwd: data.cwd || '',
         cmd: data.cmd || 'claude',

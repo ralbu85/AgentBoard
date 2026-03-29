@@ -22,3 +22,596 @@
   +2624ms	session-switch	id=11
   +2631ms	first-ws-message	titles
   +3731ms	render-snapshot	543 lines, 3ms
+
+2026-03-26T03:38:17.586Z | DESKTOP | 1500x831 | Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36
+  +36ms	boot-start
+  +580ms	api-response	200
+  +583ms	page-load	dns=1ms tcp=243ms ttfb=309ms dom=34752ms total=0ms
+  +584ms	slow-resources	style.css=3435ms, perf.js=676ms, xterm.min.css=6066ms, xterm.min.js=34839ms, addon-fit.min.js=849ms, addon-search.min.js=1150ms, addon-web-links.min.js=846ms, addon-unicode11.min.js=1465ms, store.js=928ms, api.js=1231ms, terminal.js=2455ms, ws.js=1966ms, sidebar.js=3375ms, panels.js=3070ms, editor.js=3376ms, files.js=4193ms, notify.js=3927ms, favorites.js=5012ms, app.js=5625ms, d2coding.css=308ms
+  +584ms	total-resources	20 files, 463KB
+  +594ms	enter-app	9 sessions
+  +1036ms	ws-connected	432ms
+  +1037ms	session-switch	id=11
+  +1130ms	first-ws-message	titles
+  +2042ms	render-snapshot	543 lines, 3ms
+
+2026-03-26T03:38:18.754Z | MOBILE | 440x766 | Mozilla/5.0 (iPhone; CPU iPhone OS 26_3_1 like Mac OS X) App
+  +460ms	boot-start
+  +462ms	page-load	dns=0ms tcp=316ms ttfb=234ms dom=11044ms total=0ms
+  +462ms	slow-resources	ws.js=563ms, api.js=841ms, perf.js=845ms, store.js=848ms, sidebar.js=1028ms, terminal.js=1771ms, panels.js=2618ms, editor.js=2620ms, style.css=7962ms, notify.js=1269ms, favorites.js=1824ms, files.js=1840ms, app.js=8429ms, d2coding.css=240ms
+  +463ms	total-resources	14 files, 147KB
+  +746ms	api-response	200
+  +1088ms	enter-app	9 sessions
+  +1565ms	ws-connected	474ms
+  +1565ms	session-switch	id=11
+  +1565ms	first-ws-message	titles
+  +2850ms	render-snapshot	543 lines, 21ms
+
+2026-03-26T03:44:40.040Z | MOBILE | 748x830 | Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36
+  +4063ms	boot-start
+  +4599ms	api-response	200
+  +4600ms	page-load	dns=1ms tcp=213ms ttfb=354ms dom=4083ms total=0ms
+  +4600ms	slow-resources	style.css=1569ms, perf.js=663ms, store.js=1429ms, api.js=304ms, terminal.js=1223ms, ws.js=516ms, sidebar.js=3582ms, panels.js=2142ms, editor.js=1431ms, files.js=1046ms, notify.js=1532ms, favorites.js=1742ms, app.js=4065ms, d2coding.css=498ms
+  +4600ms	total-resources	14 files, 146KB
+  +4603ms	enter-app	10 sessions
+  +5103ms	ws-connected	497ms
+  +5104ms	session-switch	id=11
+  +5113ms	first-ws-message	titles
+  +7161ms	render-snapshot	543 lines, 618ms
+
+2026-03-26T04:12:33.530Z | MOBILE | 440x766 | Mozilla/5.0 (iPhone; CPU iPhone OS 26_3_1 like Mac OS X) App
+  +3028ms	boot-start
+  +3033ms	page-load	dns=0ms tcp=0ms ttfb=228ms dom=3896ms total=0ms
+  +3033ms	slow-resources	perf.js=447ms, style.css=1126ms, store.js=556ms, api.js=756ms, terminal.js=2789ms, sidebar.js=658ms, ws.js=764ms, editor.js=871ms, panels.js=3246ms, notify.js=1245ms, files.js=1604ms, app.js=2020ms, favorites.js=3886ms, d2coding.css=591ms
+  +3034ms	total-resources	14 files, 147KB
+  +3323ms	api-response	200
+  +3536ms	enter-app	9 sessions
+  +4032ms	ws-connected	492ms
+  +4036ms	session-switch	id=11
+  +4037ms	first-ws-message	titles
+  +5334ms	render-snapshot	543 lines, 52ms
+
+2026-03-26T04:29:58.595Z | DESKTOP | 1500x831 | Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36
+  +1003ms	boot-start
+  +2645ms	api-response	200
+  +2865ms	enter-app	9 sessions
+  +3357ms	ws-connected	482ms
+  +3358ms	session-switch	id=11
+  +3359ms	first-ws-message	titles
+
+2026-03-26T04:33:20.636Z | DESKTOP | 1500x831 | Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36
+  +4294ms	boot-start
+  +4570ms	api-response	200
+  +4858ms	enter-app	9 sessions
+  +5388ms	ws-connected	522ms
+  +5389ms	session-switch	id=11
+  +5393ms	first-ws-message	titles
+
+2026-03-26T04:36:36.735Z | DESKTOP | 1500x831 | Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36
+
+
+2026-03-26T04:45:56.604Z | DESKTOP | 1500x831 | Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36
+  +515ms	boot-start
+  +903ms	api-response	200
+  +910ms	page-load	dns=1ms tcp=221ms ttfb=298ms dom=198ms total=0ms
+  +910ms	total-resources	20 files, 0KB
+  +912ms	enter-app	9 sessions
+  +1441ms	ws-connected	526ms
+  +1443ms	session-switch	id=11
+  +1447ms	first-ws-message	titles
+  +2439ms	render-snapshot	543 lines, 1ms
+  +6498ms	session-switch	id=17
+
+2026-03-26T04:49:42.002Z | DESKTOP | 1500x831 | Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36
+  +20ms	boot-start
+  +309ms	page-load	dns=0ms tcp=0ms ttfb=276ms dom=212ms total=0ms
+  +309ms	total-resources	20 files, 0KB
+  +322ms	api-response	200
+  +676ms	enter-app	9 sessions
+  +1240ms	ws-connected	560ms
+  +1241ms	session-switch	id=11
+  +1852ms	first-ws-message	titles
+  +3013ms	render-snapshot	543 lines, 1ms
+  +4072ms	session-switch	id=12
+
+2026-03-26T05:03:13.361Z | DESKTOP | 1500x831 | Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36
+  +9ms	boot-start
+  +143ms	page-load	dns=0ms tcp=245ms ttfb=295ms dom=78ms total=0ms
+  +143ms	total-resources	20 files, 0KB
+  +283ms	api-response	200
+  +284ms	enter-app	9 sessions
+  +718ms	ws-connected	433ms
+  +719ms	session-switch	id=11
+  +719ms	first-ws-message	titles
+  +1746ms	render-snapshot	85 lines, 0ms
+  +4872ms	session-switch	id=14
+  +5147ms	render-snapshot	85 lines, 0ms
+  +5820ms	render-snapshot	85 lines, 0ms
+  +6406ms	session-switch	id=15
+
+2026-03-26T05:09:49.420Z | DESKTOP | 1500x831 | Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36
+  +55ms	boot-start
+  +200ms	page-load	dns=1ms tcp=306ms ttfb=602ms dom=24ms total=0ms
+  +200ms	total-resources	20 files, 0KB
+  +713ms	api-response	200
+  +713ms	enter-app	9 sessions
+  +1218ms	ws-connected	504ms
+  +1218ms	session-switch	id=11
+  +1698ms	first-ws-message	titles
+  +2212ms	render-snapshot	85 lines, 0ms
+  +3336ms	session-switch	id=12
+  +4222ms	render-snapshot	85 lines, 0ms
+  +5603ms	session-switch	id=14
+
+2026-03-26T05:16:03.976Z | DESKTOP | 1500x831 | Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36
+  +884ms	boot-start
+  +999ms	page-load	dns=1ms tcp=333ms ttfb=305ms dom=25ms total=0ms
+  +999ms	total-resources	20 files, 0KB
+  +1249ms	api-response	200
+  +1461ms	enter-app	9 sessions
+  +1906ms	ws-connected	444ms
+  +1906ms	session-switch	id=11
+  +1906ms	first-ws-message	titles
+  +4079ms	session-switch	id=12
+  +7013ms	render-snapshot	85 lines, 0ms
+  +7300ms	render-snapshot	85 lines, 0ms
+  +7983ms	render-snapshot	85 lines, 0ms
+  +7990ms	session-switch	id=14
+
+2026-03-26T05:17:06.167Z | MOBILE | 440x766 | Mozilla/5.0 (iPhone; CPU iPhone OS 26_3_1 like Mac OS X) App
+  +1781ms	boot-start
+  +1784ms	page-load	dns=0ms tcp=0ms ttfb=236ms dom=2525ms total=0ms
+  +1784ms	slow-resources	xterm.min.css=225ms, style.css=717ms, addon-fit.min.js=448ms, addon-web-links.min.js=449ms, addon-unicode11.min.js=669ms, store.js=670ms, perf.js=713ms, api.js=883ms, ws.js=930ms, sidebar.js=933ms, addon-search.min.js=935ms, editor.js=1147ms, notify.js=1152ms, terminal.js=1156ms, files.js=1416ms, panels.js=1921ms, xterm.min.js=2473ms, favorites.js=1354ms, app.js=1362ms, d2coding.css=650ms
+  +1784ms	total-resources	20 files, 119KB
+  +2322ms	api-response	200
+  +2323ms	enter-app	9 sessions
+  +2755ms	ws-connected	429ms
+  +2756ms	session-switch	id=11
+  +2757ms	first-ws-message	titles
+  +3901ms	render-snapshot	2307 lines, 0ms
+  +3995ms	render-snapshot	2660 lines, 0ms
+  +3995ms	render-snapshot	2660 lines, 0ms
+  +8189ms	render-snapshot	3281 lines, 0ms
+  +8204ms	session-switch	id=4
+  +9118ms	render-snapshot	3803 lines, 0ms
+
+2026-03-26T14:21:18.248Z | DESKTOP | 1500x831 | Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36
+  +3209ms	boot-start
+  +3326ms	page-load	dns=0ms tcp=0ms ttfb=213ms dom=3706ms total=0ms
+  +3326ms	slow-resources	xterm.min.css=269ms, style.css=478ms, perf.js=483ms, xterm.min.js=3675ms, addon-fit.min.js=492ms, addon-web-links.min.js=702ms, addon-search.min.js=973ms, addon-unicode11.min.js=971ms, store.js=918ms, api.js=991ms, terminal.js=1132ms, ws.js=1185ms, sidebar.js=1456ms, panels.js=1207ms, files.js=1401ms, editor.js=1623ms, notify.js=1423ms, favorites.js=1750ms, app.js=1906ms, d2coding.css=293ms
+  +3326ms	total-resources	20 files, 119KB
+  +3489ms	api-response	200
+  +3699ms	enter-app	9 sessions
+  +4138ms	ws-connected	437ms
+  +4139ms	session-switch	id=11
+  +4141ms	first-ws-message	titles
+  +6537ms	session-switch	id=17
+  +7670ms	render-snapshot	3407 lines, 0ms
+
+2026-03-26T14:25:51.267Z | DESKTOP | 1500x831 | Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36
+  +1073ms	boot-start
+  +1184ms	page-load	dns=1ms tcp=235ms ttfb=213ms dom=46ms total=0ms
+  +1184ms	total-resources	20 files, 0KB
+  +1411ms	api-response	200
+  +1411ms	enter-app	9 sessions
+  +1843ms	ws-connected	430ms
+  +1843ms	session-switch	id=11
+  +1844ms	first-ws-message	titles
+  +3893ms	render-snapshot	2307 lines, 0ms
+  +4715ms	render-snapshot	2307 lines, 0ms
+  +5050ms	render-snapshot	7084 lines, 0ms
+  +5056ms	session-switch	id=17
+  +8934ms	input-sent	exit
+
+2026-03-26T14:26:04.268Z | DESKTOP | 1500x831 | Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36
+  +6ms	boot-start
+  +18ms	page-load	dns=0ms tcp=0ms ttfb=458ms dom=38ms total=0ms
+  +18ms	total-resources	22 files, 0KB
+  +378ms	api-response	200
+  +629ms	enter-app	9 sessions
+  +1064ms	ws-connected	434ms
+  +1064ms	session-switch	id=11
+  +1065ms	first-ws-message	titles
+  +4317ms	render-snapshot	5477 lines, 0ms
+  +4321ms	session-switch	id=17
+  +6301ms	render-snapshot	2307 lines, 0ms
+  +7518ms	render-snapshot	2326 lines, 0ms
+
+2026-03-26T14:33:11.657Z | DESKTOP | 1500x831 | Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36
+  +13ms	boot-start
+  +156ms	page-load	dns=1ms tcp=232ms ttfb=242ms dom=82ms total=0ms
+  +156ms	total-resources	20 files, 0KB
+  +307ms	api-response	200
+  +592ms	enter-app	9 sessions
+  +1028ms	ws-connected	435ms
+  +1029ms	session-switch	id=11
+  +1030ms	first-ws-message	titles
+  +1883ms	render-snapshot	2326 lines, 0ms
+  +1883ms	render-snapshot	2007 lines, 0ms
+  +6976ms	render-snapshot	3105 lines, 0ms
+  +6981ms	session-switch	id=14
+  +7214ms	render-snapshot	3105 lines, 0ms
+  +7957ms	render-snapshot	3105 lines, 0ms
+
+2026-03-26T14:41:00.028Z | DESKTOP | 1500x831 | Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36
+  +13ms	boot-start
+  +148ms	page-load	dns=1ms tcp=212ms ttfb=272ms dom=82ms total=0ms
+  +148ms	total-resources	20 files, 0KB
+  +289ms	api-response	200
+  +289ms	enter-app	9 sessions
+  +720ms	ws-connected	430ms
+  +720ms	session-switch	id=11
+  +721ms	first-ws-message	titles
+  +2830ms	render-snapshot	2307 lines, 0ms
+  +3194ms	render-snapshot	1960 lines, 0ms
+  +8984ms	input-sent	hi
+
+2026-03-26T14:43:29.466Z | DESKTOP | 1500x831 | Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36
+  +13ms	boot-start
+  +30ms	page-load	dns=1ms tcp=234ms ttfb=223ms dom=66ms total=0ms
+  +30ms	total-resources	20 files, 0KB
+  +284ms	api-response	200
+  +284ms	enter-app	9 sessions
+  +727ms	ws-connected	441ms
+  +728ms	session-switch	id=11
+  +728ms	first-ws-message	titles
+  +1791ms	render-snapshot	1318 lines, 0ms
+  +3406ms	render-snapshot	27880 lines, 0ms
+
+2026-03-26T17:43:57.855Z | MOBILE | 440x766 | Mozilla/5.0 (iPhone; CPU iPhone OS 26_3_1 like Mac OS X) App
+  +9290ms	boot-start
+  +9292ms	page-load	dns=0ms tcp=0ms ttfb=221ms dom=10196ms total=0ms
+  +9292ms	slow-resources	perf.js=431ms, xterm.min.css=493ms, style.css=873ms, addon-web-links.min.js=430ms, addon-unicode11.min.js=454ms, addon-fit.min.js=455ms, addon-search.min.js=925ms, terminal.js=664ms, ws.js=697ms, store.js=922ms, api.js=1474ms, xterm.min.js=10128ms, sidebar.js=910ms, editor.js=1128ms, panels.js=1296ms, files.js=1345ms, notify.js=1131ms, app.js=1350ms, favorites.js=1613ms, d2coding.css=625ms
+  +9292ms	total-resources	20 files, 119KB
+  +9547ms	api-response	200
+  +9549ms	enter-app	9 sessions
+  +9973ms	ws-connected	420ms
+  +9974ms	session-switch	id=11
+  +9975ms	first-ws-message	titles
+
+2026-03-26T17:52:29.572Z | MOBILE | 440x766 | Mozilla/5.0 (iPhone; CPU iPhone OS 26_3_1 like Mac OS X) App
+  +17ms	boot-start
+  +18ms	page-load	dns=0ms tcp=205ms ttfb=213ms dom=39ms total=0ms
+  +19ms	total-resources	20 files, 0KB
+  +275ms	api-response	200
+  +278ms	enter-app	9 sessions
+  +1544ms	ws-connected	1264ms
+  +1545ms	session-switch	id=11
+  +1547ms	first-ws-message	titles
+  +5592ms	render-snapshot	5190 lines, 0ms
+  +5607ms	session-switch	id=17
+
+2026-03-26T18:04:45.430Z | MOBILE | 440x428 | Mozilla/5.0 (iPhone; CPU iPhone OS 26_3_1 like Mac OS X) App
+  +516ms	boot-start
+  +519ms	page-load	dns=0ms tcp=214ms ttfb=212ms dom=11ms total=0ms
+  +520ms	total-resources	22 files, 0KB
+  +826ms	api-response	200
+  +827ms	enter-app	9 sessions
+  +5333ms	ws-connected	4502ms
+  +5334ms	session-switch	id=17
+  +5334ms	first-ws-message	titles
+  +7403ms	render-snapshot	3156 lines, 1ms
+
+2026-03-26T19:26:50.275Z | MOBILE | 440x766 | Mozilla/5.0 (iPhone; CPU iPhone OS 26_3_1 like Mac OS X) App
+  +1305ms	boot-start
+  +1309ms	page-load	dns=0ms tcp=243ms ttfb=303ms dom=1929ms total=0ms
+  +1309ms	slow-resources	xterm.min.css=227ms, style.css=566ms, perf.js=566ms, addon-web-links.min.js=568ms, addon-search.min.js=570ms, addon-fit.min.js=1443ms, xterm.min.js=1770ms, store.js=872ms, terminal.js=873ms, addon-unicode11.min.js=1127ms, ws.js=1128ms, api.js=1143ms, sidebar.js=1399ms, panels.js=1560ms, files.js=1359ms, notify.js=1588ms, favorites.js=1615ms, editor.js=1623ms, app.js=1875ms, d2coding.css=1199ms
+  +1309ms	total-resources	20 files, 119KB
+  +1570ms	api-response	200
+  +1574ms	enter-app	9 sessions
+  +2007ms	ws-connected	431ms
+  +2009ms	session-switch	id=11
+  +2010ms	first-ws-message	titles
+  +3096ms	render-snapshot	2490 lines, 6ms
+  +3948ms	render-snapshot	26489 lines, 0ms
+  +7465ms	render-snapshot	4540 lines, 0ms
+  +7479ms	session-switch	id=17
+  +8782ms	render-snapshot	10463 lines, 0ms
+
+2026-03-26T19:29:07.287Z | MOBILE | 440x766 | Mozilla/5.0 (iPhone; CPU iPhone OS 26_3_1 like Mac OS X) App
+  +299ms	boot-start
+  +301ms	page-load	dns=0ms tcp=259ms ttfb=307ms dom=10ms total=0ms
+  +301ms	total-resources	20 files, 0KB
+  +640ms	api-response	200
+  +642ms	enter-app	9 sessions
+  +1075ms	ws-connected	431ms
+  +1076ms	session-switch	id=11
+  +1078ms	first-ws-message	titles
+  +1944ms	render-snapshot	2678 lines, 0ms
+  +4491ms	render-snapshot	25728 lines, 1ms
+  +8262ms	render-snapshot	5493 lines, 0ms
+  +8274ms	session-switch	id=17
+  +9650ms	render-snapshot	11127 lines, 1ms
+
+2026-03-26T19:42:45.619Z | MOBILE | 440x766 | Mozilla/5.0 (iPhone; CPU iPhone OS 26_3_1 like Mac OS X) App
+  +12ms	boot-start
+  +14ms	page-load	dns=0ms tcp=203ms ttfb=204ms dom=21ms total=0ms
+  +14ms	total-resources	22 files, 0KB
+  +267ms	api-response	200
+  +267ms	enter-app	9 sessions
+  +679ms	ws-connected	409ms
+  +680ms	session-switch	id=11
+  +682ms	first-ws-message	titles
+  +3966ms	render-snapshot	2490 lines, 1ms
+  +5362ms	render-snapshot	25115 lines, 0ms
+  +5414ms	render-snapshot	2490 lines, 0ms
+
+2026-03-26T21:15:21.452Z | MOBILE | 440x766 | Mozilla/5.0 (iPhone; CPU iPhone OS 26_3_1 like Mac OS X) App
+  +1626ms	boot-start
+  +1629ms	page-load	dns=0ms tcp=214ms ttfb=430ms dom=636ms total=0ms
+  +1629ms	slow-resources	perf.js=589ms, xterm.min.css=887ms, style.css=1148ms, xterm.min.js=1993ms, addon-fit.min.js=590ms, addon-search.min.js=837ms, addon-unicode11.min.js=1147ms, store.js=1148ms, addon-web-links.min.js=1439ms, api.js=1441ms, terminal.js=1442ms, sidebar.js=1833ms, panels.js=1835ms, ws.js=1836ms, editor.js=2449ms, favorites.js=2141ms, notify.js=2142ms, app.js=2291ms, files.js=2449ms, d2coding.css=1603ms
+  +1629ms	total-resources	20 files, 119KB
+  +1978ms	api-response	200
+  +2184ms	enter-app	9 sessions
+  +2608ms	ws-connected	420ms
+  +2609ms	session-switch	id=11
+  +2816ms	first-ws-message	titles
+  +4712ms	render-snapshot	2490 lines, 1ms
+  +8709ms	render-snapshot	9276 lines, 0ms
+  +8725ms	session-switch	id=17
+  +8894ms	render-snapshot	26489 lines, 0ms
+
+2026-03-26T21:17:20.511Z | MOBILE | 440x766 | Mozilla/5.0 (iPhone; CPU iPhone OS 26_3_1 like Mac OS X) App
+  +483ms	boot-start
+  +486ms	page-load	dns=0ms tcp=309ms ttfb=212ms dom=12ms total=0ms
+  +486ms	total-resources	22 files, 0KB
+  +742ms	api-response	200
+  +744ms	enter-app	9 sessions
+  +1160ms	ws-connected	413ms
+  +1161ms	session-switch	id=11
+  +1163ms	first-ws-message	titles
+  +2312ms	render-snapshot	2678 lines, 1ms
+  +2689ms	render-snapshot	25728 lines, 1ms
+
+2026-03-26T21:20:46.115Z | MOBILE | 440x766 | Mozilla/5.0 (iPhone; CPU iPhone OS 26_3_1 like Mac OS X) App
+  +5ms	boot-start
+  +7ms	page-load	dns=0ms tcp=299ms ttfb=263ms dom=36ms total=0ms
+  +7ms	total-resources	20 files, 0KB
+  +267ms	api-response	200
+  +270ms	enter-app	9 sessions
+  +687ms	ws-connected	415ms
+  +689ms	session-switch	id=11
+  +690ms	first-ws-message	titles
+  +1987ms	render-snapshot	2490 lines, 1ms
+  +3340ms	render-snapshot	25115 lines, 0ms
+  +6588ms	render-snapshot	7709 lines, 0ms
+  +6603ms	session-switch	id=17
+
+2026-03-26T22:06:23.673Z | MOBILE | 440x766 | Mozilla/5.0 (iPhone; CPU iPhone OS 26_3_1 like Mac OS X) App
+  +7ms	boot-start
+  +8ms	page-load	dns=0ms tcp=269ms ttfb=212ms dom=47ms total=0ms
+  +8ms	total-resources	22 files, 0KB
+  +268ms	api-response	200
+  +269ms	enter-app	9 sessions
+  +689ms	ws-connected	417ms
+  +690ms	session-switch	id=11
+  +692ms	first-ws-message	titles
+  +2423ms	render-snapshot	2490 lines, 1ms
+  +6120ms	render-snapshot	25117 lines, 0ms
+
+2026-03-26T22:07:28.830Z | MOBILE | 440x766 | Mozilla/5.0 (iPhone; CPU iPhone OS 26_3_1 like Mac OS X) App
+  +278ms	boot-start
+  +280ms	page-load	dns=0ms tcp=207ms ttfb=259ms dom=14ms total=0ms
+  +280ms	total-resources	20 files, 0KB
+  +540ms	api-response	200
+  +560ms	enter-app	9 sessions
+  +985ms	ws-connected	422ms
+  +986ms	session-switch	id=11
+  +987ms	first-ws-message	titles
+  +2517ms	render-snapshot	2490 lines, 1ms
+  +9681ms	render-snapshot	25117 lines, 0ms
+  +9776ms	render-snapshot	7324 lines, 0ms
+  +9799ms	session-switch	id=17
+
+2026-03-26T22:10:52.511Z | MOBILE | 440x766 | Mozilla/5.0 (iPhone; CPU iPhone OS 26_3_1 like Mac OS X) App
+  +13ms	boot-start
+  +15ms	page-load	dns=0ms tcp=221ms ttfb=590ms dom=61ms total=0ms
+  +15ms	total-resources	22 files, 0KB
+  +273ms	api-response	200
+  +273ms	enter-app	9 sessions
+  +697ms	ws-connected	420ms
+  +698ms	session-switch	id=11
+  +700ms	first-ws-message	titles
+  +2275ms	render-snapshot	2490 lines, 1ms
+  +3180ms	render-snapshot	9704 lines, 0ms
+  +3194ms	session-switch	id=17
+  +5174ms	render-snapshot	25117 lines, 0ms
+
+2026-03-26T22:11:36.116Z | MOBILE | 440x766 | Mozilla/5.0 (iPhone; CPU iPhone OS 26_3_1 like Mac OS X) App
+  +184ms	boot-start
+  +186ms	page-load	dns=0ms tcp=256ms ttfb=308ms dom=14ms total=0ms
+  +186ms	total-resources	20 files, 0KB
+  +477ms	api-response	200
+  +478ms	enter-app	9 sessions
+  +985ms	ws-connected	504ms
+  +986ms	session-switch	id=11
+  +987ms	first-ws-message	titles
+  +2122ms	render-snapshot	2490 lines, 1ms
+  +7451ms	render-snapshot	25117 lines, 0ms
+
+2026-03-26T22:16:43.608Z | MOBILE | 440x766 | Mozilla/5.0 (iPhone; CPU iPhone OS 26_3_1 like Mac OS X) App
+  +1640ms	boot-start
+  +1642ms	page-load	dns=0ms tcp=244ms ttfb=569ms dom=2621ms total=0ms
+  +1642ms	slow-resources	xterm.min.css=228ms, style.css=723ms, perf.js=930ms, addon-fit.min.js=465ms, addon-unicode11.min.js=692ms, addon-web-links.min.js=762ms, store.js=1179ms, api.js=1203ms, xterm.min.js=1332ms, addon-search.min.js=1862ms, terminal.js=973ms, ws.js=1407ms, editor.js=1435ms, sidebar.js=1491ms, panels.js=1601ms, files.js=1549ms, notify.js=1618ms, favorites.js=1644ms, app.js=2246ms, d2coding.css=1624ms
+  +1642ms	total-resources	20 files, 119KB
+  +1904ms	api-response	200
+  +2116ms	enter-app	9 sessions
+  +3143ms	ws-connected	1024ms
+  +3145ms	session-switch	id=11
+  +3146ms	first-ws-message	titles
+  +4179ms	render-snapshot	2490 lines, 0ms
+
+2026-03-26T22:18:08.932Z | MOBILE | 440x766 | Mozilla/5.0 (iPhone; CPU iPhone OS 26_3_1 like Mac OS X) App
+  +4ms	boot-start
+  +6ms	page-load	dns=0ms tcp=0ms ttfb=831ms dom=45ms total=0ms
+  +7ms	total-resources	20 files, 0KB
+  +265ms	api-response	200
+  +469ms	enter-app	9 sessions
+  +1491ms	ws-connected	1019ms
+  +1495ms	session-switch	id=11
+  +1496ms	first-ws-message	titles
+  +2991ms	render-snapshot	2678 lines, 0ms
+
+2026-03-26T22:21:22.682Z | MOBILE | 440x766 | Mozilla/5.0 (iPhone; CPU iPhone OS 26_3_1 like Mac OS X) App
+  +193ms	boot-start
+  +195ms	page-load	dns=0ms tcp=239ms ttfb=213ms dom=28ms total=0ms
+  +196ms	total-resources	22 files, 0KB
+  +722ms	api-response	200
+  +726ms	enter-app	9 sessions
+  +1159ms	ws-connected	430ms
+  +1161ms	session-switch	id=11
+  +1163ms	first-ws-message	titles
+  +2292ms	render-snapshot	2490 lines, 0ms
+  +3565ms	render-snapshot	25115 lines, 0ms
+  +4950ms	render-snapshot	10246 lines, 0ms
+  +4965ms	session-switch	id=17
+
+2026-03-26T22:27:39.195Z | MOBILE | 440x766 | Mozilla/5.0 (iPhone; CPU iPhone OS 26_3_1 like Mac OS X) App
+  +143ms	boot-start
+  +144ms	page-load	dns=0ms tcp=228ms ttfb=210ms dom=19ms total=0ms
+  +144ms	total-resources	22 files, 0KB
+  +412ms	api-response	200
+  +1297ms	enter-app	9 sessions
+  +1914ms	ws-connected	614ms
+  +1915ms	session-switch	id=11
+  +1917ms	first-ws-message	titles
+
+2026-03-26T22:27:58.140Z | MOBILE | 440x766 | Mozilla/5.0 (iPhone; CPU iPhone OS 26_3_1 like Mac OS X) App
+  +483ms	boot-start
+  +485ms	page-load	dns=0ms tcp=0ms ttfb=300ms dom=13ms total=0ms
+  +485ms	total-resources	20 files, 0KB
+  +759ms	api-response	200
+  +1189ms	enter-app	9 sessions
+  +1724ms	ws-connected	532ms
+  +1724ms	session-switch	id=11
+  +1725ms	first-ws-message	titles
+  +3361ms	render-snapshot	2490 lines, 0ms
+
+2026-03-26T22:30:32.831Z | MOBILE | 440x766 | Mozilla/5.0 (iPhone; CPU iPhone OS 26_3_1 like Mac OS X) App
+  +3ms	boot-start
+  +5ms	page-load	dns=0ms tcp=339ms ttfb=226ms dom=88ms total=0ms
+  +5ms	total-resources	20 files, 0KB
+  +281ms	api-response	200
+  +282ms	enter-app	9 sessions
+  +815ms	ws-connected	530ms
+  +816ms	session-switch	id=11
+  +818ms	first-ws-message	titles
+  +2735ms	render-snapshot	2490 lines, 1ms
+  +2906ms	render-snapshot	25117 lines, 0ms
+  +5989ms	render-snapshot	6664 lines, 0ms
+  +6004ms	session-switch	id=17
+
+2026-03-27T00:45:42.682Z | MOBILE | 440x766 | Mozilla/5.0 (iPhone; CPU iPhone OS 26_3_1 like Mac OS X) App
+  +3513ms	boot-start
+  +3517ms	page-load	dns=0ms tcp=814ms ttfb=233ms dom=4308ms total=0ms
+  +3517ms	slow-resources	xterm.min.css=260ms, perf.js=512ms, addon-search.min.js=525ms, addon-web-links.min.js=525ms, style.css=759ms, addon-fit.min.js=1864ms, xterm.min.js=2534ms, addon-unicode11.min.js=762ms, store.js=775ms, api.js=776ms, ws.js=1012ms, terminal.js=1296ms, editor.js=1299ms, panels.js=1556ms, files.js=1871ms, sidebar.js=1985ms, notify.js=1871ms, favorites.js=2595ms, app.js=4273ms, d2coding.css=1359ms
+  +3517ms	total-resources	20 files, 120KB
+  +3817ms	api-response	200
+  +3828ms	enter-app	9 sessions
+  +4431ms	ws-connected	600ms
+  +4433ms	session-switch	id=11
+  +4434ms	first-ws-message	titles
+  +9044ms	render-snapshot	2492 lines, 1ms
+
+2026-03-27T00:47:58.115Z | MOBILE | 440x766 | Mozilla/5.0 (iPhone; CPU iPhone OS 26_3_1 like Mac OS X) App
+  +7ms	boot-start
+  +9ms	page-load	dns=0ms tcp=1280ms ttfb=614ms dom=23ms total=0ms
+  +9ms	total-resources	20 files, 0KB
+  +1316ms	api-response	200
+  +1567ms	enter-app	9 sessions
+  +2237ms	ws-connected	668ms
+  +2238ms	session-switch	id=11
+  +2240ms	first-ws-message	titles
+  +4390ms	render-snapshot	2678 lines, 0ms
+  +7975ms	render-snapshot	25728 lines, 0ms
+  +9180ms	render-snapshot	4884 lines, 0ms
+  +9196ms	session-switch	id=17
+
+2026-03-27T00:49:00.769Z | MOBILE | 440x766 | Mozilla/5.0 (iPhone; CPU iPhone OS 26_3_1 like Mac OS X) App
+  +1194ms	boot-start
+  +1196ms	page-load	dns=0ms tcp=0ms ttfb=352ms dom=10ms total=0ms
+  +1196ms	total-resources	20 files, 0KB
+  +1497ms	api-response	200
+  +1740ms	enter-app	9 sessions
+  +2340ms	ws-connected	597ms
+  +2340ms	session-switch	id=11
+  +2341ms	first-ws-message	titles
+  +5307ms	render-snapshot	2490 lines, 0ms
+
+2026-03-27T00:51:54.192Z | MOBILE | 440x455 | Mozilla/5.0 (iPhone; CPU iPhone OS 26_3_1 like Mac OS X) App
+  +239ms	boot-start
+  +240ms	page-load	dns=0ms tcp=0ms ttfb=254ms dom=10ms total=0ms
+  +241ms	total-resources	20 files, 0KB
+  +1478ms	api-response	200
+  +1716ms	enter-app	9 sessions
+  +2297ms	ws-connected	579ms
+  +2298ms	session-switch	id=11
+  +2300ms	first-ws-message	titles
+  +4595ms	render-snapshot	6325 lines, 0ms
+  +4609ms	session-switch	id=17
+  +4726ms	render-snapshot	2700 lines, 0ms
+  +5339ms	render-snapshot	25115 lines, 0ms
+
+2026-03-27T00:55:00.449Z | MOBILE | 440x766 | Mozilla/5.0 (iPhone; CPU iPhone OS 26_3_1 like Mac OS X) App
+  +296ms	boot-start
+  +301ms	page-load	dns=0ms tcp=302ms ttfb=308ms dom=28ms total=0ms
+  +302ms	total-resources	22 files, 0KB
+  +612ms	api-response	200
+  +614ms	enter-app	9 sessions
+  +1290ms	ws-connected	672ms
+  +1292ms	session-switch	id=11
+  +1293ms	first-ws-message	titles
+  +3740ms	render-snapshot	2679 lines, 0ms
+  +8152ms	render-snapshot	25117 lines, 0ms
+
+2026-03-27T22:57:41.047Z | DESKTOP | 1500x831 | Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36
+  +5772ms	boot-start
+  +5890ms	page-load	dns=1ms tcp=205ms ttfb=325ms dom=6418ms total=0ms
+  +5890ms	slow-resources	xterm.min.css=432ms, style.css=865ms, perf.js=730ms, xterm.min.js=1348ms, addon-fit.min.js=1156ms, addon-search.min.js=621ms, addon-web-links.min.js=680ms, addon-unicode11.min.js=715ms, store.js=827ms, api.js=848ms, terminal.js=924ms, ws.js=1032ms, sidebar.js=1319ms, panels.js=1094ms, editor.js=1440ms, files.js=1258ms, notify.js=1325ms, favorites.js=1334ms, app.js=6414ms, d2coding.css=241ms
+  +5890ms	total-resources	20 files, 119KB
+  +6040ms	api-response	200
+  +6240ms	enter-app	9 sessions
+  +6652ms	ws-connected	410ms
+  +6653ms	session-switch	id=11
+  +6654ms	first-ws-message	titles
+  +7938ms	render-snapshot	2510 lines, 0ms
+  +9021ms	render-snapshot	28172 lines, 1ms
+  +9710ms	render-snapshot	5157 lines, 0ms
+  +9719ms	session-switch	id=17
+
+2026-03-27T23:03:38.934Z | DESKTOP | 1500x831 | Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36
+  +47ms	boot-start
+  +215ms	page-load	dns=1ms tcp=205ms ttfb=337ms dom=140ms total=0ms
+  +215ms	total-resources	20 files, 0KB
+  +1223ms	api-response	200
+  +1224ms	enter-app	9 sessions
+  +1637ms	ws-connected	412ms
+  +1638ms	session-switch	id=11
+  +1638ms	first-ws-message	titles
+  +2797ms	render-snapshot	2388 lines, 0ms
+  +4309ms	render-snapshot	27600 lines, 0ms
+  +8839ms	render-snapshot	2206 lines, 0ms
+
+2026-03-28T00:21:15.206Z | MOBILE | 440x766 | Mozilla/5.0 (iPhone; CPU iPhone OS 26_3_1 like Mac OS X) App
+  +293ms	boot-start
+  +296ms	page-load	dns=0ms tcp=326ms ttfb=325ms dom=29ms total=0ms
+  +296ms	total-resources	22 files, 0KB
+  +634ms	api-response	200
+  +648ms	enter-app	9 sessions
+  +1175ms	ws-connected	524ms
+  +1176ms	session-switch	id=11
+  +1177ms	first-ws-message	titles
+  +3318ms	render-snapshot	2736 lines, 0ms
+  +9862ms	render-snapshot	25263 lines, 0ms
+
+2026-03-29T02:42:34.940Z | MOBILE | 440x428 | Mozilla/5.0 (iPhone; CPU iPhone OS 26_3_1 like Mac OS X) App
+  +173ms	boot-start
+  +175ms	page-load	dns=0ms tcp=0ms ttfb=334ms dom=20ms total=0ms
+  +175ms	total-resources	22 files, 0KB
+  +832ms	api-response	200
+  +836ms	enter-app	9 sessions
+  +1323ms	ws-connected	484ms
+  +1323ms	session-switch	id=11
+  +1325ms	first-ws-message	titles
+  +2980ms	render-snapshot	2827 lines, 0ms
+  +4722ms	render-snapshot	25263 lines, 0ms

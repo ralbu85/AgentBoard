@@ -85,8 +85,8 @@ async function sendInput(id, text) {
   if (!s) return false;
   const lines = text.split("\n");
   for (const line of lines) {
-    await tmuxAsyncRaw(["send-keys", "-t", s.sessionName, line.replace(/"/g, '\\"'), ""]);
-    await tmuxAsyncRaw(["send-keys", "-t", s.sessionName, "", "Enter"]);
+    await tmuxAsyncRaw(["send-keys", "-t", s.sessionName, "-l", line]);
+    await tmuxAsyncRaw(["send-keys", "-t", s.sessionName, "Enter"]);
   }
   broadcastFn({ type: "log", id, src: "stdin", text, ts: Date.now() });
   return true;

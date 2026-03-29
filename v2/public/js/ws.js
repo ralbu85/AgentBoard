@@ -1,5 +1,4 @@
 // ── WebSocket Connection + Message Routing ──
-// No rendering — delegates to store and terminal.
 
 (function(AB) {
 
@@ -13,16 +12,10 @@
 
     ws.onopen = function() {
       document.getElementById('status-dot').classList.remove('off');
-      // Tell server if this is a mobile client
-      if (window.innerWidth <= 768) {
-        send({ type: 'client-info', mobile: true });
-      }
       if (AB.store.activeId) {
-        if (window.innerWidth > 768) {
-          var size = AB.terminal.resize(AB.store.activeId);
-          if (size && size.cols > 0 && size.rows > 0) {
-            send({ type: 'resize', id: AB.store.activeId, cols: size.cols, rows: size.rows });
-          }
+        var size = AB.terminal.resize(AB.store.activeId);
+        if (size && size.cols > 0 && size.rows > 0) {
+          send({ type: 'resize', id: AB.store.activeId, cols: size.cols, rows: size.rows });
         }
         send({ type: 'active', id: AB.store.activeId });
       }
@@ -33,59 +26,24 @@
       setTimeout(init, 2000);
     };
 
-    ws.onmessage = function(e) {
-      handleMsg(JSON.parse(e.data));
-    };
+    ws.onmessage = function(e) { handleMsg(JSON.parse(e.data)); };
   }
 
   function handleMsg(d) {
     var store = AB.store;
 
-    if (d.type === 'spawned') {
-      store.add(d.id, { cwd: d.cwd, cmd: d.cmd, status: d.status, sessionName: d.sessionName });
-    }
-
-    // Snapshot: initial load of terminal (capture-pane)
-    if (d.type === 'snapshot') {
-      AB.terminal.writeSnapshot(d.id, d.data);
-    }
-
-    // Stream: real-time output from pipe-pane
-    if (d.type === 'stream') {
-      AB.terminal.writeStream(d.id, d.data);
-    }
-
-    if (d.type === 'log') {
-      // stdin echo — could show as notification or ignore
-      // xterm.js will show it when next poll arrives
-    }
-
-    if (d.type === 'status') {
-      store.updateStatus(d.id, d.status);
-    }
-
-    if (d.type === 'cwd') {
-      store.updateCwd(d.id, d.cwd);
-    }
-
-    if (d.type === 'aiState') {
-      store.updateAiState(d.id, d.state);
-    }
-
-    if (d.type === 'info') {
-      store.updateInfo(d.id, d.process, d.createdAt, d.memKB);
-    }
-
-    if (d.type === 'title') {
-      store.updateTitle(d.id, d.title);
-    }
-
+    if (d.type === 'spawned') store.add(d.id, { cwd: d.cwd, cmd: d.cmd, status: d.status, sessionName: d.sessionName });
+    if (d.type === 'snapshot') AB.terminal.writeSnapshot(d.id, d.data);
+    if (d.type === 'screen') AB.terminal.writeScreen(d.id, d.data);
+    if (d.type === 'stream') AB.terminal.writeStream(d.id, d.data);
+    if (d.type === 'status') store.updateStatus(d.id, d.status);
+    if (d.type === 'cwd') store.updateCwd(d.id, d.cwd);
+    if (d.type === 'aiState') store.updateAiState(d.id, d.state);
+    if (d.type === 'info') store.updateInfo(d.id, d.process, d.createdAt, d.memKB);
+    if (d.type === 'title') store.updateTitle(d.id, d.title);
     if (d.type === 'titles') {
-      // Bulk title sync on connect
       AB._customTitles = d.titles || {};
-      Object.keys(AB._customTitles).forEach(function(id) {
-        store.updateTitle(id, AB._customTitles[id]);
-      });
+      Object.keys(AB._customTitles).forEach(function(id) { store.updateTitle(id, AB._customTitles[id]); });
     }
   }
 
@@ -94,8 +52,6 @@
   }
 
   function sendResize() {
-    // Mobile: never resize tmux — just display what server sends
-    if (window.innerWidth <= 768) return;
     clearTimeout(_resizeTimer);
     _resizeTimer = setTimeout(function() {
       var activeId = AB.store.activeId;
@@ -103,16 +59,12 @@
       var size = AB.terminal.resize(activeId);
       if (size && size.cols > 0 && size.rows > 0) {
         send({ type: 'resize', id: activeId, cols: size.cols, rows: size.rows });
-        var t = AB.terminal.get(activeId);
-        if (t) t.lastData = null;
         send({ type: 'resync', id: activeId });
       }
     }, 300);
   }
 
-  function notifyActive(id) {
-    send({ type: 'active', id: id || null });
-  }
+  function notifyActive(id) { send({ type: 'active', id: id || null }); }
 
   AB.ws = { init: init, send: send, sendResize: sendResize, notifyActive: notifyActive };
 

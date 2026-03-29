@@ -182,3 +182,299 @@
   ✓ Reconnect content matches (19/20 lines)
   ✓ Buffer grew: 541 → 541
 
+
+2026-03-26T04:28:25.016Z | 34 passed, 0 failed
+  ✓ Auth wall blocks unauthorized
+  ✓ Workers: 9 sessions
+  ✓ Worker fields complete
+  ✓ Static /
+  ✓ Static /style.css
+  ✓ Static /js/app.js
+  ✓ Static /js/terminal.js
+  ✓ Static /vendor/pdf.min.js
+  ✓ Config endpoint
+  ✓ Browse directory
+  ✓ First output: 24.1KB, 541 lines
+  ✓ Messages: 0 fulls, 2 diffs (active session may produce fulls)
+  ✓ State detection valid
+  ✓ Input API: 15ms
+  ✓ Output after input received
+  ✓ Mobile output: type=snapshot
+  ✓ Mobile diffs: 3, fulls: 0
+  ✓ Session 11 output
+  ✓ Switch to 12: 26ms
+  ✓ Spawn: #18
+  ✓ Kill
+  ✓ Remove
+  ✓ 6 messages in 5s, avg 18.0KB
+  ✓ Full: 1, Diff: 5
+  ✓ Server RSS: 64MB
+  ✓ Test client RSS: 56MB
+  ✓ Initial lines: 541 (≤1000)
+  ✓ Max append: 0 lines
+  ✓ 3 rapid switches: 302ms
+  ✓ Input response received
+  ✓ Desktop and mobile get same lines: 541
+  ✓ Last lines contain prompt/activity indicator
+  ✓ Reconnect content matches (20/20 lines)
+  ✓ Buffer grew: 541 → 541
+
+
+2026-03-26T04:35:51.634Z | 34 passed, 0 failed
+  ✓ Auth wall blocks unauthorized
+  ✓ Workers: 9 sessions
+  ✓ Worker fields complete
+  ✓ Static /
+  ✓ Static /style.css
+  ✓ Static /js/app.js
+  ✓ Static /js/terminal.js
+  ✓ Static /vendor/pdf.min.js
+  ✓ Config endpoint
+  ✓ Browse directory
+  ✓ First output: 23.8KB, 541 lines
+  ✓ Messages: 0 fulls, 1 diffs (active session may produce fulls)
+  ✓ State detection valid
+  ✓ Input API: 14ms
+  ✓ Output after input received
+  ✓ Mobile output: type=snapshot
+  ✓ Mobile diffs: 3, fulls: 0
+  ✓ Session 11 output
+  ✓ Switch to 12: 23ms
+  ✓ Spawn: #18
+  ✓ Kill
+  ✓ Remove
+  ✓ 3 messages in 5s, avg 22.4KB
+  ✓ Full: 1, Diff: 2
+  ✓ Server RSS: 62MB
+  ✓ Test client RSS: 56MB
+  ✓ Initial lines: 541 (≤1000)
+  ✓ Max append: 0 lines
+  ✓ 3 rapid switches: 300ms
+  ✓ Input response received
+  ✓ Desktop and mobile get same lines: 541
+  ✓ Last lines contain prompt/activity indicator
+  ✓ Reconnect content matches (19/20 lines)
+  ✓ Buffer grew: 541 → 541
+
+
+2026-03-26T04:43:36.608Z | 33 passed, 1 failed
+  ✓ Auth wall blocks unauthorized
+  ✓ Workers: 9 sessions
+  ✓ Worker fields complete
+  ✓ Static /
+  ✓ Static /style.css
+  ✓ Static /js/app.js
+  ✓ Static /js/terminal.js
+  ✓ Static /vendor/pdf.min.js
+  ✓ Config endpoint
+  ✓ Browse directory
+  ✓ First output: 22.3KB, 541 lines
+  ✓ Messages: 0 fulls, 2 diffs (active session may produce fulls)
+  ✓ State detection valid
+  ✓ Input API: 15ms
+  ✓ Output after input received
+  ✓ Mobile output: type=snapshot
+  ✓ Mobile diffs: 28, fulls: 0
+  ✓ Session 11 output
+  ✓ Switch to 12: 24ms
+  ✓ Spawn: #18
+  ✓ Kill
+  ✓ Remove
+  ✓ 3 messages in 5s, avg 21.8KB
+  ✓ Full: 1, Diff: 2
+  ✓ Server RSS: 70MB
+  ✓ Test client RSS: 56MB
+  ✓ Initial lines: 541 (≤1000)
+  ✓ Max append: 0 lines
+  ✓ 3 rapid switches: 300ms
+  ✓ Input response received
+  ✓ Desktop and mobile get same lines: 541
+  ✗ Last lines: no prompt found:     
+  ✓ Reconnect content matches (20/20 lines)
+  ✓ Buffer grew: 541 → 541
+
+
+2026-03-26T04:44:05.963Z | 34 passed, 0 failed
+  ✓ Auth wall blocks unauthorized
+  ✓ Workers: 9 sessions
+  ✓ Worker fields complete
+  ✓ Static /
+  ✓ Static /style.css
+  ✓ Static /js/app.js
+  ✓ Static /js/terminal.js
+  ✓ Static /vendor/pdf.min.js
+  ✓ Config endpoint
+  ✓ Browse directory
+  ✓ First output: 24.4KB, 541 lines
+  ✓ Messages: 0 fulls, 0 diffs (active session may produce fulls)
+  ✓ State detection valid
+  ✓ Input API: 16ms
+  ✓ Output after input received
+  ✓ Mobile output: type=snapshot
+  ✓ Mobile diffs: 25, fulls: 0
+  ✓ Session 11 output
+  ✓ Switch to 12: 22ms
+  ✓ Spawn: #19
+  ✓ Kill
+  ✓ Remove
+  ✓ 37 messages in 5s, avg 0.7KB
+  ✓ Full: 1, Diff: 36
+  ✓ Server RSS: 76MB
+  ✓ Test client RSS: 57MB
+  ✓ Initial lines: 541 (≤1000)
+  ✓ Max append: 7 lines
+  ✓ 3 rapid switches: 300ms
+  ✓ Input response received
+  ✓ Desktop and mobile get same lines: 541
+  ✓ Last lines contain prompt/activity indicator
+  ✓ Reconnect content matches (20/20 lines)
+  ✓ Buffer grew: 541 → 541
+
+
+2026-03-26T04:44:35.329Z | 34 passed, 0 failed
+  ✓ Auth wall blocks unauthorized
+  ✓ Workers: 9 sessions
+  ✓ Worker fields complete
+  ✓ Static /
+  ✓ Static /style.css
+  ✓ Static /js/app.js
+  ✓ Static /js/terminal.js
+  ✓ Static /vendor/pdf.min.js
+  ✓ Config endpoint
+  ✓ Browse directory
+  ✓ First output: 24.4KB, 541 lines
+  ✓ Messages: 0 fulls, 0 diffs (active session may produce fulls)
+  ✓ State detection valid
+  ✓ Input API: 14ms
+  ✓ Output after input received
+  ✓ Mobile output: type=snapshot
+  ✓ Mobile diffs: 26, fulls: 0
+  ✓ Session 11 output
+  ✓ Switch to 12: 24ms
+  ✓ Spawn: #20
+  ✓ Kill
+  ✓ Remove
+  ✓ 1 messages in 5s, avg 24.4KB
+  ✓ Full: 1, Diff: 0
+  ✓ Server RSS: 90MB
+  ✓ Test client RSS: 56MB
+  ✓ Initial lines: 541 (≤1000)
+  ✓ Max append: 0 lines
+  ✓ 3 rapid switches: 302ms
+  ✓ Input response received
+  ✓ Desktop and mobile get same lines: 541
+  ✓ Last lines contain prompt/activity indicator
+  ✓ Reconnect content matches (20/20 lines)
+  ✓ Buffer grew: 541 → 541
+
+
+2026-03-26T04:49:06.546Z | 34 passed, 0 failed
+  ✓ Auth wall blocks unauthorized
+  ✓ Workers: 9 sessions
+  ✓ Worker fields complete
+  ✓ Static /
+  ✓ Static /style.css
+  ✓ Static /js/app.js
+  ✓ Static /js/terminal.js
+  ✓ Static /vendor/pdf.min.js
+  ✓ Config endpoint
+  ✓ Browse directory
+  ✓ First output: 21.2KB, 541 lines
+  ✓ Messages: 0 fulls, 1 diffs (active session may produce fulls)
+  ✓ State detection valid
+  ✓ Input API: 16ms
+  ✓ Output after input received
+  ✓ Mobile output: type=snapshot
+  ✓ Mobile diffs: 26, fulls: 0
+  ✓ Session 11 output
+  ✓ Switch to 12: 22ms
+  ✓ Spawn: #18
+  ✓ Kill
+  ✓ Remove
+  ✓ 13 messages in 5s, avg 4.7KB
+  ✓ Full: 1, Diff: 12
+  ✓ Server RSS: 65MB
+  ✓ Test client RSS: 55MB
+  ✓ Initial lines: 541 (≤1000)
+  ✓ Max append: 0 lines
+  ✓ 3 rapid switches: 302ms
+  ✓ Input response received
+  ✓ Desktop and mobile get same lines: 541
+  ✓ Last lines contain prompt/activity indicator
+  ✓ Reconnect content matches (20/20 lines)
+  ✓ Buffer grew: 541 → 541
+
+
+2026-03-26T05:00:55.588Z | 34 passed, 0 failed
+  ✓ Auth wall blocks unauthorized
+  ✓ Workers: 9 sessions
+  ✓ Worker fields complete
+  ✓ Static /
+  ✓ Static /style.css
+  ✓ Static /js/app.js
+  ✓ Static /js/terminal.js
+  ✓ Static /vendor/pdf.min.js
+  ✓ Config endpoint
+  ✓ Browse directory
+  ✓ First output: 2.2KB, 81 lines
+  ✓ Messages: 0 fulls, 1 diffs (active session may produce fulls)
+  ✓ State detection valid
+  ✓ Input API: 15ms
+  ✓ Output after input received
+  ✓ Mobile output: type=snapshot
+  ✓ Mobile diffs: 23, fulls: 0
+  ✓ Session 11 output
+  ✓ Switch to 12: 14ms
+  ✓ Spawn: #18
+  ✓ Kill
+  ✓ Remove
+  ✓ 16 messages in 5s, avg 2.3KB
+  ✓ Full: 1, Diff: 15
+  ✓ Server RSS: 64MB
+  ✓ Test client RSS: 56MB
+  ✓ Initial lines: 81 (≤1000)
+  ✓ Max append: 0 lines
+  ✓ 3 rapid switches: 301ms
+  ✓ Input response received
+  ✓ Desktop and mobile get same lines: 81
+  ✓ Last lines contain prompt/activity indicator
+  ✓ Reconnect content matches (20/20 lines)
+  ✓ Buffer grew: 81 → 81
+
+
+2026-03-26T05:11:10.471Z | 34 passed, 0 failed
+  ✓ Auth wall blocks unauthorized
+  ✓ Workers: 9 sessions
+  ✓ Worker fields complete
+  ✓ Static /
+  ✓ Static /style.css
+  ✓ Static /js/app.js
+  ✓ Static /js/terminal.js
+  ✓ Static /vendor/pdf.min.js
+  ✓ Config endpoint
+  ✓ Browse directory
+  ✓ First output: 2.2KB, 49 lines
+  ✓ Messages: 2 fulls, 2 diffs (active session may produce fulls)
+  ✓ State detection valid
+  ✓ Input API: 14ms
+  ✓ Output after input received
+  ✓ Mobile output: type=snapshot
+  ✓ Mobile diffs: 25, fulls: 1
+  ✓ Session 11 output
+  ✓ Switch to 12: 2ms
+  ✓ Spawn: #18
+  ✓ Kill
+  ✓ Remove
+  ✓ 4 messages in 5s, avg 1.5KB
+  ✓ Full: 2, Diff: 2
+  ✓ Server RSS: 73MB
+  ✓ Test client RSS: 58MB
+  ✓ Initial lines: 81 (≤1000)
+  ✓ Max append: 0 lines
+  ✓ 3 rapid switches: 300ms
+  ✓ Input response received
+  ✓ Desktop and mobile get same lines: 81
+  ✓ Last lines contain prompt/activity indicator
+  ✓ Reconnect content matches (20/20 lines)
+  ✓ Buffer grew: 81 → 81
+

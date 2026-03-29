@@ -1,48 +1,27 @@
-// ── xterm.js Terminal Wrapper ──
-// Desktop: xterm.js with GPU rendering
-// Mobile: lightweight HTML <pre> rendering
+// ── xterm.js Terminal — single renderer for all platforms ──
+// No mobile/desktop split. xterm.js everywhere.
 
 (function(AB) {
 
   var terminals = {};
   var _isMobile = window.innerWidth <= 768;
 
-  // Only auto-scroll if user is near bottom (not reading history)
   function _autoScroll(t) {
-    if (t.mobile && t._pre) {
-      var pre = t._pre;
-      var nearBottom = (pre.scrollHeight - pre.scrollTop - pre.clientHeight) < 80;
-      if (nearBottom) pre.scrollTop = pre.scrollHeight;
-    } else if (t.term) {
-      var buf = t.term.buffer.active;
-      var atBottom = buf.viewportY >= buf.baseY;
-      if (atBottom) t.term.scrollToBottom();
-    }
+    if (!t.term) return;
+    var buf = t.term.buffer.active;
+    if (buf.viewportY >= buf.baseY) t.term.scrollToBottom();
   }
 
   function create(id) {
     if (terminals[id]) return terminals[id];
 
-    var el = document.createElement('div');
-    el.className = 'xterm-wrap';
-    el.id = 'xterm-' + id;
-    el.style.display = 'none';
-
-    if (_isMobile) {
-      // Mobile: lightweight — no xterm.js objects
-      terminals[id] = {
-        term: null, fitAddon: null, searchAddon: null,
-        el: el, opened: false, mobile: true,
-        lastData: null, pendingData: null,
-        _pre: null, _lastStripped: null
-      };
-      return terminals[id];
-    }
-
-    // Desktop: full xterm.js
     var term = new Terminal({
-      cursorBlink: true, cursorStyle: 'bar', disableStdin: false,
-      scrollback: 10000, fontSize: 13, letterSpacing: 0,
+      cursorBlink: true,
+      cursorStyle: 'bar',
+      disableStdin: false,
+      scrollback: 10000,
+      fontSize: _isMobile ? 11 : 13,
+      letterSpacing: 0,
       fontFamily: '"D2Coding", "Cascadia Code", "Cascadia Mono", "Consolas", monospace',
       theme: {
         background: '#0d1117', foreground: '#e6edf3', cursor: '#e6edf3',
@@ -73,14 +52,23 @@
       term.unicode.activeVersion = '11';
     }
 
-    term.onData(function(data) {
-      if (AB.ws) AB.ws.send({ type: 'terminal-input', id: id, data: data });
-    });
+    // Desktop: direct keyboard input to tmux
+    if (!_isMobile) {
+      term.onData(function(data) {
+        if (AB.ws) AB.ws.send({ type: 'terminal-input', id: id, data: data });
+      });
+    }
+
+    var el = document.createElement('div');
+    el.className = 'xterm-wrap';
+    el.id = 'xterm-' + id;
+    el.style.display = 'none';
 
     terminals[id] = {
       term: term, fitAddon: fitAddon, searchAddon: searchAddon,
-      el: el, opened: false, mobile: false,
-      lastData: null, pendingData: null
+      el: el, opened: false,
+      _pendingSnapshot: null,
+      _pendingStream: ''
     };
     return terminals[id];
   }
@@ -90,112 +78,82 @@
     if (!t) return;
     if (!t.opened) {
       container.appendChild(t.el);
-      if (t.term) t.term.open(t.el);
+      t.term.open(t.el);
       t.opened = true;
-      if (t._pending) {
-        if (t._pending.type === 'snapshot') writeSnapshot(id, t._pending.data);
-        t._pending = null;
+      // Mobile: xterm sets touch-action:none AND adds touchmove→preventDefault()
+      // Override both: set pan-y + block xterm's touch handlers entirely
+      if (_isMobile) {
+        var vp = t.el.querySelector('.xterm-viewport');
+        if (vp) {
+          vp.style.touchAction = 'pan-y';
+          ['touchstart', 'touchmove', 'touchend'].forEach(function(evt) {
+            vp.addEventListener(evt, function(e) { e.stopImmediatePropagation(); }, { capture: true, passive: true });
+          });
+        }
+      }
+      // Flush pending data
+      if (t._pendingSnapshot) {
+        writeSnapshot(id, t._pendingSnapshot);
+        t._pendingSnapshot = null;
       }
       if (t._pendingStream) {
         writeStream(id, t._pendingStream);
-        t._pendingStream = null;
+        t._pendingStream = '';
       }
     } else if (t.el.parentElement !== container) {
       container.appendChild(t.el);
     }
   }
 
-  // ── Unified rendering (server manages buffer, client just renders) ──
+  // ── Snapshot: initial terminal state (capture-pane, one time) ──
 
-  // ── Unified rendering ──
-
-  function _ensurePre(t) {
-    if (!t._pre) {
-      t._pre = document.createElement('pre');
-      t._pre.className = 'mobile-terminal-pre';
-      t.el.appendChild(t._pre);
-    }
-    return t._pre;
-  }
-
-  // Snapshot: initial terminal state (capture-pane output)
   function writeSnapshot(id, data) {
     var t = terminals[id];
     if (!t) t = create(id);
-    if (!t.opened) { t._pending = { type: 'snapshot', data: data }; return; }
+    if (!t.opened) { t._pendingSnapshot = data; return; }
 
     var t0 = Date.now();
-    if (t.mobile) {
-      var pre = _ensurePre(t);
-      var lines = data.split('\n');
-      if (lines.length > 200) lines = lines.slice(-200);
-      pre.innerHTML = _ansiToHtml(lines.map(function(l) { return l.replace(/\s+$/, ''); }).join('\n'));
-      _autoScroll(t);
-    } else if (t.term) {
-      // Write snapshot as-is — xterm handles ANSI natively
-      // Convert \n to \r\n for xterm
-      var converted = data.replace(/\r?\n/g, '\r\n');
-      t.term.write('\x1b[2J\x1b[H' + converted);
-      _autoScroll(t);
-    }
-    if (AB._perfMarkRender) AB._perfMarkRender('snapshot', data.split('\n').length, Date.now() - t0);
+    // Server already converts \n → \r\n
+    t.term.write('\x1b[2J\x1b[H' + data, function() {
+      // After write completes, always scroll to bottom (session switch = latest content)
+      t.term.scrollToBottom();
+    });
+    if (AB._perfMarkRender) AB._perfMarkRender('snapshot', data.length, Date.now() - t0);
   }
 
-  // Stream: real-time output (pipe-pane, just append)
+  // ── Screen: active session polling update ──
+  // Overwrite visible area in-place (no \x1b[2J — that pushes content into scrollback)
+  // Skip if user is scrolled up reading history
+
+  function writeScreen(id, data) {
+    var t = terminals[id];
+    if (!t || !t.opened) return;
+    if (t.el.style.display === 'none') return;
+
+    // Don't clobber view while user is reading scrollback
+    var buf = t.term.buffer.active;
+    if (buf.viewportY < buf.baseY) return;
+
+    // Cursor home → overwrite each line → clear leftover lines below
+    var lines = data.split('\r\n');
+    var out = '\x1b[H';
+    for (var i = 0; i < lines.length; i++) {
+      out += lines[i] + '\x1b[K';
+      if (i < lines.length - 1) out += '\r\n';
+    }
+    out += '\x1b[J';
+    t.term.write(out);
+  }
+
+  // ── Stream: real-time output (legacy, kept for compat) ──
+
   function writeStream(id, data) {
     var t = terminals[id];
     if (!t) t = create(id);
-    if (!t.opened) {
-      // Buffer stream data
-      if (!t._pendingStream) t._pendingStream = '';
-      t._pendingStream += data;
-      return;
-    }
+    if (!t.opened) { t._pendingStream += data; return; }
 
-    if (t.mobile) {
-      var pre = _ensurePre(t);
-      // Append streamed text as HTML
-      var html = _ansiToHtml(data.replace(/\s+$/gm, ''));
-      pre.insertAdjacentHTML('beforeend', html);
-      // Cap DOM size
-      while (pre.childNodes.length > 5000) pre.removeChild(pre.childNodes[0]);
-      _autoScroll(t);
-    } else if (t.term) {
-      // xterm.js handles raw stream natively — this is what it's designed for
-      t.term.write(data);
-      _autoScroll(t);
-    }
-  }
-
-  function _256color(n) {
-    if (n < 8) return ['#484f58','#ff7b72','#3fb950','#d29922','#58a6ff','#bc8cff','#39d353','#e6edf3'][n];
-    if (n < 16) return ['#6e7681','#ffa198','#56d364','#e3b341','#79c0ff','#d2a8ff','#56d364','#f0f6fc'][n-8];
-    if (n < 232) { var i=n-16,r=Math.floor(i/36)*51,g=Math.floor((i%36)/6)*51,b=(i%6)*51; return 'rgb('+r+','+g+','+b+')'; }
-    var v=(n-232)*10+8; return 'rgb('+v+','+v+','+v+')';
-  }
-
-  function _ansiToHtml(text) {
-    return text
-      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
-      .replace(/\x1b\[([0-9;]*)m/g, function(_,codes) {
-        if (!codes||codes==='0'||codes==='39'||codes==='49') return '</span>';
-        var p=codes.split(';'), s=[];
-        for (var i=0;i<p.length;i++) {
-          var c=parseInt(p[i]);
-          if (c===1) s.push('font-weight:bold');
-          else if (c===2) s.push('opacity:0.6');
-          else if (c===3) s.push('font-style:italic');
-          else if (c===4) s.push('text-decoration:underline');
-          else if (c>=30&&c<=37) s.push('color:'+['#484f58','#ff7b72','#3fb950','#d29922','#58a6ff','#bc8cff','#39d353','#e6edf3'][c-30]);
-          else if (c>=90&&c<=97) s.push('color:'+['#6e7681','#ffa198','#56d364','#e3b341','#79c0ff','#d2a8ff','#56d364','#f0f6fc'][c-90]);
-          else if (c===38&&p[i+1]==='5'&&p[i+2]){s.push('color:'+_256color(parseInt(p[i+2])));i+=2;}
-          else if (c===48&&p[i+1]==='5'&&p[i+2]){i+=2;}
-          else if (c===38&&p[i+1]==='2'&&p[i+4]){s.push('color:rgb('+p[i+2]+','+p[i+3]+','+p[i+4]+')');i+=4;}
-          else if (c===48&&p[i+1]==='2'&&p[i+4]){i+=4;}
-        }
-        return s.length?'<span style="'+s.join(';')+'">':'<span>';
-      })
-      .replace(/\x1b\[[0-9;]*[a-zA-Z]/g,'');
+    t.term.write(data);
+    _autoScroll(t);
   }
 
   // Legacy compat
@@ -203,23 +161,19 @@
 
   function show(id) {
     Object.keys(terminals).forEach(function(k) {
-      var hidden = (k !== id);
-      terminals[k].el.style.display = hidden ? 'none' : '';
-      // Keep buffer and lastData — preserve scroll history on session switch
+      terminals[k].el.style.display = (k === id) ? '' : 'none';
     });
     var t = terminals[id];
-    if (!t || !t.opened) return;
-    if (t.mobile) {
-      if (t._pre) _autoScroll(t);
-    } else {
-      // Force full re-render on next write (renderedLines cleared above if was hidden)
-      requestAnimationFrame(function() { try { t.fitAddon.fit(); } catch(e) {} });
+    if (t && t.opened) {
+      requestAnimationFrame(function() {
+        try { t.fitAddon.fit(); } catch(e) {}
+      });
     }
   }
 
   function resize(id) {
     var t = terminals[id];
-    if (!t || !t.opened || t.mobile) return null;
+    if (!t || !t.opened) return null;
     try { t.fitAddon.fit(); return { cols: t.term.cols, rows: t.term.rows }; }
     catch(e) { return null; }
   }
@@ -227,7 +181,7 @@
   function resizeAll() {
     var r = {};
     Object.keys(terminals).forEach(function(id) {
-      if (terminals[id].el.style.display !== 'none' && !terminals[id].mobile) r[id] = resize(id);
+      if (terminals[id].el.style.display !== 'none') r[id] = resize(id);
     });
     return r;
   }
@@ -246,6 +200,6 @@
 
   function get(id) { return terminals[id] || null; }
 
-  AB.terminal = { create:create, open:open, write:write, writeSnapshot:writeSnapshot, writeStream:writeStream, show:show, resize:resize, resizeAll:resizeAll, search:search, searchNext:searchNext, searchPrev:searchPrev, destroy:destroy, get:get };
+  AB.terminal = { create:create, open:open, write:write, writeSnapshot:writeSnapshot, writeScreen:writeScreen, writeStream:writeStream, show:show, resize:resize, resizeAll:resizeAll, search:search, searchNext:searchNext, searchPrev:searchPrev, destroy:destroy, get:get };
 
 })(window.AB = window.AB || {});

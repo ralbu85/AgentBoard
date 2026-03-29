@@ -7,9 +7,18 @@
   },
   "dependencies": {
     "dotenv": "^17.3.1",
+    "node-pty": "^1.1.0",
     "ws": "^8.19.0"
   },
-  "keywords": ["claude", "claude-code", "terminal", "dashboard", "tmux", "ai-agent", "xterm"],
+  "keywords": [
+    "claude",
+    "claude-code",
+    "terminal",
+    "dashboard",
+    "tmux",
+    "ai-agent",
+    "xterm"
+  ],
   "author": "ralbu85",
   "license": "MIT",
   "description": "Browser-based dashboard for managing multiple AI coding sessions — v2 with xterm.js"

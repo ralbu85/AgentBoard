@@ -2,7 +2,6 @@ const fs = require("fs");
 const path = require("path");
 const { isAlive, tmux } = require("./tmux");
 const { sessions, getNextId, setNextId, spawnSession, killSession, sendInput } = require("./sessions");
-const { lastCapture } = require("./poller");
 
 function readBody(req) {
   return new Promise(res => {
@@ -50,8 +49,17 @@ function setupRoutes(server, { auth, broadcast, PASSWORD, AUTH_TOKEN, loadConfig
       const safePath = path.normalize(url).replace(/^(\.\.[\/\\])+/, '');
       const filePath = path.join(__dirname, "..", "public", safePath);
       if (filePath.startsWith(path.join(__dirname, "..", "public")) && fs.existsSync(filePath)) {
-        res.writeHead(200, { "Content-Type": MIME[ext] + "; charset=utf-8", "Cache-Control": "no-cache, no-store, must-revalidate" });
-        return res.end(fs.readFileSync(filePath));
+        const raw = fs.readFileSync(filePath);
+        // gzip if client supports it and file is text
+        const acceptGzip = (req.headers['accept-encoding'] || '').includes('gzip');
+        if (acceptGzip && (ext === '.js' || ext === '.css')) {
+          const zlib = require('zlib');
+          const compressed = zlib.gzipSync(raw);
+          res.writeHead(200, { "Content-Type": MIME[ext] + "; charset=utf-8", "Content-Encoding": "gzip", "Cache-Control": "public, max-age=3600" });
+          return res.end(compressed);
+        }
+        res.writeHead(200, { "Content-Type": MIME[ext] + "; charset=utf-8", "Cache-Control": "public, max-age=3600" });
+        return res.end(raw);
       }
     }
 
@@ -110,7 +118,7 @@ function setupRoutes(server, { auth, broadcast, PASSWORD, AUTH_TOKEN, loadConfig
     if (method === "POST" && url === "/api/remove") {
       const { id } = JSON.parse(await readBody(req));
       sessions.delete(id);
-      delete lastCapture[id];
+      // Stream cleanup handled by streamer via session events
       return json(res, 200, { ok: true });
     }
 

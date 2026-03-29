@@ -61,6 +61,24 @@ wss.on('connection', ws => {
     ws.send(JSON.stringify({ type: "titles", titles: sessionTitles }));
   }
 
+  // Send current state for ALL sessions (reconnect-safe)
+  sessions.forEach((s, id) => {
+    if (ws.readyState !== 1) return;
+    ws.send(JSON.stringify({ type: 'spawned', id, cwd: s.cwd || '', cmd: s.cmd || '', status: s.status || 'running', sessionName: s.sessionName }));
+    ws.send(JSON.stringify({ type: 'status', id, status: s.status || 'running' }));
+    if (s.aiState) ws.send(JSON.stringify({ type: 'aiState', id, state: s.aiState }));
+    if (s.cwd) ws.send(JSON.stringify({ type: 'cwd', id, cwd: s.cwd }));
+    if (s.process || s.createdAt) {
+      ws.send(JSON.stringify({ type: 'info', id, process: s.process || '', createdAt: s.createdAt || 0, memKB: s.memKB || 0 }));
+    }
+    // Lightweight screen snapshot for preload
+    streamer.getScreenSnapshot(id).then(output => {
+      if (output && ws.readyState === 1) {
+        ws.send(JSON.stringify({ type: 'snapshot', id, data: output }));
+      }
+    });
+  });
+
   ws.on('message', raw => {
     try {
       const msg = JSON.parse(raw);
@@ -82,19 +100,17 @@ wss.on('connection', ws => {
           sessions.forEach(s => { s.cols = size.cols; s.rows = size.rows; });
         }
         if (msg.id) {
-          // Send snapshot + start streaming
           streamer.getSnapshot(msg.id).then(output => {
             if (output) {
               ws.send(JSON.stringify({ type: 'snapshot', id: msg.id, data: output }));
             }
-            streamer.startStream(msg.id);
           });
         }
       }
 
       if (msg.type === 'resync') {
         if (msg.id) {
-          streamer.getSnapshot(msg.id).then(output => {
+          streamer.getScreenSnapshot(msg.id).then(output => {
             if (output) {
               ws.send(JSON.stringify({ type: 'snapshot', id: msg.id, data: output }));
             }
@@ -111,11 +127,13 @@ wss.on('connection', ws => {
         }
       }
 
+      // Quick keys (Enter, Esc, C-c, etc.)
       if (msg.type === 'key') {
         const s = sessions.get(msg.id);
         if (s) tmuxAsyncRaw(["send-keys", "-t", s.sessionName, msg.key]);
       }
 
+      // Desktop xterm.js keyboard input
       if (msg.type === 'terminal-input') {
         const s = sessions.get(msg.id);
         if (s && msg.data) {
@@ -136,16 +154,16 @@ wss.on('connection', ws => {
         }
       }
 
+      // Mobile textarea send
       if (msg.type === 'input') {
         const s = sessions.get(msg.id);
         if (s) {
           (async () => {
             const lines = msg.text.split("\n");
             for (const line of lines) {
-              await tmuxAsyncRaw(["send-keys", "-t", s.sessionName, line.replace(/"/g, '\\"'), ""]);
-              await tmuxAsyncRaw(["send-keys", "-t", s.sessionName, "", "Enter"]);
+              await tmuxAsyncRaw(["send-keys", "-t", s.sessionName, "-l", line]);
+              await tmuxAsyncRaw(["send-keys", "-t", s.sessionName, "Enter"]);
             }
-            broadcast({ type: "log", id: msg.id, src: "stdin", text: msg.text, ts: Date.now() });
           })();
         }
       }
@@ -159,10 +177,7 @@ wss.on('connection', ws => {
 
 server.listen(PORT, () => {
   recoverSessions();
-  // Start streaming for all existing sessions
-  sessions.forEach((s, id) => { streamer.startStream(id); });
-  // Lightweight state polling (no capture-pane, just process check + last 5 lines)
-  streamer.pollStates();
+  streamer.startPolling();
   console.log(`AgentBoard v2 running on http://localhost:${PORT}`);
   console.log(`Password: ${PASSWORD}`);
   tunnel.startTunnel(PORT, DISCORD_WEBHOOK);

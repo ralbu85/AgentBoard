@@ -1,24 +1,25 @@
-// ── PTY Streamer ──
-// Initial: capture-pane snapshot
-// Live: pipe-pane → file → tail -f → broadcast
+// ── Terminal Relay ──
+// capture-pane polling with in-place overwrite (no scrollback pollution).
+// Active session: 150ms poll → send only changed lines
+// Background:     2s poll → state detection only
+// Input:          send-keys (reliable, no PTY attach overhead)
 
-const { execFile, spawn } = require("child_process");
-const fs = require("fs");
-const path = require("path");
-const os = require("os");
+const { execFile } = require("child_process");
 const { tmuxAsyncRaw } = require("./tmux");
 const { sessions, detectState } = require("./sessions");
 
 let broadcastFn = () => {};
 let activeSessionId = null;
-const streams = {};  // id → { tail, file }
+const lastScreen = {};  // id → last captured output
 
-const STATE_POLL_MS = 2000;
+const ACTIVE_POLL_MS = 150;
+const BG_POLL_MS = 2000;
 
 function setBroadcast(fn) { broadcastFn = fn; }
 function setActiveSession(id) { activeSessionId = id; }
 
-// Snapshot for initial load
+// ── Snapshot: full history for session switch ──
+
 async function getSnapshot(id) {
   const s = sessions.get(id);
   if (!s) return null;
@@ -26,69 +27,110 @@ async function getSnapshot(id) {
   const cols = s.cols || 80;
   const rows = s.rows || 50;
 
-  await tmuxAsyncRaw(["resize-window", "-t", s.sessionName, "-x", String(cols), "-y", String(rows)]);
-
-  const [output, info] = await Promise.all([
-    tmuxAsyncRaw(["capture-pane", "-t", s.sessionName, "-p", "-e", "-S", "-500"]),
+  const [, rawOutput, info] = await Promise.all([
+    tmuxAsyncRaw(["resize-window", "-t", s.sessionName, "-x", String(cols), "-y", String(rows)]),
+    tmuxAsyncRaw(["capture-pane", "-t", s.sessionName, "-p", "-e", "-S", "-2000"]),
     tmuxAsyncRaw(["display-message", "-t", s.sessionName, "-p",
       "#{pane_current_path}|#{pane_current_command}|#{session_created}|#{pane_pid}"])
   ]);
 
   _updateInfo(id, s, info);
-  _detectState(id, s, output);
+  _detectState(id, s, rawOutput);
+  lastScreen[id] = rawOutput;
 
-  return output;
+  return rawOutput.replace(/\r?\n/g, '\r\n');
 }
 
-// Start live stream
-function startStream(id) {
-  if (streams[id]) return;
+async function getScreenSnapshot(id) {
   const s = sessions.get(id);
-  if (!s) return;
+  if (!s) return null;
 
-  const file = path.join(os.tmpdir(), 'ab-stream-' + id);
+  const rows = s.rows || 50;
+  const rawOutput = await tmuxAsyncRaw(["capture-pane", "-t", s.sessionName, "-p", "-e", "-S", "-" + String(rows)]);
+  lastScreen[id] = rawOutput;
+  return rawOutput.replace(/\r?\n/g, '\r\n');
+}
 
-  // Clear file
-  fs.writeFileSync(file, '');
+// ── Active session polling ──
 
-  // Tell tmux to pipe to file
-  tmuxAsyncRaw(["pipe-pane", "-t", s.sessionName, "cat >> " + file]);
+async function _pollActive() {
+  if (activeSessionId) {
+    const s = sessions.get(activeSessionId);
+    if (s && s.status !== 'stopped' && s.status !== 'completed') {
+      try {
+        const output = await tmuxAsyncRaw(["capture-pane", "-t", s.sessionName, "-p", "-e"]);
 
-  // Tail the file
-  const tail = spawn("tail", ["-f", "-n", "0", file], { stdio: ['ignore', 'pipe', 'ignore'] });
-
-  tail.stdout.on('data', function(chunk) {
-    var data = chunk.toString();
-    if (data) {
-      broadcastFn({ type: 'stream', id: id, data: data });
+        if (output !== lastScreen[activeSessionId]) {
+          lastScreen[activeSessionId] = output;
+          // Send as screen update (in-place overwrite, no scrollback pollution)
+          broadcastFn({
+            type: 'screen',
+            id: activeSessionId,
+            data: output.replace(/\r?\n/g, '\r\n')
+          });
+        }
+      } catch (e) {}
     }
-  });
-
-  tail.on('close', function() {
-    // Restart if died
-    delete streams[id];
-  });
-
-  streams[id] = { tail: tail, file: file };
-}
-
-function stopStream(id) {
-  const st = streams[id];
-  if (!st) return;
-  const s = sessions.get(id);
-  if (s) {
-    tmuxAsyncRaw(["pipe-pane", "-t", s.sessionName]); // stop piping
   }
-  try { st.tail.kill(); } catch (e) {}
-  try { fs.unlinkSync(st.file); } catch (e) {}
-  delete streams[id];
+  setTimeout(_pollActive, ACTIVE_POLL_MS);
 }
 
-function stopAllStreams() {
-  Object.keys(streams).forEach(stopStream);
+// ── Background polling: state + alive detection ──
+
+async function pollStates() {
+  for (const [id, s] of sessions.entries()) {
+    if (s.status === 'stopped') continue;
+
+    const alive = await new Promise(resolve => {
+      execFile("tmux", ["has-session", "-t", s.sessionName], err => resolve(!err));
+    });
+
+    if (!alive) {
+      if (s.status !== 'completed') {
+        s.status = 'completed';
+        s.aiState = null;
+        broadcastFn({ type: "status", id, status: "completed" });
+      }
+      continue;
+    }
+
+    if (id === activeSessionId) continue;
+
+    try {
+      const [info, tail] = await Promise.all([
+        tmuxAsyncRaw(["display-message", "-t", s.sessionName, "-p",
+          "#{pane_current_path}|#{pane_current_command}|#{session_created}|#{pane_pid}"]),
+        tmuxAsyncRaw(["capture-pane", "-t", s.sessionName, "-p", "-S", "-20"])
+      ]);
+      _updateInfo(id, s, info);
+      _detectState(id, s, tail);
+    } catch (e) {}
+  }
+  setTimeout(pollStates, BG_POLL_MS);
 }
 
-// Lightweight state polling (capture last 5 lines only)
+// ── Info polling for active session (less frequent) ──
+
+async function _pollActiveInfo() {
+  if (activeSessionId) {
+    const s = sessions.get(activeSessionId);
+    if (s && s.status !== 'stopped' && s.status !== 'completed') {
+      try {
+        const [info, tail] = await Promise.all([
+          tmuxAsyncRaw(["display-message", "-t", s.sessionName, "-p",
+            "#{pane_current_path}|#{pane_current_command}|#{session_created}|#{pane_pid}"]),
+          tmuxAsyncRaw(["capture-pane", "-t", s.sessionName, "-p", "-S", "-20"])
+        ]);
+        _updateInfo(activeSessionId, s, info);
+        _detectState(activeSessionId, s, tail);
+      } catch (e) {}
+    }
+  }
+  setTimeout(_pollActiveInfo, 2000);
+}
+
+// ── Helpers ──
+
 function _updateInfo(id, s, infoStr) {
   const parts = infoStr.trim().split("|");
   const cwd = parts[0] || "";
@@ -114,31 +156,20 @@ function _detectState(id, s, output) {
   }
 }
 
-async function pollStates() {
-  for (const [id, s] of sessions.entries()) {
-    if (s.status === 'stopped') continue;
-    try {
-      const alive = await new Promise(resolve => {
-        execFile("tmux", ["has-session", "-t", s.sessionName], err => resolve(!err));
-      });
-      if (!alive) {
-        if (s.status !== 'completed') {
-          s.status = 'completed'; s.aiState = null;
-          broadcastFn({ type: "status", id, status: "completed" });
-          stopStream(id);
-        }
-        continue;
-      }
-      const [info, tail] = await Promise.all([
-        tmuxAsyncRaw(["display-message", "-t", s.sessionName, "-p",
-          "#{pane_current_path}|#{pane_current_command}|#{session_created}|#{pane_pid}"]),
-        tmuxAsyncRaw(["capture-pane", "-t", s.sessionName, "-p", "-S", "-5"])
-      ]);
-      _updateInfo(id, s, info);
-      _detectState(id, s, tail);
-    } catch (e) {}
-  }
-  setTimeout(pollStates, STATE_POLL_MS);
+// ── Lifecycle ──
+
+function startPolling() {
+  _pollActive();
+  _pollActiveInfo();
+  pollStates();
 }
 
-module.exports = { setBroadcast, setActiveSession, getSnapshot, startStream, stopStream, stopAllStreams, pollStates };
+function stopAllStreams() {
+  Object.keys(lastScreen).forEach(k => delete lastScreen[k]);
+}
+
+module.exports = {
+  setBroadcast, setActiveSession,
+  getSnapshot, getScreenSnapshot,
+  startPolling, pollStates, stopAllStreams
+};
