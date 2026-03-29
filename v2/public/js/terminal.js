@@ -136,6 +136,8 @@
 
     // Cursor home → overwrite each line → clear leftover lines below
     var lines = data.split('\r\n');
+    while (lines.length > 0 && lines[lines.length - 1] === '') lines.pop();
+    if (lines.length === 0) return;
     var out = '\x1b[H';
     for (var i = 0; i < lines.length; i++) {
       out += lines[i] + '\x1b[K';

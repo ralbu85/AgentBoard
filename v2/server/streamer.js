@@ -51,6 +51,23 @@ async function getScreenSnapshot(id) {
   return rawOutput.replace(/\r?\n/g, '\r\n');
 }
 
+// ── Immediate poll after input ──
+
+async function pollNow(id) {
+  const s = sessions.get(id);
+  if (!s || s.status === 'stopped' || s.status === 'completed') return;
+  try {
+    const output = await tmuxAsyncRaw(["capture-pane", "-t", s.sessionName, "-p", "-e"]);
+    if (output !== lastScreen[id]) {
+      lastScreen[id] = output;
+      broadcastFn({
+        type: 'screen', id,
+        data: output.replace(/\r?\n/g, '\r\n')
+      });
+    }
+  } catch (e) {}
+}
+
 // ── Active session polling ──
 
 async function _pollActive() {
@@ -171,5 +188,5 @@ function stopAllStreams() {
 module.exports = {
   setBroadcast, setActiveSession,
   getSnapshot, getScreenSnapshot,
-  startPolling, pollStates, stopAllStreams
+  pollNow, startPolling, pollStates, stopAllStreams
 };

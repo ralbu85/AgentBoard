@@ -97,7 +97,7 @@ async function testWebSocket(sessions) {
     const timeout = setTimeout(() => resolve(null), 5000);
     ws.on('message', data => {
       const m = JSON.parse(data);
-      if (m.type === 'snapshot' || m.type === 'output' && m.id === firstId) { clearTimeout(timeout); resolve(m); }
+      if ((m.type === 'snapshot' || m.type === 'output' || m.type === 'screen') && m.id === firstId) { clearTimeout(timeout); resolve(m); }
     });
   });
 
@@ -112,7 +112,7 @@ async function testWebSocket(sessions) {
     const handler = data => {
       const m = JSON.parse(data);
       if (m.id === firstId) {
-        if (m.type === 'snapshot' || m.type === 'output') fullCount++;
+        if (m.type === 'snapshot' || m.type === 'output' || m.type === 'screen') fullCount++;
         if (m.type === 'stream') diffCount++;
       }
     };
@@ -136,7 +136,7 @@ async function testWebSocket(sessions) {
     const timeout = setTimeout(() => resolve(null), 3000);
     const handler = data => {
       const m = JSON.parse(data);
-      if ((m.type === 'snapshot' || m.type === 'output' || m.type === 'stream') && m.id === firstId) {
+      if ((m.type === 'snapshot' || m.type === 'output' || m.type === 'stream' || m.type === 'screen') && m.id === firstId) {
         clearTimeout(timeout); ws.removeListener('message', handler); resolve(m);
       }
     };
@@ -155,7 +155,7 @@ async function testWebSocket(sessions) {
     const timeout = setTimeout(() => resolve(null), 5000);
     mws.on('message', data => {
       const m = JSON.parse(data);
-      if ((m.type === 'snapshot' || m.type === 'output' || m.type === 'stream') && m.id === firstId) {
+      if ((m.type === 'snapshot' || m.type === 'output' || m.type === 'stream' || m.type === 'screen') && m.id === firstId) {
         clearTimeout(timeout); resolve(m);
       }
     });
@@ -168,7 +168,7 @@ async function testWebSocket(sessions) {
     const handler = data => {
       const m = JSON.parse(data);
       if (m.id === firstId) {
-        if (m.type === 'snapshot' || m.type === 'output') mFull++;
+        if (m.type === 'snapshot' || m.type === 'output' || m.type === 'screen') mFull++;
         if (m.type === 'stream') mDiff++;
       }
     };
@@ -194,7 +194,7 @@ async function testSessionSwitch(sessions) {
 
   const out1 = await new Promise(resolve => {
     const t = setTimeout(() => resolve(null), 3000);
-    ws.on('message', data => { const m = JSON.parse(data); if (m.type === 'snapshot' || m.type === 'output' && m.id === id1) { clearTimeout(t); resolve(m); } });
+    ws.on('message', data => { const m = JSON.parse(data); if ((m.type === 'snapshot' || m.type === 'output' || m.type === 'screen') && m.id === id1) { clearTimeout(t); resolve(m); } });
   });
   out1 ? ok(`Session ${id1} output`) : fail(`Session ${id1}`, 'no output');
 
@@ -204,7 +204,7 @@ async function testSessionSwitch(sessions) {
 
   const out2 = await new Promise(resolve => {
     const t = setTimeout(() => resolve(null), 3000);
-    const h = data => { const m = JSON.parse(data); if ((m.type === 'snapshot' || m.type === 'output' || m.type === 'stream') && m.id === id2) { clearTimeout(t); ws.removeListener('message', h); resolve(m); } };
+    const h = data => { const m = JSON.parse(data); if ((m.type === 'snapshot' || m.type === 'output' || m.type === 'stream' || m.type === 'screen') && m.id === id2) { clearTimeout(t); ws.removeListener('message', h); resolve(m); } };
     ws.on('message', h);
   });
   const switchTime = Date.now() - switchStart;
@@ -246,7 +246,7 @@ async function testPerformance(sessions) {
     const h = data => {
       const m = JSON.parse(data);
       if (m.id === id) {
-        if (m.type === 'snapshot' || m.type === 'output') { types.output++; sizes.push((m.data||'').length); }
+        if (m.type === 'snapshot' || m.type === 'output' || m.type === 'screen') { types.output++; sizes.push((m.data||'').length); }
         if (m.type === 'stream') { types['output-diff']++; sizes.push((m.data||'').length); }
       }
     };
@@ -325,7 +325,7 @@ async function testStability(sessions) {
     const t = setTimeout(() => resolve(null), 3000);
     const h = data => {
       const m = JSON.parse(data);
-      if ((m.type === 'snapshot' || m.type === 'stream') && m.id === id) {
+      if ((m.type === 'snapshot' || m.type === 'stream' || m.type === 'screen') && m.id === id) {
         clearTimeout(t); ws.removeListener('message', h); resolve(m);
       }
     };

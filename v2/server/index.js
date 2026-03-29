@@ -130,7 +130,10 @@ wss.on('connection', ws => {
       // Quick keys (Enter, Esc, C-c, etc.)
       if (msg.type === 'key') {
         const s = sessions.get(msg.id);
-        if (s) tmuxAsyncRaw(["send-keys", "-t", s.sessionName, msg.key]);
+        if (s) {
+          tmuxAsyncRaw(["send-keys", "-t", s.sessionName, msg.key])
+            .then(() => streamer.pollNow(msg.id));
+        }
       }
 
       // Desktop xterm.js keyboard input
@@ -146,11 +149,10 @@ wss.on('connection', ws => {
             '\x1b[5~': 'PageUp', '\x1b[6~': 'PageDown',
             '\x1b[3~': 'DC',
           };
-          if (SEQ_MAP[msg.data]) {
-            tmuxAsyncRaw(["send-keys", "-t", s.sessionName, SEQ_MAP[msg.data]]);
-          } else {
-            tmuxAsyncRaw(["send-keys", "-t", s.sessionName, "-l", msg.data]);
-          }
+          const p = SEQ_MAP[msg.data]
+            ? tmuxAsyncRaw(["send-keys", "-t", s.sessionName, SEQ_MAP[msg.data]])
+            : tmuxAsyncRaw(["send-keys", "-t", s.sessionName, "-l", msg.data]);
+          p.then(() => streamer.pollNow(msg.id));
         }
       }
 
@@ -164,6 +166,7 @@ wss.on('connection', ws => {
               await tmuxAsyncRaw(["send-keys", "-t", s.sessionName, "-l", line]);
               await tmuxAsyncRaw(["send-keys", "-t", s.sessionName, "Enter"]);
             }
+            streamer.pollNow(msg.id);
           })();
         }
       }
