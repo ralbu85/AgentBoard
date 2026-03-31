@@ -1,0 +1,5 @@
+fastapi>=0.115
+uvicorn[standard]>=0.34
+aiofiles>=24.1
+python-multipart>=0.0.20
+python-dotenv>=1.1

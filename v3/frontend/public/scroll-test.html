@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.min.css">
+<style>
+body { margin: 0; background: #0d1117; color: #e6edf3; font-family: monospace; font-size: 12px; }
+#info { position: fixed; top: 0; left: 0; right: 0; background: rgba(0,0,0,0.9); padding: 6px 8px; z-index: 999; white-space: pre-wrap; line-height: 1.4; }
+#term { width: 100%; height: calc(100vh - 60px); margin-top: 50px; }
+</style>
+</head>
+<body>
+<div id="info">Loading xterm...</div>
+<div id="term"></div>
+<script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.min.js"></script>
+<script>
+var term = new Terminal({ scrollback: 5000, fontSize: 11, disableStdin: true });
+var fitAddon = new FitAddon.FitAddon();
+term.loadAddon(fitAddon);
+term.open(document.getElementById('term'));
+fitAddon.fit();
+
+for (var i = 0; i < 200; i++) {
+  term.writeln('Line ' + i + ': The quick brown fox jumps over the lazy dog');
+}
+term.writeln('\r\n=== BOTTOM ===');
+
+var info = document.getElementById('info');
+var vp = document.querySelector('.xterm-viewport');
+var scr = document.querySelector('.xterm-screen');
+
+info.textContent = 'scrollH=' + vp.scrollHeight + ' clientH=' + vp.clientHeight +
+  ' | vp.touchAction=' + getComputedStyle(vp).touchAction +
+  ' | scr.touchAction=' + getComputedStyle(scr).touchAction;
+
+var lastY = 0;
+document.addEventListener('touchstart', function(e) { lastY = e.touches[0].clientY; }, true);
+document.addEventListener('touchmove', function(e) {
+  var dy = lastY - e.touches[0].clientY;
+  lastY = e.touches[0].clientY;
+  info.textContent = 'dy=' + dy.toFixed(1) +
+    ' top=' + vp.scrollTop.toFixed(0) + '/' + (vp.scrollHeight - vp.clientHeight).toFixed(0) +
+    ' prevented=' + e.defaultPrevented;
+}, true);
+</script>
+</body>
+</html>

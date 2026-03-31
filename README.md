@@ -2,7 +2,7 @@
   <img src="https://img.shields.io/badge/AgentBoard-Remote_AI_Agent_Dashboard-7c3aed?style=for-the-badge" alt="AgentBoard" />
 </p>
 
-<h1 align="center">AgentBoard v2</h1>
+<h1 align="center">AgentBoard v3</h1>
 
 <p align="center">
   <a href="README.ko.md">한국어</a>
@@ -23,10 +23,10 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/node-%3E%3D18-339933?logo=node.js&logoColor=white" alt="Node.js" />
+  <img src="https://img.shields.io/badge/python-%3E%3D3.12-3776AB?logo=python&logoColor=white" alt="Python" />
+  <img src="https://img.shields.io/badge/react-19-61DAFB?logo=react&logoColor=white" alt="React" />
   <img src="https://img.shields.io/badge/tmux-required-1BB91F?logo=tmux&logoColor=white" alt="tmux" />
   <img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT License" />
-  <img src="https://img.shields.io/badge/dependencies-2_(ws%2C_dotenv)-green" alt="deps" />
 </p>
 
 ---
@@ -43,133 +43,118 @@ The problem: **you can't sit in front of the terminal all day.**
 
 Other tools (cmux, Cursor, Superset) require a desktop app and only work locally. **What if your agents run on a remote server?**
 
-**AgentBoard is a pure web app — no install, no desktop client.** Deploy it on any server with Node.js and tmux, open a browser from any device, and you're in. Works through Tailscale, Cloudflare Tunnel, or ngrok for secure remote access.
+**AgentBoard is a pure web app — no install, no desktop client.** Deploy it on any server with Python and tmux, open a browser from any device, and you're in.
 
 ### How It Compares
 
 | | cmux | Cursor | Superset | **AgentBoard** |
 |---|---|---|---|---|
-| **No install (just a URL)** | ❌ | ❌ | ❌ | ✅ |
-| **Remote server access** | ❌ | ❌ | ❌ | ✅ |
-| **Phone/tablet** | ❌ | ❌ | ❌ | ✅ |
-| Multi-agent sessions | ✅ | ❌ | ✅ | ✅ |
-| Cross-platform | macOS | Desktop | Desktop | Any browser |
-| File editor + PDF viewer | ❌ | Built-in | Diff view | Built-in |
-| Self-hosted | N/A | N/A | N/A | ✅ |
+| **No install (just a URL)** | - | - | - | Yes |
+| **Remote server access** | - | - | - | Yes |
+| **Phone/tablet** | - | - | - | Yes |
+| Multi-agent sessions | Yes | - | Yes | Yes |
+| AI state detection | - | - | - | Yes |
+| File browser + preview | - | Built-in | Diff view | Built-in |
+| Self-hosted | N/A | N/A | N/A | Yes |
 | Price | Free | $20/mo | Paid | Free |
+
+---
+
+## What's New in v3
+
+Complete rewrite from Node.js/vanilla JS to **FastAPI + React**.
+
+- **FastAPI backend** — async Python, uvicorn, structured API
+- **React 19 + Zustand** — component-based UI, proper state management
+- **xterm.js 5.5** — GPU-accelerated terminal on desktop and mobile
+- **80ms polling** — near real-time terminal updates (was 500ms)
+- **Per-client active tracking** — multiple browser tabs work independently
+- **File browser** — navigate, preview code/markdown/PDF/images, upload
+- **Syntax highlighting** — highlight.js with 14 languages, lazy loaded
+- **PDF viewer** — pdf.js canvas rendering, works on mobile
+- **Mobile-first** — custom touch scroll, fullscreen file viewer, native-feel UX
+- **Lazy loading** — app.js 217KB initial (pdf.js/hljs loaded on demand)
+- **Cursor blink filtering** — no more WS flooding from idle terminals
 
 ---
 
 ## Quick Start
 
 ```bash
-# Prerequisites: Node.js >= 18, tmux
+# Prerequisites: Python >= 3.12, tmux, Node.js (for frontend build)
 git clone https://github.com/ralbu85/AgentBoard.git
-cd AgentBoard/v2
-npm install
-echo "DASHBOARD_PASSWORD=yourpassword" > ../.env
-node server/index.js
+cd AgentBoard
+
+# Setup
+echo "DASHBOARD_PASSWORD=yourpassword" > .env
+cd v3/backend && python -m venv .venv && .venv/bin/pip install -r requirements.txt
+cd ../frontend && npm install && npx vite build
+
+# Run
+cd ../.. && v3/deploy.sh
 ```
 
-Open **http://localhost:3001** — done. Click **+** to start a session.
+Open **http://localhost:3002** — done. Click **+ New** to start a session.
 
 ### Run as a Background Service
 
 ```bash
-# pm2 (recommended)
-npm install -g pm2
-pm2 start v2/server/index.js --name agentboard
-pm2 save && pm2 startup
+# Using deploy.sh (recommended)
+cd AgentBoard && v3/deploy.sh
 
-# or nohup
-nohup node v2/server/index.js > /tmp/agentboard.log 2>&1 &
-```
-
-### Config (Optional)
-
-```bash
-cp config.example.json config.json
-```
-
-```json
-{
-  "basePath": "/home/you/projects",
-  "defaultCommand": "claude",
-  "favorites": ["/home/you/projects/app1"]
-}
+# Manual
+cd AgentBoard/v3
+nohup ./start.sh > server.log 2>&1 &
 ```
 
 ---
 
 ## Features
 
-### Two-Pane Layout
+### Multi-Agent Terminal
 
-- **Left**: fixed terminal pane with xterm.js (GPU-accelerated, full ANSI color)
-- **Right**: splittable viewer pane — drag files to edges to split, center to tab
-- **Resizable**: drag the divider between terminal and viewer
-- **Desktop**: direct keyboard input to terminal (click terminal, type)
+- **xterm.js** with GPU rendering, full ANSI color, 10000-line scrollback
+- **80ms capture-pane polling** — near real-time screen updates
+- **AI state detection**: Idle / Thinking / Asking / Done
+- **Per-client active tracking** — each browser tab polls its own session
+- **Cursor blink filtering** — no false screen updates from blinking cursors
+- **Direct keyboard input** on desktop (click terminal, type)
+- **Quick keys**: Esc, arrows, Enter, Tab, Ctrl+C
 
-### Multi-Agent Management
+### File Browser & Viewer
 
-Run 10+ AI agents concurrently. Each session gets:
-- Live terminal output via **xterm.js** with GPU rendering
-- Automatic state detection: **Running** / **Waiting** / **Idle** / **Completed**
-- Status animations with color-coded glows
-- "esc to interrupt" based detection — no hardcoded patterns
-
-### Smart Notifications
-
-- Browser notifications on state change
-- Audio alerts (different tones for waiting vs. completed)
-- Tab title blink when in background
-- Sidebar session flash
-
-### Integrated File Management
-
-- **File Explorer** — browse, upload, create, rename, delete
-- **Code Editor** — CodeMirror with syntax highlighting, save button, refresh from disk
-- **PDF Viewer** — zoom controls (+/-), page navigation, refresh
-- **Image Viewer** — inline display
-- **Markdown Preview** — rendered with marked.js
-- **Drag & drop** files into viewer for split layout
-- **Tab system** — multiple files per cell, drag tabs between cells
-
-### Split Viewer (VS Code-style)
-
-- Drag a file to the edge of a cell → creates a split (horizontal or vertical)
-- Drag a file to the center → adds as a tab
-- Drag tabs between cells to reorganize
-- Drop shield prevents CodeMirror from stealing drag events
-- Per-session viewer state: splits and tabs save/restore on session switch
+- **Directory navigation** — browse from session's working directory
+- **Code preview** — syntax highlighting via highlight.js (Python, JS/TS, Go, Rust, Java, SQL, etc.)
+- **Markdown preview** — headings, bold, lists, code blocks with highlighting, blockquotes
+- **PDF viewer** — pdf.js canvas rendering, page-by-page with progress
+- **Image viewer** — inline display with checkerboard background
+- **JSON prettify** — auto-formatted display
+- **File upload** — upload to current directory
+- **Fullscreen preview** on mobile, panel on desktop
 
 ### Mobile Optimized
 
-- **Responsive layout** — terminal takes full screen
-- **Session pills** in sidebar — compact list with status dots
-- **HTML rendering** — lightweight ANSI-to-HTML instead of xterm.js canvas (fixes CJK spacing)
-- **No tmux resize** from mobile — doesn't interfere with desktop dimensions
-- **Touch optimized** — `touchend` for instant response, no click delay
-- **Conditional loading** — CDN scripts (xterm.js, CodeMirror, pdf.js) only load on desktop
+- **Custom touch scroll** — disabled xterm.js touch handlers, native-feel momentum scroll
+- **Fullscreen file viewer** — file preview takes entire screen on mobile
+- **Scroll-to-bottom button** — appears when scrolled up
+- **Touch-optimized buttons** — 34px+ touch targets
+- **Responsive layout** — sidebar overlay, compact input card
 
-### Terminal Features
+### Session Management
 
-- Full ANSI 256 + RGB color rendering
-- Direct keyboard input (click terminal to type)
-- In-terminal search (xterm.js SearchAddon)
-- Quick keys: Esc, arrows, Enter, Tab, Ctrl+C
-- File drag & drop upload with progress bar
-- Paste screenshots directly into sessions
-- Reconnect button for stopped sessions
-- Session delete from sidebar (× button)
+- **Spawn** sessions with custom working directory and command
+- **Kill / Remove** — stop running sessions, remove completed ones
+- **Remove button visible** on mobile (no hover needed for stopped sessions)
+- **Session recovery** — reconnects to existing tmux sessions on server restart
+- **Session titles** — custom names, persisted across restarts
 
 ### Performance
 
-- **Desktop**: xterm.js GPU rendering, `\x1b[2J\x1b[3J\x1b[H` rewrite (no flicker)
-- **Mobile**: ANSI-stripped dedup — skip render if content unchanged
-- **Server**: sequential tmux resize → capture (no race condition)
-- **Adaptive polling**: active sessions 500ms, idle 5s
-- **Mobile data**: server sends last 200 lines only to mobile clients
+- **Initial load: 217KB** (app.js) + 301KB (xterm.js) — gzip ~150KB total
+- **Lazy loaded**: pdf.js (357KB), highlight.js languages — only when opening files
+- **PDF worker as Blob URL** — no separate network request for worker
+- **Adaptive polling**: 80ms active, 2s background
+- **Per-session broadcast throttling** — prevents WS flooding
 
 ---
 
@@ -181,67 +166,96 @@ Access your server's Tailscale IP directly. Zero config, encrypted, no ports to 
 
 ### Cloudflare Tunnel
 
-Install `cloudflared` and AgentBoard auto-starts a tunnel:
+Set `DISCORD_WEBHOOK` in `.env` and AgentBoard auto-starts a tunnel, posting the URL to Discord.
+
+### nginx Reverse Proxy
+
+```nginx
+server {
+    listen 443 ssl;
+    location / {
+        proxy_pass http://127.0.0.1:3002;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_buffering off;
+        proxy_read_timeout 86400;
+    }
+}
 ```
-Tunnel URL → https://random-name.trycloudflare.com
-```
-
-### ngrok
-
-```bash
-ngrok http 3001
-```
-
----
-
-## Keyboard Shortcuts
-
-| Key | Action |
-|-----|--------|
-| Cmd/Ctrl+Shift+←/→ | Switch sessions |
-| Ctrl+B | Toggle sidebar |
-| Ctrl+S | Save file (in editor panel) |
-| Ctrl+F | Search in terminal |
-| Click terminal + type | Direct input to tmux |
-| Esc, Enter, ↑↓, Tab | Forwarded to active session |
 
 ---
 
 ## Architecture
 
 ```
-v2/
-├── server/
-│   ├── index.js      — HTTP + WS server, auth, broadcast
-│   ├── sessions.js   — session CRUD, tmux lifecycle, state detection
-│   ├── poller.js     — output polling (sequential resize → capture)
-│   ├── routes.js     — REST API (login, files, sessions)
-│   ├── tmux.js       — tmux command wrappers
-│   └── tunnel.js     — Cloudflare tunnel
-├── public/
-│   ├── index.html    — conditional CDN loading (desktop only)
-│   ├── style.css     — GitHub dark theme, mobile responsive
-│   └── js/
-│       ├── store.js     — SessionStore (EventTarget, central state)
-│       ├── api.js       — fetch wrappers
-│       ├── terminal.js  — xterm.js (desktop) / HTML pre (mobile)
-│       ├── ws.js        — WebSocket, resize management
-│       ├── sidebar.js   — session list, mobile tabs, drag reorder
-│       ├── panels.js    — two-pane layout, viewer splits, drag-to-split
-│       ├── editor.js    — CodeMirror, PDF.js, image viewer
-│       ├── files.js     — file browser, context menu, upload
-│       ├── notify.js    — audio, title blink, browser notifications
-│       ├── favorites.js — bookmarks, spawn panel
-│       └── app.js       — entry point, login, input, keyboard
-└── package.json
+v3/
+├── backend/
+│   ├── main.py           — FastAPI app, lifespan, static file serving
+│   ├── config.py         — .env loading, auth token, project root
+│   ├── auth.py           — Cookie-based auth (HMAC-SHA256)
+│   ├── sessions.py       — SessionStore: spawn/kill/remove/recover tmux sessions
+│   ├── streamer.py       — capture-pane polling + cursor filtering + per-client tracking
+│   ├── state_detector.py — idle/working/waiting detection from terminal output
+│   ├── tmux.py           — async tmux command wrappers
+│   ├── ws.py             — WebSocket endpoint, message routing, broadcast
+│   ├── routes_session.py — REST API: login, workers, spawn, kill, input
+│   ├── routes_file.py    — REST API: browse, read/write/upload files
+│   └── tunnel.py         — Cloudflare tunnel (optional)
+├── frontend/
+│   ├── src/
+│   │   ├── App.tsx                     — Root component, login, layout
+│   │   ├── store.ts                    — Zustand state management
+│   │   ├── ws.ts                       — WebSocket singleton
+│   │   ├── api.ts                      — REST API client
+│   │   ├── components/
+│   │   │   ├── Terminal/TerminalPane.tsx    — Terminal container + state badge
+│   │   │   ├── Terminal/TerminalManager.ts — xterm.js lifecycle, mobile scroll
+│   │   │   ├── Terminal/InputCard.tsx      — Input + quick keys + file toggle
+│   │   │   ├── FilePanel.tsx               — File browser + code/md viewer
+│   │   │   ├── PdfViewer.tsx               — pdf.js canvas renderer
+│   │   │   ├── Sidebar/SessionList.tsx     — Session list + remove
+│   │   │   └── Header.tsx                  — Status bar, + New button
+│   │   └── types.ts
+│   └── vite.config.ts    — Build config, chunk splitting
+├── deploy.sh             — Build + restart
+└── start.sh              — Server entry point
 ```
 
-**Design principles:**
-- No frameworks — pure Node.js + vanilla JavaScript
-- 2 dependencies — `ws` and `dotenv`
-- IIFE + `AB` namespace — no build step, script tag loading
-- Sessions are tmux — persist across server restarts
-- Desktop/mobile split at render layer, shared server
+**Stack:**
+- Backend: FastAPI + uvicorn (Python 3.12)
+- Frontend: React 19 + xterm.js 5.5 + Zustand
+- Terminal: tmux capture-pane polling (80ms active, 2s background)
+- Highlighting: highlight.js (lazy loaded, 14 languages)
+- PDF: pdfjs-dist (lazy loaded, Blob URL worker)
+
+---
+
+## API Reference
+
+### REST
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/login` | Login with password |
+| GET | `/api/workers` | List all sessions |
+| POST | `/api/spawn` | Create new session |
+| POST | `/api/kill` | Stop a session |
+| POST | `/api/remove` | Remove stopped session |
+| POST | `/api/input` | Send text to session |
+| POST | `/api/key` | Send special key |
+| GET | `/api/files?path=` | List directory |
+| GET | `/api/file?path=` | Read file |
+| GET | `/api/file-raw?path=` | Stream binary file |
+| POST | `/api/file` | Write file |
+| POST | `/api/upload` | Upload file |
+| POST | `/api/delete` | Delete file/directory |
+
+### WebSocket (`/ws`)
+
+**Client to Server:** `resize`, `active`, `resync`, `title`, `key`, `terminal-input`, `input`
+
+**Server to Client:** `spawned`, `snapshot`, `screen`, `status`, `cwd`, `aiState`, `info`, `title`, `titles`
 
 ---
 
@@ -249,15 +263,11 @@ v2/
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `PORT` or `V2_PORT` | `3001` | Server port |
+| `AGENTBOARD_PORT` or `V3_PORT` | `3002` | Server port |
 | `DASHBOARD_PASSWORD` | `changeme` | Login password |
-| `DISCORD_WEBHOOK` | — | Send tunnel URL to Discord |
+| `DISCORD_WEBHOOK` | — | Post tunnel URL to Discord |
 
 ---
-
-## Credits
-
-Originally based on [sunmerrr/TermHub](https://github.com/sunmerrr/TermHub). Evolved into a remote AI agent management platform.
 
 ## License
 
