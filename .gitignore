@@ -1,0 +1,11 @@
+node_modules/
+frontend/node_modules/
+frontend/dist/
+backend/.venv/
+backend/__pycache__/
+__pycache__/
+*.pyc
+.env
+server.log
+*.png
+yarn.lock
