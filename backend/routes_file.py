@@ -1,6 +1,9 @@
+import hashlib
+import json
 import mimetypes
 import os
 import shutil
+import time
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, Request, Query
@@ -129,3 +132,53 @@ async def upload(request: Request, id: str = "", name: str = "", dir: str = "", 
     except Exception as e:
         return {"ok": False, "error": str(e)}
     return {"ok": True, "path": str(target), "name": name}
+
+
+# ── Notes / Annotations ──
+
+NOTES_DIR = Path.home() / ".agentboard" / "notes"
+
+
+def _notes_file(filepath: str) -> Path:
+    h = hashlib.sha256(filepath.encode()).hexdigest()[:16]
+    return NOTES_DIR / f"{h}.json"
+
+
+@router.get("/notes")
+async def get_notes(path: str = Query(...), _=Depends(verify)):
+    p = str(Path(os.path.expanduser(path)).resolve())
+    nf = _notes_file(p)
+    if not nf.exists():
+        return {"path": p, "notes": []}
+    try:
+        data = json.loads(nf.read_text())
+        return {"path": p, "notes": data.get("notes", [])}
+    except Exception:
+        return {"path": p, "notes": []}
+
+
+@router.post("/notes")
+async def save_notes(req: dict, _=Depends(verify)):
+    filepath = str(Path(os.path.expanduser(req.get("path", ""))).resolve())
+    notes = req.get("notes", [])
+    NOTES_DIR.mkdir(parents=True, exist_ok=True)
+    nf = _notes_file(filepath)
+    nf.write_text(json.dumps({"filePath": filepath, "notes": notes, "updatedAt": int(time.time())}, ensure_ascii=False))
+    return {"ok": True}
+
+
+@router.post("/notes/delete")
+async def delete_note(req: dict, _=Depends(verify)):
+    filepath = str(Path(os.path.expanduser(req.get("path", ""))).resolve())
+    start = req.get("startLine")
+    end = req.get("endLine")
+    nf = _notes_file(filepath)
+    if not nf.exists():
+        return {"ok": True}
+    try:
+        data = json.loads(nf.read_text())
+        data["notes"] = [n for n in data.get("notes", []) if not (n.get("startLine") == start and n.get("endLine") == end)]
+        nf.write_text(json.dumps(data, ensure_ascii=False))
+    except Exception:
+        pass
+    return {"ok": True}

@@ -97,6 +97,17 @@ async def input_text(req: InputRequest, _=Depends(verify)):
     return {"ok": True}
 
 
+@router.post("/paste")
+async def paste_text(req: InputRequest, _=Depends(verify)):
+    """Paste multi-line text as a single block (no line-by-line splitting)."""
+    s = store.get(req.id)
+    if not s:
+        return {"ok": False}
+    await tmux.paste_text(s.session_name, req.text)
+    await streamer.poll_now(req.id)
+    return {"ok": True}
+
+
 @router.post("/key")
 async def send_key(req: KeyRequest, _=Depends(verify)):
     s = store.get(req.id)

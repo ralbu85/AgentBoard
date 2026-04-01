@@ -26,6 +26,7 @@ export const api = {
   attach: (sessionName: string, cwd: string) => post('/api/attach', { sessionName, cwd }),
   scan: () => get('/api/scan'),
   input: (id: string, text: string) => post('/api/input', { id, text }),
+  paste: (id: string, text: string) => post('/api/paste', { id, text }),
   key: (id: string, key: string) => post('/api/key', { id, key }),
   config: () => get('/api/config'),
   browse: (path: string) => get(`/api/browse?path=${encodeURIComponent(path)}`),
@@ -35,6 +36,9 @@ export const api = {
   rename: (from: string, to: string) => post('/api/rename', { from, to }),
   delete: (path: string) => post('/api/delete', { path }),
   mkdir: (path: string) => post('/api/mkdir', { path }),
+  loadNotes: (path: string) => get(`/api/notes?path=${encodeURIComponent(path)}`),
+  saveNotes: (path: string, notes: any[]) => post('/api/notes', { path, notes }),
+  deleteNote: (path: string, startLine: number, endLine: number) => post('/api/notes/delete', { path, startLine, endLine }),
   upload: async (dir: string, file: File) => {
     const res = await fetch(`/api/upload?dir=${encodeURIComponent(dir)}&name=${encodeURIComponent(file.name)}`, {
       method: 'POST',

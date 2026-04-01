@@ -93,8 +93,10 @@ async function getHljs() {
         import('highlight.js/lib/languages/rust'),
         import('highlight.js/lib/languages/java'),
         import('highlight.js/lib/languages/cpp'),
+        import('highlight.js/lib/languages/latex'),
+        import('highlight.js/lib/languages/r'),
       ])
-      const names = ['python','javascript','typescript','json','bash','css','xml','sql','yaml','go','rust','java','cpp']
+      const names = ['python','javascript','typescript','json','bash','css','xml','sql','yaml','go','rust','java','cpp','latex','r']
       langs.forEach((m, i) => hljs.registerLanguage(names[i], m.default))
       _hljs = hljs
     })()
@@ -125,6 +127,8 @@ const EXT_LANG: Record<string, string> = {
   ini: 'ini', cfg: 'ini', conf: 'ini', toml: 'ini', env: 'bash',
   makefile: 'makefile', dockerfile: 'dockerfile',
   md: 'markdown', mdx: 'markdown',
+  tex: 'latex', sty: 'latex', cls: 'latex', bib: 'latex',
+  r: 'r', rmd: 'markdown',
 }
 
 interface Props {
@@ -274,9 +278,28 @@ export function FilePanel({ initialPath, onClose }: Props) {
             <span className="fv-name">{preview.name}</span>
             <span className="fv-lang">{preview.lang?.toUpperCase() || preview.type.toUpperCase()}</span>
           </div>
-          <button className="fv-btn fv-close" onClick={onClose}>
-            <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M5 5L15 15M15 5L5 15" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>
-          </button>
+          <div className="fv-header-actions">
+            {preview.type !== 'pdf' && preview.type !== 'image' && (
+              <button className="fv-btn" title="Copy" onClick={() => {
+                navigator.clipboard.writeText(preview.content).catch(() => {})
+              }}>
+                <svg width="18" height="18" viewBox="0 0 20 20" fill="none"><rect x="6" y="6" width="10" height="10" rx="1.5" stroke="currentColor" strokeWidth="1.5"/><path d="M4 14V4h10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
+              </button>
+            )}
+            <button className="fv-btn" title="Download" onClick={() => {
+              if (preview.type === 'pdf' || preview.type === 'image') {
+                const a = document.createElement('a'); a.href = preview.content.split('&_t=')[0]; a.download = preview.name; a.click()
+              } else {
+                const blob = new Blob([preview.content], { type: 'text/plain;charset=utf-8' })
+                const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = preview.name; a.click(); URL.revokeObjectURL(url)
+              }
+            }}>
+              <svg width="18" height="18" viewBox="0 0 20 20" fill="none"><path d="M10 3v10m0 0l-3-3m3 3l3-3M4 15v1a1 1 0 001 1h10a1 1 0 001-1v-1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+            </button>
+            <button className="fv-btn fv-close" onClick={onClose}>
+              <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M5 5L15 15M15 5L5 15" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>
+            </button>
+          </div>
         </div>
         <div className="fv-body">
           {preview.type === 'code' && (

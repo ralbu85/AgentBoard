@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useStore } from '../../store'
 import { SessionList } from './SessionList'
 import { FilePanel } from '../FilePanel'
@@ -17,6 +17,11 @@ export function Sidebar({ visible, onClose, width }: Props) {
   const cwd = useStore(s => activeId ? s.sessions[activeId]?.cwd || '~' : '~')
   const isMobile = window.innerWidth <= 768
   const dragging = useRef(false)
+
+  // Reset file navigation to new session's cwd when active session changes
+  useEffect(() => {
+    setFilePath('')
+  }, [activeId])
 
   if (!visible) return null
 
@@ -53,7 +58,7 @@ export function Sidebar({ visible, onClose, width }: Props) {
     <>
       <div className="sidebar-backdrop" onClick={onClose} />
       <aside className="sidebar" style={width && !isMobile ? { width } : undefined}>
-        <div className="sidebar-section sidebar-sessions">
+        <div className="sidebar-section sidebar-sessions" style={!isMobile && showFiles ? { flex: 'none', maxHeight: '50%' } : undefined}>
           <div className="sidebar-section-header">Sessions</div>
           <SessionList
             onSelect={isMobile ? onClose : undefined}
@@ -61,13 +66,13 @@ export function Sidebar({ visible, onClose, width }: Props) {
           />
         </div>
         {!isMobile && showFiles && (
-          <div className="sidebar-files-section" style={{ height: fileHeight + 32 }}>
+          <div className="sidebar-files-section" style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
             <div className="sidebar-files-resizer" onMouseDown={onResizeStart} />
             <div className="sidebar-files-header">
               <span className="sidebar-files-label">FILES</span>
               <button className="btn btn-xs sidebar-files-close" onClick={() => setShowFiles(false)}>&times;</button>
             </div>
-            <div className="sidebar-filepanel" style={{ height: fileHeight }}>
+            <div className="sidebar-filepanel" style={{ flex: 1, overflow: 'auto' }}>
               <FilePanel initialPath={filePath || cwd} onClose={() => setShowFiles(false)} />
             </div>
           </div>

@@ -1,7 +1,8 @@
 import { useState, useRef, useCallback, useEffect, Fragment } from 'react'
 import { useStore, type ViewerTab } from '../../store'
 import { api } from '../../api'
-import { FileContent } from './FileContent'
+import { FileContent, type Memo, type SelectionInfo } from './FileContent'
+import { CodeEditor } from './CodeEditor'
 
 type SplitDir = 'horizontal' | 'vertical'
 type DropZone = 'left' | 'right' | 'top' | 'bottom' | 'center'
@@ -218,22 +219,119 @@ function LeafPane({ node, tabs, onDragStart, onDrop, onClose, onSelect }: {
   const [dropZone, setDropZone] = useState<DropZone | null>(null)
   const ref = useRef<HTMLDivElement>(null)
   const updateTab = useStore(s => s.updateTab)
+  const activeSessionId = useStore(s => s.activeId)
   const activeTab = tabs.find(t => t.id === node.activeTabId) || tabs.find(t => node.tabIds.includes(t.id))
+
+  const isTextTab = activeTab && (activeTab.type === 'code' || activeTab.type === 'markdown')
+  const isMd = activeTab?.type === 'markdown'
+  const [dirty, setDirty] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [mdEditMode, setMdEditMode] = useState(false)
+
+  // ── Memo state ──
+  const [memos, setMemos] = useState<Memo[]>([])
+  const [selInfo, setSelInfo] = useState<{ startLine: number; startCol: number; endLine: number; endCol: number; selectedText: string } | null>(null)
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null)
+  const pendingSelRef = useRef<{ startLine: number; startCol: number; endLine: number; endCol: number; text: string } | null>(null)
+
+  useEffect(() => {
+    if (!activeTab || activeTab.type === 'pdf' || activeTab.type === 'image') { setMemos([]); return }
+    api.loadNotes(activeTab.path).then(res => setMemos(res.notes || [])).catch(() => {})
+    setSelInfo(null)
+    setDirty(false)
+    setMdEditMode(false)
+  }, [activeTab?.id])
+
+
+  // ── Right-click on selected text → context menu (used by CodeEditor) ──
+  const handleCtxMenu = useCallback((info: SelectionInfo) => {
+    pendingSelRef.current = { startLine: info.startLine, startCol: info.startCol, endLine: info.endLine, endCol: info.endCol, text: info.text }
+    setCtxMenu({ x: info.x, y: info.y })
+  }, [])
+
+  const addNoteFromCtx = () => {
+    if (!pendingSelRef.current) return
+    setSelInfo({ ...pendingSelRef.current, selectedText: pendingSelRef.current.text })
+    setCtxMenu(null)
+    pendingSelRef.current = null
+  }
+
+  const onContentChange = useCallback((value: string) => {
+    if (!activeTab) return
+    updateTab(activeTab.id, value)
+    setDirty(true)
+  }, [activeTab?.id])
+
+  const saveFile = useCallback(async () => {
+    if (!activeTab) return
+    setSaving(true)
+    await api.writeFile(activeTab.path, activeTab.content)
+    setDirty(false)
+    setSaving(false)
+  }, [activeTab])
+
+  // ── Memo CRUD ──
+  const handleSaveMemo = useCallback((newMemo: Memo) => {
+    if (!activeTab) return
+    const updated = [...memos, newMemo]
+    setMemos(updated)
+    setSelInfo(null)
+    api.saveNotes(activeTab.path, updated)
+  }, [activeTab, memos])
+
+  const deleteMemo = async (idx: number) => {
+    if (!activeTab) return
+    const updated = memos.filter((_, i) => i !== idx)
+    setMemos(updated)
+    await api.saveNotes(activeTab.path, updated)
+  }
+
+  const sendMemosToAgent = async () => {
+    if (!activeTab || !activeSessionId || memos.length === 0) return
+    const sorted = [...memos].sort((a, b) => a.startLine - b.startLine)
+    const parts: string[] = []
+    parts.push(`@${activeTab.path} 수정 요청:`)
+    for (const m of sorted) {
+      const loc = m.startCol
+        ? `L${m.startLine}:${m.startCol}-${m.endLine}:${m.endCol}`
+        : `L${m.startLine}${m.endLine !== m.startLine ? `-${m.endLine}` : ''}`
+      parts.push(`- [${loc}] ${m.text}`)
+    }
+    await api.paste(activeSessionId, parts.join('\n'))
+    setMemos([])
+    setSelInfo(null)
+    await api.saveNotes(activeTab.path, [])
+  }
 
   const refreshTab = async () => {
     if (!activeTab) return
     if (activeTab.type === 'pdf' || activeTab.type === 'image') {
-      // Force reload by appending cache buster
-      const url = activeTab.content.split('&_t=')[0] + '&_t=' + Date.now()
-      updateTab(activeTab.id, url)
+      updateTab(activeTab.id, activeTab.content.split('&_t=')[0] + '&_t=' + Date.now())
     } else {
       try {
         const res = await api.readFile(activeTab.path)
         let content = res.content || ''
         if (activeTab.path.endsWith('.json')) try { content = JSON.stringify(JSON.parse(content), null, 2) } catch {}
         updateTab(activeTab.id, content)
+        setDirty(false)
       } catch {}
     }
+  }
+
+  const downloadTab = () => {
+    if (!activeTab) return
+    if (activeTab.type === 'pdf' || activeTab.type === 'image') {
+      const a = document.createElement('a'); a.href = activeTab.content.split('&_t=')[0]; a.download = activeTab.name; a.click()
+    } else {
+      const blob = new Blob([activeTab.content], { type: 'text/plain;charset=utf-8' })
+      const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = activeTab.name; a.click(); URL.revokeObjectURL(url)
+    }
+  }
+
+  const [copied, setCopied] = useState(false)
+  const copyContent = async () => {
+    if (!activeTab || activeTab.type === 'pdf' || activeTab.type === 'image') return
+    try { await navigator.clipboard.writeText(activeTab.content); setCopied(true); setTimeout(() => setCopied(false), 1500) } catch {}
   }
 
   const onDragOver = useCallback((e: React.DragEvent) => {
@@ -269,12 +367,110 @@ function LeafPane({ node, tabs, onDragStart, onDrop, onClose, onSelect }: {
             </div>
           )
         })}
-        <button className="vtab-refresh" onClick={refreshTab} title="Refresh">↻</button>
+        <div className="vtab-actions">
+          {isTextTab && <button className="vtab-action" onClick={copyContent} title="Copy">{copied ? '✓' : '⎘'}</button>}
+          {isMd && <button className="vtab-action" onClick={() => setMdEditMode(v => !v)} title={mdEditMode ? 'Preview' : 'Edit'}>{mdEditMode ? '👁' : '✎'}</button>}
+          {dirty && <button className="vtab-action vtab-send" onClick={saveFile} title="Save (Ctrl+S)" disabled={saving}>{saving ? '...' : '💾'}</button>}
+          <button className="vtab-action" onClick={downloadTab} title="Download">↓</button>
+          <button className="vtab-action" onClick={refreshTab} title="Refresh">↻</button>
+          {isTextTab && memos.length > 0 && (
+            <button className="vtab-action vtab-send" onClick={sendMemosToAgent} title="Send notes to agent">
+              ▶ {memos.length}
+            </button>
+          )}
+        </div>
       </div>
-      <div className="viewer-content">
-        {activeTab ? <FileContent content={activeTab.content} type={activeTab.type} lang={activeTab.lang} /> : <div className="viewer-empty">Drop here</div>}
+      <div className="viewer-content" onClick={() => setCtxMenu(null)}>
+        {!activeTab ? <div className="viewer-empty">Drop here</div>
+          : activeTab.type === 'pdf' ? <FileContent content={activeTab.content} type="pdf" lang="" />
+          : activeTab.type === 'image' ? <FileContent content={activeTab.content} type="image" lang="" />
+          : (isMd && !mdEditMode) ? <MarkdownView content={activeTab.content} />
+          : (
+            <CodeEditor
+              content={activeTab.content}
+              lang={activeTab.lang}
+              memos={memos}
+              onChange={onContentChange}
+              onSave={saveFile}
+              onContextMenu={handleCtxMenu}
+            />
+          )
+        }
       </div>
+      {ctxMenu && (
+        <div className="ctx-menu" style={{ left: ctxMenu.x, top: ctxMenu.y }} onClick={e => e.stopPropagation()}>
+          <button className="ctx-menu-item" onClick={addNoteFromCtx}>+ Add Note</button>
+        </div>
+      )}
+      {selInfo && (
+        <MemoInputPanel selInfo={selInfo} onSave={handleSaveMemo} onCancel={() => setSelInfo(null)} />
+      )}
+      {isTextTab && memos.length > 0 && !selInfo && (
+        <div className="memo-list">
+          {[...memos].sort((a,b) => a.startLine - b.startLine).map((m, i) => (
+            <div key={i} className="memo-item">
+              <span className="memo-item-range">{m.startCol ? `L${m.startLine}:${m.startCol}-${m.endLine}:${m.endCol}` : `L${m.startLine}${m.endLine !== m.startLine ? `-${m.endLine}` : ''}`}</span>
+              <span className="memo-item-text">{m.text}</span>
+              <button className="memo-item-del" onClick={() => deleteMemo(i)}>&times;</button>
+            </div>
+          ))}
+        </div>
+      )}
       {dropZone && <div className={`drop-indicator drop-${dropZone}`} />}
     </div>
   )
+}
+
+/** Isolated memo input — typing here does NOT re-render FileContent */
+function MemoInputPanel({ selInfo, onSave, onCancel }: {
+  selInfo: { startLine: number; startCol: number; endLine: number; endCol: number; selectedText: string }
+  onSave: (memo: Memo) => void
+  onCancel: () => void
+}) {
+  const [text, setText] = useState('')
+  const ref = useRef<HTMLTextAreaElement>(null)
+  useEffect(() => { setTimeout(() => ref.current?.focus(), 50) }, [])
+
+  const save = () => {
+    if (!text.trim()) return
+    onSave({ startLine: selInfo.startLine, startCol: selInfo.startCol, endLine: selInfo.endLine, endCol: selInfo.endCol, text: text.trim(), selectedText: selInfo.selectedText })
+    setText('')
+  }
+
+  return (
+    <div className="memo-panel">
+      <div className="memo-panel-header">
+        <span className="memo-panel-range">
+          L{selInfo.startLine}:{selInfo.startCol}-{selInfo.endLine}:{selInfo.endCol}
+        </span>
+        <span className="memo-panel-excerpt">{selInfo.selectedText.slice(0, 60)}{selInfo.selectedText.length > 60 ? '...' : ''}</span>
+        <button className="btn btn-xs" onClick={onCancel}>&times;</button>
+      </div>
+      <textarea
+        ref={ref}
+        className="memo-textarea"
+        value={text}
+        onChange={e => setText(e.target.value)}
+        placeholder="Add a note..."
+        rows={2}
+        onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) save() }}
+      />
+      <div className="memo-panel-actions">
+        <button className="btn btn-xs" onClick={onCancel}>Cancel</button>
+        <button className="btn btn-xs btn-primary" onClick={save} disabled={!text.trim()}>Save</button>
+      </div>
+    </div>
+  )
+}
+
+/** Rendered markdown view (Notion-style) */
+function MarkdownView({ content }: { content: string }) {
+  const [html, setHtml] = useState('')
+  useEffect(() => {
+    import('marked').then(({ marked }) => {
+      marked.setOptions({ breaks: true, gfm: true })
+      setHtml(marked.parse(content) as string)
+    })
+  }, [content])
+  return <div className="md-rendered" dangerouslySetInnerHTML={{ __html: html }} />
 }

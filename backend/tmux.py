@@ -88,3 +88,12 @@ async def new_session(session_name: str, cwd: str, cmd: str) -> None:
 
 async def kill_session(session_name: str) -> None:
     await tmux_run(["kill-session", "-t", session_name])
+
+
+async def paste_text(session_name: str, text: str) -> None:
+    """Paste multi-line text into a pane via tmux buffer (sends as single block)."""
+    tmp = Path(f"/tmp/agentboard-paste-{session_name}")
+    tmp.write_text(text)
+    await tmux_run(["load-buffer", str(tmp)])
+    await tmux_run(["paste-buffer", "-t", session_name, "-d"])
+    tmp.unlink(missing_ok=True)
