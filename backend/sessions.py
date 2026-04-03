@@ -8,6 +8,8 @@ from typing import Callable, Optional
 
 from . import config, tmux
 
+CANONICAL_COLS = 120  # Fixed terminal width — never changes (prevents scrollback reflow garbling)
+
 @dataclass
 class Session:
     id: str
@@ -19,7 +21,7 @@ class Session:
     process: str = ""
     created_at: int = 0
     mem_kb: int = 0
-    cols: int = 80
+    cols: int = CANONICAL_COLS
     rows: int = 50
 
     def to_dict(self) -> dict:

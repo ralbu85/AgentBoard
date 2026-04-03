@@ -1,4 +1,4 @@
-import { useRef, useState, type KeyboardEvent } from 'react'
+import { useRef, useState, useEffect, type KeyboardEvent } from 'react'
 import { api } from '../../api'
 import { useStore } from '../../store'
 import { FilePanel } from '../FilePanel'
@@ -24,8 +24,15 @@ export function InputCard({ sessionId }: Props) {
   const [showFiles, setShowFiles] = useState(false)
   const cwd = useStore((s) => s.sessions[sessionId]?.cwd || '~')
 
+  // Close file panel on session switch
+  useEffect(() => { setShowFiles(false) }, [sessionId])
+
   const doSend = () => {
-    api.input(sessionId, text)
+    if (text.includes('\n')) {
+      api.paste(sessionId, text)  // Multi-line: paste as single block
+    } else {
+      api.input(sessionId, text)  // Single line: send + Enter
+    }
     setText('')
     if (textareaRef.current) textareaRef.current.style.height = 'auto'
   }

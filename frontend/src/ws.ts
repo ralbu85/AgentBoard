@@ -64,10 +64,13 @@ export function send(msg: object) {
   }
 }
 
+let _lastSentRows = 0
 export function sendResize(id: string, cols: number, rows: number) {
+  if (rows === _lastSentRows) return  // rows unchanged, skip
   if (_resizeTimer) clearTimeout(_resizeTimer)
   _resizeTimer = setTimeout(() => {
-    send({ type: 'resize', id, cols, rows })
+    _lastSentRows = rows
+    send({ type: 'resize', id, rows })
     send({ type: 'resync', id })
   }, 300)
 }

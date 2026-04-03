@@ -5,6 +5,7 @@ import { WebLinksAddon } from '@xterm/addon-web-links'
 import { send } from '../../ws'
 
 const isMobile = window.innerWidth <= 768
+const CANONICAL_COLS = 120  // Fixed width — prevents scrollback garbling on resize
 
 interface TermInstance {
   term: Terminal
@@ -27,6 +28,7 @@ export function create(id: string): TermInstance {
   if (existing) return existing
 
   const term = new Terminal({
+    cols: CANONICAL_COLS,
     cursorBlink: true,
     cursorStyle: 'bar',
     disableStdin: isMobile,
@@ -79,12 +81,11 @@ export function open(id: string, container: HTMLElement) {
     try { t.fitAddon.fit() } catch {}
     // Reset clears buffer and forces renderer to fully reinitialize
     t.term.reset()
-    // Request fresh data after terminal + renderer is ready
+    // Single resync after terminal + renderer is ready
     setTimeout(() => {
       try { t.fitAddon.fit() } catch {}
       send({ type: 'resync', id })
     }, 300)
-    setTimeout(() => send({ type: 'resync', id }), 1500)
   } else if (t.el.parentElement !== container) {
     container.appendChild(t.el)
   }
@@ -241,7 +242,12 @@ export function resize(id: string): { cols: number; rows: number } | null {
   if (!t?.opened) return null
   try {
     t.fitAddon.fit()
-    return { cols: t.term.cols, rows: t.term.rows }
+    // Fix cols to canonical width — only rows adapt to container
+    const rows = t.term.rows
+    if (t.term.cols !== CANONICAL_COLS) {
+      t.term.resize(CANONICAL_COLS, rows)
+    }
+    return { cols: CANONICAL_COLS, rows }
   } catch {
     return null
   }

@@ -20,8 +20,8 @@ export function Sidebar({ visible, onClose, width }: Props) {
 
   // Reset file navigation to new session's cwd when active session changes
   useEffect(() => {
-    setFilePath('')
-  }, [activeId])
+    setFilePath(cwd)
+  }, [activeId, cwd])
 
   if (!visible) return null
 
@@ -73,7 +73,7 @@ export function Sidebar({ visible, onClose, width }: Props) {
               <button className="btn btn-xs sidebar-files-close" onClick={() => setShowFiles(false)}>&times;</button>
             </div>
             <div className="sidebar-filepanel" style={{ flex: 1, overflow: 'auto' }}>
-              <FilePanel initialPath={filePath || cwd} onClose={() => setShowFiles(false)} />
+              <FilePanel key={activeId || ''} initialPath={filePath || cwd} onClose={() => setShowFiles(false)} />
             </div>
           </div>
         )}

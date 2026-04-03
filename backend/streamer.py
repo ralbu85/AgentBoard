@@ -167,13 +167,13 @@ async def _read_fifo(id: str, session_name: str, fifo: str):
 
 # ── Snapshots ──
 
-async def get_snapshot(id: str, session_name: str, cols: int = 80, rows: int = 50) -> str:
+async def get_snapshot(id: str, session_name: str, cols: int = 120, rows: int = 50) -> str:
     from .sessions import store
     s = store.get(id)
     if not s:
         return ""
 
-    await tmux.resize_window(session_name, cols, rows)
+    await tmux.resize_window_height(session_name, rows)
 
     raw, info_str = await asyncio.gather(
         tmux.capture_pane(session_name, lines=2000, ansi=True),
@@ -241,7 +241,10 @@ async def _poll_active():
                 if changed:
                     _last_screen[sid] = stripped
                     _last_change_at[sid] = now
-                    broadcast({"type": "screen", "id": sid, "data": output.replace("\n", "\r\n")})
+                    # Throttle: skip if last broadcast was too recent
+                    if now - _last_broadcast_time.get(sid, 0) >= MIN_BROADCAST_INTERVAL:
+                        _last_broadcast_time[sid] = now
+                        broadcast({"type": "screen", "id": sid, "data": output.replace("\n", "\r\n")})
 
                 # Check state periodically (not just on change)
                 if changed or (now - _last_state_check.get(sid, 0) > STATE_CHECK_INTERVAL):
@@ -294,12 +297,9 @@ async def _poll_active_info():
             if not s or s.status in ("stopped", "completed"):
                 continue
             try:
-                info, tail = await asyncio.gather(
-                    tmux.display_info(s.session_name),
-                    tmux.capture_pane(s.session_name, lines=20),
-                )
+                info = await tmux.display_info(s.session_name)
                 _update_info(sid, s, info)
-                _detect_state(sid, s, tail)
+                # State detection already handled by _poll_active — skip here
             except Exception:
                 pass
 

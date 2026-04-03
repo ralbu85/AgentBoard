@@ -64,8 +64,13 @@ export function SessionList({ onSelect, onOpenFiles }: Props) {
     }
   }
 
-  const handleFiles = (e: React.MouseEvent, cwd: string) => {
+  const handleFiles = (e: React.MouseEvent, id: string, cwd: string) => {
     e.stopPropagation()
+    // Switch to this session first, then open files
+    if (id !== activeId) {
+      setActive(id)
+      notifyActive(id)
+    }
     onOpenFiles?.(cwd)
   }
 
@@ -106,7 +111,7 @@ export function SessionList({ onSelect, onOpenFiles }: Props) {
             {onOpenFiles && s.status !== 'stopped' && s.status !== 'completed' && (
               <button
                 className="btn btn-xs session-files-btn"
-                onClick={(e) => handleFiles(e, s.cwd)}
+                onClick={(e) => handleFiles(e, id, s.cwd)}
                 title="Browse files"
               >
                 <svg width="12" height="12" viewBox="0 0 20 20" fill="none"><path d="M2 5C2 4 3 3 4 3H8L10 5H16C17 5 18 6 18 7V15C18 16 17 17 16 17H4C3 17 2 16 2 15V5Z" stroke="currentColor" strokeWidth="1.5"/></svg>

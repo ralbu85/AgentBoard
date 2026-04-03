@@ -50,6 +50,11 @@ async def resize_window(session_name: str, cols: int, rows: int) -> None:
     await tmux_run(["resize-window", "-t", session_name, "-x", str(cols), "-y", str(rows)])
 
 
+async def resize_window_height(session_name: str, rows: int) -> None:
+    """Resize only height — safe, no scrollback reflow."""
+    await tmux_run(["resize-window", "-t", session_name, "-y", str(rows)])
+
+
 async def display_info(session_name: str) -> dict:
     raw = await tmux_run([
         "display-message", "-t", session_name, "-p",

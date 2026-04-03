@@ -25,19 +25,15 @@ export function TerminalPane() {
     if (!activeId || !containerRef.current) return
     TM.open(activeId, containerRef.current)
     TM.show(activeId)
-    // Retry resize + resync multiple times to ensure terminal renders
+    // Single resize + resync after terminal renders (no repeated snapshots)
     const id = activeId
-    const doResize = () => {
+    const t1 = setTimeout(() => {
       const size = TM.resize(id)
       if (size && size.cols > 0 && size.rows > 0) {
         send({ type: 'resize', id, cols: size.cols, rows: size.rows })
-        send({ type: 'resync', id })
       }
-    }
-    const t1 = setTimeout(doResize, 100)
-    const t2 = setTimeout(doResize, 500)
-    const t3 = setTimeout(doResize, 1500)
-    return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3) }
+    }, 150)
+    return () => { clearTimeout(t1) }
   }, [activeId])
 
   // Poll scroll state for button visibility
@@ -48,7 +44,7 @@ export function TerminalPane() {
     return () => clearInterval(interval)
   }, [])
 
-  // Refit terminal on any container size change (window resize, split drag, file panel toggle)
+  // Refit terminal on container size change
   useEffect(() => {
     const doResize = () => {
       const id = useStore.getState().activeId

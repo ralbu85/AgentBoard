@@ -28,6 +28,7 @@ export function DesktopSplitLayout({ activeId }: Props) {
   }, [])
 
   const onResizeEnd = useCallback(() => {
+    // Only trigger height refit, not width resize — prevents garbled wide content
     window.dispatchEvent(new Event('resize'))
   }, [])
 

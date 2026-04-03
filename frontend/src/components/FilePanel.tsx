@@ -126,7 +126,7 @@ const EXT_LANG: Record<string, string> = {
   rb: 'ruby', php: 'php', diff: 'diff', patch: 'diff',
   ini: 'ini', cfg: 'ini', conf: 'ini', toml: 'ini', env: 'bash',
   makefile: 'makefile', dockerfile: 'dockerfile',
-  md: 'markdown', mdx: 'markdown',
+  md: 'markdown', mdx: 'markdown', qmd: 'markdown',
   tex: 'latex', sty: 'latex', cls: 'latex', bib: 'latex',
   r: 'r', rmd: 'markdown',
 }
@@ -137,7 +137,7 @@ interface Props {
 }
 
 const TEXT_EXTS = new Set([...Object.keys(EXT_LANG), 'txt', 'log', 'csv', 'gitignore', 'dockerignore', 'editorconfig', 'prettierrc'])
-const MD_EXTS = new Set(['md', 'markdown', 'mdx'])
+const MD_EXTS = new Set(['md', 'markdown', 'mdx', 'qmd'])
 const IMG_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'bmp', 'ico'])
 const PDF_EXTS = new Set(['pdf'])
 
