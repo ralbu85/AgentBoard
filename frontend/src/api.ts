@@ -47,4 +47,18 @@ export const api = {
     })
     return res.json()
   },
+  uploadMany: async (dir: string, files: File[] | FileList): Promise<string[]> => {
+    const arr = Array.from(files)
+    const results: string[] = []
+    for (const f of arr) {
+      const res = await fetch(`/api/upload?dir=${encodeURIComponent(dir)}&name=${encodeURIComponent(f.name)}`, {
+        method: 'POST',
+        credentials: 'include',
+        body: f,
+      })
+      const json = await res.json()
+      if (json.ok && json.path) results.push(json.path)
+    }
+    return results
+  },
 }

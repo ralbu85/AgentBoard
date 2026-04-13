@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef } from 'react'
 import { useStore } from '../../store'
 import { SessionList } from './SessionList'
 import { FilePanel } from '../FilePanel'
@@ -11,22 +11,15 @@ interface Props {
 
 export function Sidebar({ visible, onClose, width }: Props) {
   const [showFiles, setShowFiles] = useState(false)
-  const [filePath, setFilePath] = useState('')
   const [fileHeight, setFileHeight] = useState(280)
   const activeId = useStore(s => s.activeId)
   const cwd = useStore(s => activeId ? s.sessions[activeId]?.cwd || '~' : '~')
   const isMobile = window.innerWidth <= 768
   const dragging = useRef(false)
 
-  // Reset file navigation to new session's cwd when active session changes
-  useEffect(() => {
-    setFilePath(cwd)
-  }, [activeId, cwd])
-
   if (!visible) return null
 
-  const handleOpenFiles = (path: string) => {
-    setFilePath(path)
+  const handleOpenFiles = () => {
     setShowFiles(true)
   }
 
@@ -73,7 +66,7 @@ export function Sidebar({ visible, onClose, width }: Props) {
               <button className="btn btn-xs sidebar-files-close" onClick={() => setShowFiles(false)}>&times;</button>
             </div>
             <div className="sidebar-filepanel" style={{ flex: 1, overflow: 'auto' }}>
-              <FilePanel key={activeId || ''} initialPath={filePath || cwd} onClose={() => setShowFiles(false)} />
+              <FilePanel key={activeId || ''} initialPath={cwd} onClose={() => setShowFiles(false)} />
             </div>
           </div>
         )}

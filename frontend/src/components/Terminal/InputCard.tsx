@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect, type KeyboardEvent } from 'react'
+import { useRef, useState, useEffect, type KeyboardEvent, type DragEvent } from 'react'
 import { api } from '../../api'
 import { useStore } from '../../store'
 import { FilePanel } from '../FilePanel'
@@ -22,10 +22,44 @@ export function InputCard({ sessionId }: Props) {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const [text, setText] = useState('')
   const [showFiles, setShowFiles] = useState(false)
+  const [dragOver, setDragOver] = useState(false)
+  const [uploading, setUploading] = useState(0)
   const cwd = useStore((s) => s.sessions[sessionId]?.cwd || '~')
 
   // Close file panel on session switch
   useEffect(() => { setShowFiles(false) }, [sessionId])
+
+  const onDragOver = (e: DragEvent) => {
+    if (e.dataTransfer.types.includes('Files')) {
+      e.preventDefault()
+      e.stopPropagation()
+      setDragOver(true)
+    }
+  }
+  const onDragLeave = (e: DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    if (e.currentTarget === e.target) setDragOver(false)
+  }
+  const onDrop = async (e: DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setDragOver(false)
+    const files = e.dataTransfer.files
+    if (!files || files.length === 0) return
+    setUploading(files.length)
+    try {
+      const paths = await api.uploadMany(cwd, files)
+      if (paths.length > 0) {
+        // Insert paths into textarea (space-separated, with trailing space)
+        const insert = paths.join(' ') + ' '
+        setText(prev => prev + (prev && !prev.endsWith(' ') ? ' ' : '') + insert)
+        textareaRef.current?.focus()
+      }
+    } finally {
+      setUploading(0)
+    }
+  }
 
   const doSend = () => {
     if (text.includes('\n')) {
@@ -54,7 +88,14 @@ export function InputCard({ sessionId }: Props) {
   }
 
   return (
-    <div className="input-card">
+    <div
+      className={`input-card ${dragOver ? 'drag-over' : ''}`}
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
+    >
+      {dragOver && <div className="input-drop-overlay">파일을 놓아 업로드 → 경로가 입력창에 추가됩니다</div>}
+      {uploading > 0 && <div className="input-upload-status">업로드 중 {uploading}…</div>}
       <div className="input-row">
         {isMobile() && (
           <button className="btn file-browse-btn" data-action="browse" onClick={() => setShowFiles(true)} title="Files">

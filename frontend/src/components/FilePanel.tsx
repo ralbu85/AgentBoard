@@ -247,12 +247,46 @@ export function FilePanel({ initialPath, onClose }: Props) {
     }
   }
 
+  const [dragOver, setDragOver] = useState(false)
+  const [uploading, setUploading] = useState(0)
+
+  async function uploadFiles(files: FileList | File[]) {
+    const arr = Array.from(files)
+    if (arr.length === 0) return
+    setUploading(arr.length)
+    try {
+      await api.uploadMany(path, arr)
+      loadDir(path)
+    } finally {
+      setUploading(0)
+    }
+  }
+
   async function handleUpload(ev: React.ChangeEvent<HTMLInputElement>) {
-    const file = ev.target.files?.[0]
-    if (!file) return
-    await api.upload(path, file)
-    loadDir(path)
+    if (!ev.target.files || ev.target.files.length === 0) return
+    await uploadFiles(ev.target.files)
     if (fileInputRef.current) fileInputRef.current.value = ''
+  }
+
+  const onDragOver = (e: React.DragEvent) => {
+    if (e.dataTransfer.types.includes('Files')) {
+      e.preventDefault()
+      e.stopPropagation()
+      setDragOver(true)
+    }
+  }
+  const onDragLeave = (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    if (e.currentTarget === e.target) setDragOver(false)
+  }
+  const onDrop = (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setDragOver(false)
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      uploadFiles(e.dataTransfer.files)
+    }
   }
 
   // Highlighted code (async lazy load)
@@ -323,17 +357,23 @@ export function FilePanel({ initialPath, onClose }: Props) {
 
   // ── Tree view (panel, not fullscreen) ──
   return (
-    <div className="file-panel">
+    <div
+      className={`file-panel ${dragOver ? 'drag-over' : ''}`}
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
+    >
       <div className="fp-header">
-        <div className="fp-folder">{folder}</div>
+        <div className="fp-folder">{folder}{uploading > 0 ? ` · 업로드 중 ${uploading}` : ''}</div>
         <button className="fv-btn file-upload-btn" onClick={() => fileInputRef.current?.click()} title="Upload">
           <svg width="14" height="14" viewBox="0 0 20 20" fill="none"><path d="M10 14V4M10 4L6 8M10 4L14 8M4 16H16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
         </button>
         <button className="fv-btn" onClick={onClose} title="Close">
           <svg width="14" height="14" viewBox="0 0 20 20" fill="none"><path d="M5 5L15 15M15 5L5 15" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>
         </button>
-        <input ref={fileInputRef} type="file" style={{ display: 'none' }} onChange={handleUpload} />
+        <input ref={fileInputRef} type="file" multiple style={{ display: 'none' }} onChange={handleUpload} />
       </div>
+      {dragOver && <div className="fp-drop-overlay">파일을 놓아 업로드</div>}
       <div className="file-list">
         <TreeDir dirPath={initialPath} name={folder} depth={0} onFileClick={(fullPath, entry) => {
           // Reuse existing handleClick logic but with full path

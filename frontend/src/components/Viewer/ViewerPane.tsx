@@ -464,13 +464,39 @@ function MemoInputPanel({ selInfo, onSave, onCancel }: {
 }
 
 /** Rendered markdown view (Notion-style) */
+const MD_ZOOM_LEVELS = [0.5, 0.75, 0.9, 1, 1.15, 1.3, 1.5, 1.75, 2, 2.5]
 function MarkdownView({ content }: { content: string }) {
   const [html, setHtml] = useState('')
+  const [zoom, setZoom] = useState<number>(() => {
+    const saved = parseFloat(localStorage.getItem('md-zoom') || '1')
+    return MD_ZOOM_LEVELS.includes(saved) ? saved : 1
+  })
   useEffect(() => {
     import('marked').then(({ marked }) => {
       marked.setOptions({ breaks: true, gfm: true })
       setHtml(marked.parse(content) as string)
     })
   }, [content])
-  return <div className="md-rendered" dangerouslySetInnerHTML={{ __html: html }} />
+  useEffect(() => { localStorage.setItem('md-zoom', String(zoom)) }, [zoom])
+
+  const zoomIn = () => setZoom(z => {
+    const i = MD_ZOOM_LEVELS.indexOf(z)
+    return MD_ZOOM_LEVELS[Math.min(i + 1, MD_ZOOM_LEVELS.length - 1)] ?? z
+  })
+  const zoomOut = () => setZoom(z => {
+    const i = MD_ZOOM_LEVELS.indexOf(z)
+    return MD_ZOOM_LEVELS[Math.max(i - 1, 0)] ?? z
+  })
+  const zoomReset = () => setZoom(1)
+
+  return (
+    <div className="md-wrap">
+      <div className="md-zoom-toolbar">
+        <button className="md-zoom-btn" onClick={zoomOut} title="Zoom out">−</button>
+        <span className="md-zoom-label" onClick={zoomReset} title="Reset">{Math.round(zoom * 100)}%</span>
+        <button className="md-zoom-btn" onClick={zoomIn} title="Zoom in">+</button>
+      </div>
+      <div className="md-rendered" style={{ zoom }} dangerouslySetInnerHTML={{ __html: html }} />
+    </div>
+  )
 }
