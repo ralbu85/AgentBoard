@@ -6,7 +6,7 @@ export interface ViewerTab {
   name: string
   path: string
   content: string
-  type: 'code' | 'markdown' | 'pdf' | 'image'
+  type: 'code' | 'markdown' | 'latex' | 'pdf' | 'image'
   lang: string
 }
 

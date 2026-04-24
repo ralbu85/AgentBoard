@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 import json
 import mimetypes
@@ -7,7 +8,7 @@ import time
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, Request, Query
-from fastapi.responses import StreamingResponse, JSONResponse
+from fastapi.responses import StreamingResponse, JSONResponse, HTMLResponse
 
 from .auth import verify
 
@@ -119,6 +120,79 @@ async def mkdir(req: dict, _=Depends(verify)):
     except Exception as e:
         return {"ok": False, "error": str(e)}
     return {"ok": True, "path": str(p)}
+
+
+# ── LaTeX rendering via latexml ──
+
+_LATEXML_CSS_DIR = Path("/usr/share/perl5/LaTeXML/resources/CSS")
+_LATEX_CACHE: dict[str, tuple[float, str]] = {}  # path → (mtime, html)
+
+@router.get("/latex")
+async def render_latex(path: str = Query(...), _=Depends(verify)):
+    p = Path(os.path.expanduser(path)).resolve()
+    if not p.is_file():
+        return JSONResponse({"error": "Not a file"}, 404)
+
+    mtime = p.stat().st_mtime
+    cached = _LATEX_CACHE.get(str(p))
+    if cached and cached[0] == mtime:
+        return {"ok": True, "html": cached[1]}
+
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmpdir:
+        xml_path = os.path.join(tmpdir, "out.xml")
+        html_path = os.path.join(tmpdir, "out.html")
+
+        proc1 = await asyncio.create_subprocess_exec(
+            "latexml", str(p), f"--dest={xml_path}",
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+            cwd=str(p.parent),
+        )
+        _, err1 = await proc1.communicate()
+
+        if not os.path.exists(xml_path):
+            return {"ok": False, "error": err1.decode(errors="replace")[-2000:]}
+
+        proc2 = await asyncio.create_subprocess_exec(
+            "latexmlpost", xml_path, f"--dest={html_path}", "--format=html5",
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+            cwd=str(p.parent),
+        )
+        await proc2.communicate()
+
+        if not os.path.exists(html_path):
+            return {"ok": False, "error": "latexmlpost failed"}
+
+        html = Path(html_path).read_text(errors="replace")
+        import re
+        # Extract body content only
+        body_match = re.search(r'<body>(.*)</body>', html, re.DOTALL)
+        body = body_match.group(1) if body_match else html
+
+        # Rewrite relative image paths to /api/file-raw
+        base_dir = str(p.parent)
+        def _rewrite_img(m):
+            src = m.group(1)
+            if src.startswith(('http://', 'https://', 'data:')):
+                return m.group(0)
+            full = os.path.normpath(os.path.join(base_dir, src))
+            return f'<img src="/api/file-raw?path={full}"'
+        body = re.sub(r'<img\s+src="([^"]+)"', _rewrite_img, body)
+
+        _LATEX_CACHE[str(p)] = (mtime, body)
+        return {"ok": True, "html": body}
+
+
+@router.get("/latex-css/{name}")
+async def latex_css(name: str):
+    css_file = _LATEXML_CSS_DIR / name
+    if not css_file.is_file():
+        return JSONResponse({"error": "Not found"}, 404)
+    return StreamingResponse(
+        iter([css_file.read_bytes()]),
+        media_type="text/css",
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
 
 
 @router.post("/upload")

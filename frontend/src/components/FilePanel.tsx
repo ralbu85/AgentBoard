@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { api } from '../api'
 import { useStore } from '../store'
 import type { FileEntry } from '../types'
-
+import { renderMarkdown } from '../markdown'
 import { PdfViewer } from './PdfViewer'
 
 // ── Tree Node component (VS Code style) ──
@@ -138,6 +138,7 @@ interface Props {
 
 const TEXT_EXTS = new Set([...Object.keys(EXT_LANG), 'txt', 'log', 'csv', 'gitignore', 'dockerignore', 'editorconfig', 'prettierrc'])
 const MD_EXTS = new Set(['md', 'markdown', 'mdx', 'qmd'])
+const TEX_EXTS = new Set(['tex'])
 const IMG_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'bmp', 'ico'])
 const PDF_EXTS = new Set(['pdf'])
 
@@ -148,46 +149,13 @@ function getExt(name: string) {
   return i > 0 ? lower.slice(i + 1) : ''
 }
 
-// ── Markdown renderer ──
-function renderMarkdown(md: string): string {
-  let html = md
-    // Code blocks with language
-    .replace(/```(\w*)\n([\s\S]*?)```/g, (_, lang, code) => {
-      const trimmed = code.trimEnd()
-      let highlighted: string
-      try {
-        highlighted = lang && hljs.getLanguage(lang)
-          ? hljs.highlight(trimmed, { language: lang }).value
-          : hljs.highlightAuto(trimmed).value
-      } catch { highlighted = trimmed.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') }
-      return `<pre class="md-codeblock"><code class="hljs">${highlighted}</code></pre>`
-    })
-  html = html
-    .replace(/^#### (.+)$/gm, '<h4>$1</h4>')
-    .replace(/^### (.+)$/gm, '<h3>$1</h3>')
-    .replace(/^## (.+)$/gm, '<h2>$1</h2>')
-    .replace(/^# (.+)$/gm, '<h1>$1</h1>')
-    .replace(/^---+$/gm, '<hr/>')
-    .replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>')
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/g, '<em>$1</em>')
-    .replace(/`([^`]+)`/g, '<code class="md-inline-code">$1</code>')
-    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" class="md-link" target="_blank">$1</a>')
-    .replace(/^> (.+)$/gm, '<blockquote>$1</blockquote>')
-    .replace(/^- (.+)$/gm, '<li>$1</li>')
-    .replace(/((?:<li>.*<\/li>\n?)+)/g, '<ul>$1</ul>')
-    .replace(/\n\n/g, '</p><p>')
-    .replace(/\n/g, '<br/>')
-  return `<p>${html}</p>`
-    .replace(/<p>\s*<(h[1-4]|pre|ul|ol|blockquote|hr)/g, '<$1')
-    .replace(/<\/(h[1-4]|pre|ul|ol|blockquote)>\s*<\/p>/g, '</$1>')
-}
+// ── Markdown renderer (shared, with KaTeX math support) ──
 
 export function FilePanel({ initialPath, onClose }: Props) {
   const [path, setPath] = useState(initialPath)
   const [pathInput, setPathInput] = useState(initialPath)
   const [entries, setEntries] = useState<FileEntry[]>([])
-  const [preview, setPreview] = useState<{name: string; content: string; type: 'code'|'markdown'|'pdf'|'image'; lang: string} | null>(null)
+  const [preview, setPreview] = useState<{name: string; content: string; type: 'code'|'markdown'|'pdf'|'image'; lang: string; path?: string} | null>(null)
   const [loading, setLoading] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -235,14 +203,14 @@ export function FilePanel({ initialPath, onClose }: Props) {
       const url = `/api/file-raw?path=${encodeURIComponent(full)}`
       if (isDesktop) { openTab(makeTab(entry.name, url, 'image', '')); return }
       setPreview({ name: entry.name, content: url, type: 'image', lang: '' })
-    } else if (TEXT_EXTS.has(e) || MD_EXTS.has(e) || entry.size < 500_000) {
+    } else if (TEXT_EXTS.has(e) || MD_EXTS.has(e) || TEX_EXTS.has(e) || entry.size < 500_000) {
       try {
         const res = await api.readFile(full)
         let content = res.content || ''
         if (e === 'json') try { content = JSON.stringify(JSON.parse(content), null, 2) } catch {}
-        const type = MD_EXTS.has(e) ? 'markdown' as const : 'code' as const
+        const type = TEX_EXTS.has(e) ? 'latex' as const : MD_EXTS.has(e) ? 'markdown' as const : 'code' as const
         if (isDesktop) { openTab(makeTab(entry.name, content, type, EXT_LANG[e] || '')); return }
-        setPreview({ name: entry.name, content, type, lang: EXT_LANG[e] || '' })
+        setPreview({ name: entry.name, content, type, lang: EXT_LANG[e] || '', path: full })
       } catch { /* */ }
     }
   }
@@ -291,12 +259,18 @@ export function FilePanel({ initialPath, onClose }: Props) {
 
   // Highlighted code (async lazy load)
   const [highlightedCode, setHighlightedCode] = useState('')
+  const [mdHtml, setMdHtml] = useState('')
   useEffect(() => {
-    if (!preview || preview.type !== 'code') { setHighlightedCode(''); return }
-    const escaped = preview.content.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
-    setHighlightedCode(escaped) // Show plain first
-    lazyHighlight(preview.content, preview.lang).then(setHighlightedCode)
-  }, [preview?.content, preview?.lang])
+    if (!preview) { setHighlightedCode(''); setMdHtml(''); return }
+    if (preview.type === 'code') {
+      const escaped = preview.content.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+      setHighlightedCode(escaped)
+      lazyHighlight(preview.content, preview.lang).then(setHighlightedCode)
+    } else if (preview.type === 'markdown') {
+      setMdHtml('')
+      setMdHtml(renderMarkdown(preview.content, preview.path))
+    }
+  }, [preview?.content, preview?.lang, preview?.type])
 
   const folder = path.split('/').filter(Boolean).pop() || '/'
 
@@ -340,7 +314,7 @@ export function FilePanel({ initialPath, onClose }: Props) {
             <pre className="fv-code"><code className="hljs" dangerouslySetInnerHTML={{ __html: highlightedCode }} /></pre>
           )}
           {preview.type === 'markdown' && (
-            <div className="fv-markdown" dangerouslySetInnerHTML={{ __html: renderMarkdown(preview.content) }} />
+            <div className="fv-markdown" dangerouslySetInnerHTML={{ __html: mdHtml }} />
           )}
           {preview.type === 'pdf' && (
             <PdfViewer url={preview.content} />
@@ -389,13 +363,13 @@ export function FilePanel({ initialPath, onClose }: Props) {
             const url = `/api/file-raw?path=${encodeURIComponent(fullPath)}`
             if (isDesktop) { openTab(makeTab(entry.name, url, 'image', '')); return }
             setPreview({ name: entry.name, content: url, type: 'image', lang: '' })
-          } else if (TEXT_EXTS.has(e) || MD_EXTS.has(e) || entry.size < 500_000) {
+          } else if (TEXT_EXTS.has(e) || MD_EXTS.has(e) || TEX_EXTS.has(e) || entry.size < 500_000) {
             api.readFile(fullPath).then(res => {
               let content = res.content || ''
               if (e === 'json') try { content = JSON.stringify(JSON.parse(content), null, 2) } catch {}
-              const type = MD_EXTS.has(e) ? 'markdown' as const : 'code' as const
+              const type = TEX_EXTS.has(e) ? 'latex' as const : MD_EXTS.has(e) ? 'markdown' as const : 'code' as const
               if (isDesktop) { openTab(makeTab(entry.name, content, type, EXT_LANG[e] || '')); return }
-              setPreview({ name: entry.name, content, type, lang: EXT_LANG[e] || '' })
+              setPreview({ name: entry.name, content, type, lang: EXT_LANG[e] || '', path: fullPath })
             }).catch(() => {})
           }
         }} />

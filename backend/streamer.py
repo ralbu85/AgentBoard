@@ -167,13 +167,11 @@ async def _read_fifo(id: str, session_name: str, fifo: str):
 
 # ── Snapshots ──
 
-async def get_snapshot(id: str, session_name: str, cols: int = 120, rows: int = 50) -> str:
+async def get_snapshot(id: str, session_name: str) -> str:
     from .sessions import store
     s = store.get(id)
     if not s:
         return ""
-
-    await tmux.resize_window_height(session_name, rows)
 
     raw, info_str = await asyncio.gather(
         tmux.capture_pane(session_name, lines=2000, ansi=True),
@@ -190,7 +188,7 @@ async def get_snapshot(id: str, session_name: str, cols: int = 120, rows: int = 
     except Exception:
         _last_screen[id] = _strip_cursor(raw)
 
-    return raw.replace("\n", "\r\n")
+    return raw.rstrip("\n").replace("\n", "\r\n")
 
 
 async def poll_now(id: str):
@@ -199,10 +197,10 @@ async def poll_now(id: str):
     if not s or s.status in ("stopped", "completed"):
         return
     try:
-        output = await tmux.capture_pane(s.session_name, lines=s.rows or 50, ansi=True)
+        output = await tmux.capture_pane(s.session_name, lines=0, ansi=True)
         if output != _last_screen.get(id):
             _last_screen[id] = output
-            broadcast({"type": "screen", "id": id, "data": output.replace("\n", "\r\n")})
+            broadcast({"type": "screen", "id": id, "data": output.rstrip("\n").replace("\n", "\r\n")})
     except Exception:
         pass
 
@@ -244,7 +242,7 @@ async def _poll_active():
                     # Throttle: skip if last broadcast was too recent
                     if now - _last_broadcast_time.get(sid, 0) >= MIN_BROADCAST_INTERVAL:
                         _last_broadcast_time[sid] = now
-                        broadcast({"type": "screen", "id": sid, "data": output.replace("\n", "\r\n")})
+                        broadcast({"type": "screen", "id": sid, "data": output.rstrip("\n").replace("\n", "\r\n")})
 
                 # Check state periodically (not just on change)
                 if changed or (now - _last_state_check.get(sid, 0) > STATE_CHECK_INTERVAL):

@@ -9,3 +9,5 @@ __pycache__/
 server.log
 *.png
 yarn.lock
+.session-titles.json
+

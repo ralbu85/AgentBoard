@@ -3,6 +3,8 @@ import { useStore, type ViewerTab } from '../../store'
 import { api } from '../../api'
 import { FileContent, type Memo, type SelectionInfo } from './FileContent'
 import { CodeEditor } from './CodeEditor'
+import { renderMarkdown } from '../../markdown'
+import { api } from '../../api'
 
 type SplitDir = 'horizontal' | 'vertical'
 type DropZone = 'left' | 'right' | 'top' | 'bottom' | 'center'
@@ -222,8 +224,10 @@ function LeafPane({ node, tabs, onDragStart, onDrop, onClose, onSelect }: {
   const activeSessionId = useStore(s => s.activeId)
   const activeTab = tabs.find(t => t.id === node.activeTabId) || tabs.find(t => node.tabIds.includes(t.id))
 
-  const isTextTab = activeTab && (activeTab.type === 'code' || activeTab.type === 'markdown')
+  const isTextTab = activeTab && (activeTab.type === 'code' || activeTab.type === 'markdown' || activeTab.type === 'latex')
   const isMd = activeTab?.type === 'markdown'
+  const isTeX = activeTab?.type === 'latex'
+  const isRendered = isMd || isTeX
   const [dirty, setDirty] = useState(false)
   const [saving, setSaving] = useState(false)
   const [mdEditMode, setMdEditMode] = useState(false)
@@ -369,7 +373,7 @@ function LeafPane({ node, tabs, onDragStart, onDrop, onClose, onSelect }: {
         })}
         <div className="vtab-actions">
           {isTextTab && <button className="vtab-action" onClick={copyContent} title="Copy">{copied ? '✓' : '⎘'}</button>}
-          {isMd && <button className="vtab-action" onClick={() => setMdEditMode(v => !v)} title={mdEditMode ? 'Preview' : 'Edit'}>{mdEditMode ? '👁' : '✎'}</button>}
+          {isRendered && <button className="vtab-action" onClick={() => setMdEditMode(v => !v)} title={mdEditMode ? 'Preview' : 'Edit'}>{mdEditMode ? '👁' : '✎'}</button>}
           {dirty && <button className="vtab-action vtab-send" onClick={saveFile} title="Save (Ctrl+S)" disabled={saving}>{saving ? '...' : '💾'}</button>}
           <button className="vtab-action" onClick={downloadTab} title="Download">↓</button>
           <button className="vtab-action" onClick={refreshTab} title="Refresh">↻</button>
@@ -384,7 +388,8 @@ function LeafPane({ node, tabs, onDragStart, onDrop, onClose, onSelect }: {
         {!activeTab ? <div className="viewer-empty">Drop here</div>
           : activeTab.type === 'pdf' ? <FileContent content={activeTab.content} type="pdf" lang="" />
           : activeTab.type === 'image' ? <FileContent content={activeTab.content} type="image" lang="" />
-          : (isMd && !mdEditMode) ? <MarkdownView content={activeTab.content} />
+          : (isMd && !mdEditMode) ? <MarkdownView content={activeTab.content} filePath={activeTab.path} onContextMenu={handleCtxMenu} />
+          : (isTeX && !mdEditMode) ? <LatexView content={activeTab.content} filePath={activeTab.path} onContextMenu={handleCtxMenu} />
           : (
             <CodeEditor
               content={activeTab.content}
@@ -465,18 +470,15 @@ function MemoInputPanel({ selInfo, onSave, onCancel }: {
 
 /** Rendered markdown view (Notion-style) */
 const MD_ZOOM_LEVELS = [0.5, 0.75, 0.9, 1, 1.15, 1.3, 1.5, 1.75, 2, 2.5]
-function MarkdownView({ content }: { content: string }) {
+function MarkdownView({ content, filePath, onContextMenu }: { content: string; filePath?: string; onContextMenu?: (info: SelectionInfo) => void }) {
   const [html, setHtml] = useState('')
   const [zoom, setZoom] = useState<number>(() => {
     const saved = parseFloat(localStorage.getItem('md-zoom') || '1')
     return MD_ZOOM_LEVELS.includes(saved) ? saved : 1
   })
   useEffect(() => {
-    import('marked').then(({ marked }) => {
-      marked.setOptions({ breaks: true, gfm: true })
-      setHtml(marked.parse(content) as string)
-    })
-  }, [content])
+    setHtml(renderMarkdown(content, filePath))
+  }, [content, filePath])
   useEffect(() => { localStorage.setItem('md-zoom', String(zoom)) }, [zoom])
 
   const zoomIn = () => setZoom(z => {
@@ -489,6 +491,27 @@ function MarkdownView({ content }: { content: string }) {
   })
   const zoomReset = () => setZoom(1)
 
+  const handleContextMenu = useCallback((e: React.MouseEvent) => {
+    if (!onContextMenu) return
+    const sel = window.getSelection()
+    if (!sel || sel.isCollapsed || !sel.toString().trim()) return
+    e.preventDefault()
+    const text = sel.toString().trim()
+    // Find the selected text in the source markdown to get line numbers
+    const lines = content.split('\n')
+    let startLine = 1, endLine = 1
+    // Search for the first few words in source
+    const searchKey = text.slice(0, 80).replace(/\s+/g, ' ')
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i].includes(searchKey) || lines.slice(i, i + 3).join(' ').includes(searchKey)) {
+        startLine = i + 1
+        endLine = startLine
+        break
+      }
+    }
+    onContextMenu({ startLine, startCol: 0, endLine, endCol: 0, text, x: e.clientX, y: e.clientY })
+  }, [onContextMenu, content])
+
   return (
     <div className="md-wrap">
       <div className="md-zoom-toolbar">
@@ -496,7 +519,57 @@ function MarkdownView({ content }: { content: string }) {
         <span className="md-zoom-label" onClick={zoomReset} title="Reset">{Math.round(zoom * 100)}%</span>
         <button className="md-zoom-btn" onClick={zoomIn} title="Zoom in">+</button>
       </div>
-      <div className="md-rendered" style={{ zoom }} dangerouslySetInnerHTML={{ __html: html }} />
+      <div className="md-rendered" style={{ zoom }} dangerouslySetInnerHTML={{ __html: html }} onContextMenu={handleContextMenu} />
+    </div>
+  )
+}
+
+/** LaTeX rendered view (via latexml backend) */
+function LatexView({ content, filePath, onContextMenu }: { content: string; filePath?: string; onContextMenu?: (info: SelectionInfo) => void }) {
+  const [html, setHtml] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const [zoom, setZoom] = useState<number>(() => {
+    const saved = parseFloat(localStorage.getItem('md-zoom') || '1')
+    return MD_ZOOM_LEVELS.includes(saved) ? saved : 1
+  })
+
+  useEffect(() => {
+    if (!filePath) return
+    setLoading(true)
+    setError('')
+    api.latex(filePath).then(res => {
+      if (res.ok) setHtml(res.html)
+      else setError(res.error || 'LaTeXML failed')
+    }).catch(e => setError(String(e))).finally(() => setLoading(false))
+  }, [filePath, content])
+
+  const zoomIn = () => setZoom(z => { const i = MD_ZOOM_LEVELS.indexOf(z); return MD_ZOOM_LEVELS[Math.min(i + 1, MD_ZOOM_LEVELS.length - 1)] ?? z })
+  const zoomOut = () => setZoom(z => { const i = MD_ZOOM_LEVELS.indexOf(z); return MD_ZOOM_LEVELS[Math.max(i - 1, 0)] ?? z })
+  const zoomReset = () => setZoom(1)
+
+  const handleContextMenu = useCallback((e: React.MouseEvent) => {
+    if (!onContextMenu) return
+    const sel = window.getSelection()
+    if (!sel || sel.isCollapsed || !sel.toString().trim()) return
+    e.preventDefault()
+    const text = sel.toString().trim()
+    onContextMenu({ startLine: 1, startCol: 0, endLine: 1, endCol: 0, text, x: e.clientX, y: e.clientY })
+  }, [onContextMenu])
+
+  return (
+    <div className="md-wrap">
+      <link rel="stylesheet" href="/api/latex-css/LaTeXML.css" />
+      <link rel="stylesheet" href="/api/latex-css/ltx-article.css" />
+      <div className="md-zoom-toolbar">
+        <span className="md-zoom-tag">LaTeX</span>
+        <button className="md-zoom-btn" onClick={zoomOut} title="Zoom out">−</button>
+        <span className="md-zoom-label" onClick={zoomReset} title="Reset">{Math.round(zoom * 100)}%</span>
+        <button className="md-zoom-btn" onClick={zoomIn} title="Zoom in">+</button>
+      </div>
+      {loading && <div className="fp-loading" style={{padding:40}}><div className="spinner" /><span>LaTeXML rendering...</span></div>}
+      {error && <div style={{padding:20,color:'#f44'}}><strong>Error:</strong> <pre style={{whiteSpace:'pre-wrap',fontSize:12}}>{error}</pre></div>}
+      {html && <div className="latex-rendered" style={{ zoom }} dangerouslySetInnerHTML={{ __html: html }} onContextMenu={handleContextMenu} />}
     </div>
   )
 }

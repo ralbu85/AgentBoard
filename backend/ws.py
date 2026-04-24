@@ -7,7 +7,7 @@ from typing import Set
 from fastapi import WebSocket, WebSocketDisconnect
 
 from . import tmux, streamer
-from .sessions import store, CANONICAL_COLS
+from .sessions import store, CANONICAL_COLS, CANONICAL_ROWS
 
 clients: Set[WebSocket] = set()
 _lock = asyncio.Lock()
@@ -87,11 +87,7 @@ async def handle_ws(ws: WebSocket):
     finally:
         async with _lock:
             clients.discard(ws)
-        _client_rows.pop(id(ws), None)
         streamer.remove_client(id(ws))
-
-
-_client_rows: dict[int, int] = {}  # ws id → rows
 
 
 async def _handle_msg(msg: dict, ws: WebSocket):
@@ -99,32 +95,34 @@ async def _handle_msg(msg: dict, ws: WebSocket):
     msg_id = msg.get("id", "")
 
     if msg_type == "resize":
-        rows = msg.get("rows", 50)
-        _client_rows[id(ws)] = rows
-        # Height-only resize on active session
-        if msg_id:
+        rows = msg.get("rows")
+        if isinstance(rows, int) and CANONICAL_ROWS <= rows <= 200:
             s = store.get(msg_id)
-            if s:
-                s.rows = rows
-                await tmux.resize_window_height(s.session_name, rows)
+            if s and rows != s.display_rows:
+                s.display_rows = rows
+                await tmux.resize_window(s.session_name, CANONICAL_COLS, rows)
+                # Give the TUI time to handle SIGWINCH and redraw
+                await asyncio.sleep(0.15)
+                # Full snapshot with history so the viewport fills via scrollback
+                output = await streamer.get_snapshot(msg_id, s.session_name)
+                if output:
+                    broadcast({"type": "snapshot", "id": msg_id, "data": output})
 
     elif msg_type == "active":
         streamer.set_active(msg_id or None, ws_id=id(ws))
         if msg_id:
             s = store.get(msg_id)
             if s:
-                rows = _client_rows.get(id(ws), s.rows)
-                s.rows = rows
-                # Set canonical width + current height
-                await tmux.resize_window(s.session_name, CANONICAL_COLS, rows)
-                output = await streamer.get_snapshot(msg_id, s.session_name, CANONICAL_COLS, rows)
+                # Apply the session's current display size (last client's resize wins)
+                await tmux.resize_window(s.session_name, CANONICAL_COLS, s.display_rows)
+                output = await streamer.get_snapshot(msg_id, s.session_name)
                 if output:
                     await ws.send_text(json.dumps({"type": "snapshot", "id": msg_id, "data": output}))
 
     elif msg_type == "resync":
         s = store.get(msg_id)
         if s:
-            output = await streamer.get_snapshot(msg_id, s.session_name, s.cols, s.rows)
+            output = await streamer.get_snapshot(msg_id, s.session_name)
             if output:
                 await ws.send_text(json.dumps({"type": "snapshot", "id": msg_id, "data": output}))
 

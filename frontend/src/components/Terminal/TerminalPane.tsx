@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
 import { useStore } from '../../store'
-import { send, sendResize } from '../../ws'
 import * as TM from './TerminalManager'
 
 import '@xterm/xterm/css/xterm.css'
@@ -25,41 +24,27 @@ export function TerminalPane() {
     if (!activeId || !containerRef.current) return
     TM.open(activeId, containerRef.current)
     TM.show(activeId)
-    // Single resize + resync after terminal renders (no repeated snapshots)
-    const id = activeId
-    const t1 = setTimeout(() => {
-      const size = TM.resize(id)
-      if (size && size.cols > 0 && size.rows > 0) {
-        send({ type: 'resize', id, cols: size.cols, rows: size.rows })
-      }
-    }, 150)
-    return () => { clearTimeout(t1) }
   }, [activeId])
 
   // Poll scroll state for button visibility
   useEffect(() => {
     const interval = setInterval(() => {
-      setShowScrollBtn(TM.isScrolledUp())
+      const id = useStore.getState().activeId
+      setShowScrollBtn(TM.isScrolledUp(id || undefined))
     }, 300)
     return () => clearInterval(interval)
   }, [])
 
-  // Refit terminal on container size change
+  // Re-scale font when container size changes (window resize, sidebar toggle, split drag…)
   useEffect(() => {
-    const doResize = () => {
+    const doRefit = () => {
       const id = useStore.getState().activeId
-      if (!id) return
-      requestAnimationFrame(() => {
-        const size = TM.resize(id)
-        if (size && size.cols > 0 && size.rows > 0) {
-          sendResize(id, size.cols, size.rows)
-        }
-      })
+      if (id) requestAnimationFrame(() => TM.refit(id))
     }
-    window.addEventListener('resize', doResize)
-    const ro = new ResizeObserver(doResize)
+    window.addEventListener('resize', doRefit)
+    const ro = new ResizeObserver(doRefit)
     if (containerRef.current) ro.observe(containerRef.current)
-    return () => { window.removeEventListener('resize', doResize); ro.disconnect() }
+    return () => { window.removeEventListener('resize', doRefit); ro.disconnect() }
   }, [])
 
   const handleScrollBottom = () => {

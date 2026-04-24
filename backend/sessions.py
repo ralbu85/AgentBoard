@@ -8,7 +8,10 @@ from typing import Callable, Optional
 
 from . import config, tmux
 
-CANONICAL_COLS = 120  # Fixed terminal width — never changes (prevents scrollback reflow garbling)
+# Tmux pane size is FIXED at these values for every session.
+# Clients (desktop + mobile) never resize — they always render this canonical size.
+CANONICAL_COLS = 80
+CANONICAL_ROWS = 40
 
 @dataclass
 class Session:
@@ -22,7 +25,8 @@ class Session:
     created_at: int = 0
     mem_kb: int = 0
     cols: int = CANONICAL_COLS
-    rows: int = 50
+    rows: int = CANONICAL_ROWS
+    display_rows: int = CANONICAL_ROWS
 
     def to_dict(self) -> dict:
         return {
@@ -107,6 +111,7 @@ class SessionStore:
         session_name = f"term-{id_str}"
 
         await tmux.new_session(session_name, cwd, cmd)
+        await tmux.resize_window(session_name, CANONICAL_COLS, CANONICAL_ROWS)
 
         s = self.add(session_name, cwd, cmd)
         self.broadcast({
@@ -141,6 +146,8 @@ class SessionStore:
         tmux_sessions = await tmux.list_sessions()
         for ts in tmux_sessions:
             name = ts["sessionName"]
+            # Force every recovered session to canonical size
+            await tmux.resize_window(name, CANONICAL_COLS, CANONICAL_ROWS)
             if name.startswith("term-"):
                 try:
                     num = int(name.split("-", 1)[1])

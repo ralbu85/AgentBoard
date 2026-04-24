@@ -1,15 +1,18 @@
 import { Terminal } from '@xterm/xterm'
-import { FitAddon } from '@xterm/addon-fit'
 import { SearchAddon } from '@xterm/addon-search'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import { send } from '../../ws'
 
+// Canonical tmux pane size — every client renders this exact shape.
+// Backend pins the tmux pane to the same values, so there's no resize whiplash
+// when desktop + mobile view the same session simultaneously.
+const CANONICAL_COLS = 80
+const CANONICAL_ROWS = 40
+
 const isMobile = window.innerWidth <= 768
-const CANONICAL_COLS = 120  // Fixed width — prevents scrollback garbling on resize
 
 interface TermInstance {
   term: Terminal
-  fitAddon: FitAddon
   searchAddon: SearchAddon
   el: HTMLDivElement
   opened: boolean
@@ -19,21 +22,18 @@ const terminals = new Map<string, TermInstance>()
 const _pendingSnapshots = new Map<string, string>()
 const _pendingScreens = new Map<string, string>()
 
-// Track if user scrolled away from bottom — writeScreen saves position
-let _userScrolledUp = false
-let _savedScrollTop = -1
-
 export function create(id: string): TermInstance {
   const existing = terminals.get(id)
   if (existing) return existing
 
   const term = new Terminal({
     cols: CANONICAL_COLS,
+    rows: CANONICAL_ROWS,
     cursorBlink: true,
     cursorStyle: 'bar',
     disableStdin: isMobile,
     scrollback: 10000,
-    fontSize: isMobile ? 11 : 13,
+    fontSize: isMobile ? 10 : 13,
     letterSpacing: 0,
     fontFamily: '"D2Coding", "Cascadia Code", "Cascadia Mono", "Consolas", monospace',
     theme: {
@@ -47,9 +47,6 @@ export function create(id: string): TermInstance {
     },
     allowProposedApi: true,
   })
-
-  const fitAddon = new FitAddon()
-  term.loadAddon(fitAddon)
 
   const searchAddon = new SearchAddon()
   term.loadAddon(searchAddon)
@@ -65,7 +62,7 @@ export function create(id: string): TermInstance {
   el.className = 'xterm-wrap'
   el.id = `xterm-${id}`
 
-  const inst: TermInstance = { term, fitAddon, searchAddon, el, opened: false }
+  const inst: TermInstance = { term, searchAddon, el, opened: false }
   terminals.set(id, inst)
   return inst
 }
@@ -77,26 +74,78 @@ export function open(id: string, container: HTMLElement) {
     container.appendChild(t.el)
     t.term.open(t.el)
     t.opened = true
+    t.term.resize(CANONICAL_COLS, CANONICAL_ROWS)
     if (isMobile) _setupMobileScroll(t)
-    try { t.fitAddon.fit() } catch {}
-    // Reset clears buffer and forces renderer to fully reinitialize
     t.term.reset()
-    // Single resync after terminal + renderer is ready
+    refit(id)
     setTimeout(() => {
-      try { t.fitAddon.fit() } catch {}
+      refit(id)
       send({ type: 'resync', id })
-    }, 300)
+      const pending = _pendingSnapshots.get(id) || _pendingScreens.get(id)
+      if (pending) {
+        t.term.write('\x1b[2J\x1b[H' + pending)
+        _pendingSnapshots.delete(id)
+        _pendingScreens.delete(id)
+      }
+    }, 200)
   } else if (t.el.parentElement !== container) {
     container.appendChild(t.el)
   }
 }
 
-function _writeData(t: TermInstance, data: string) {
-  t.term.write(data, () => {
-    t.term.scrollToBottom()
-    _userScrolledUp = false
-    _savedScrollTop = -1
-  })
+// Keep the font at its natural target size (no desktop zoom-in). On desktop
+// the row count grows to fill the container so actual terminal content reaches
+// the bottom. On mobile we lock to CANONICAL_ROWS to avoid shrinking the font.
+const TARGET_FONT = isMobile ? 10 : 13
+const _lastSentRows = new Map<string, number>()
+
+export function refit(id: string) {
+  const t = terminals.get(id)
+  if (!t?.opened) return
+  const container = t.el.parentElement
+  if (!container) return
+
+  const cH = container.clientHeight
+  if (cH <= 0) return
+
+  const core = (t.term as any)._core
+  const cellH = core?._renderService?.dimensions?.css?.cell?.height
+  if (!cellH) return
+
+  const curFont = (t.term.options.fontSize as number) || TARGET_FONT
+  const cellPerFont = cellH / curFont
+  const neededH = cellPerFont * TARGET_FONT * CANONICAL_ROWS
+
+  let newFont: number
+  if (neededH <= cH) {
+    newFont = TARGET_FONT
+  } else {
+    const scaleH = cH / (CANONICAL_ROWS * cellH)
+    newFont = Math.max(8, Math.floor(curFont * scaleH))
+  }
+
+  let fontChanged = false
+  if (newFont !== curFont) {
+    t.term.options.fontSize = newFont
+    fontChanged = true
+  }
+
+  const effectiveCellH = fontChanged
+    ? (core?._renderService?.dimensions?.css?.cell?.height || cellH * (newFont / curFont))
+    : cellH
+
+  const fitRows = isMobile
+    ? CANONICAL_ROWS
+    : Math.max(CANONICAL_ROWS, Math.min(200, Math.floor(cH / effectiveCellH)))
+
+  if (fontChanged || t.term.rows !== fitRows || t.term.cols !== CANONICAL_COLS) {
+    t.term.resize(CANONICAL_COLS, fitRows)
+  }
+
+  if (!isMobile && _lastSentRows.get(id) !== fitRows) {
+    _lastSentRows.set(id, fitRows)
+    send({ type: 'resize', id, rows: fitRows })
+  }
 }
 
 function _setupMobileScroll(t: TermInstance) {
@@ -104,13 +153,12 @@ function _setupMobileScroll(t: TermInstance) {
   const vp = wrap.querySelector('.xterm-viewport') as HTMLElement
   if (!vp) return
 
-  // Disable xterm's touch handling completely
+  // Disable xterm's touch handling so our custom scroll wins
   const xtermEl = wrap.querySelector('.xterm') as HTMLElement
   if (xtermEl) xtermEl.style.pointerEvents = 'none'
   vp.style.pointerEvents = 'none'
   const screen = wrap.querySelector('.xterm-screen') as HTMLElement
   if (screen) screen.style.pointerEvents = 'none'
-
 
   let lastY = 0
   let velocity = 0
@@ -128,19 +176,11 @@ function _setupMobileScroll(t: TermInstance) {
   wrap.addEventListener('touchmove', (e) => {
     e.stopPropagation()
     const y = e.touches[0].clientY
-    const dy = lastY - y  // positive = finger moved up
+    const dy = lastY - y
     const now = Date.now()
     const dt = now - ts
     if (dt > 0) velocity = dy / dt
-
-    // Finger up → see earlier content → scrollTop DECREASES
     vp.scrollTop += dy
-
-    // Track if user scrolled away from bottom
-    const maxScroll = vp.scrollHeight - vp.clientHeight
-    _userScrolledUp = vp.scrollTop < maxScroll - 10
-    _savedScrollTop = vp.scrollTop
-
     lastY = y
     ts = now
   }, { capture: true, passive: true })
@@ -153,25 +193,25 @@ function _setupMobileScroll(t: TermInstance) {
       v *= 0.93
       if (Math.abs(v) < 0.01) return
       vp.scrollTop += v * 16
-      const maxScroll = vp.scrollHeight - vp.clientHeight
-      _userScrolledUp = vp.scrollTop < maxScroll - 10
-      _savedScrollTop = vp.scrollTop
       raf = requestAnimationFrame(tick)
     }
     raf = requestAnimationFrame(tick)
   }, { capture: true, passive: true })
 }
 
-// Called by scroll-to-bottom button
 export function scrollToBottom(id: string) {
   const t = terminals.get(id)
   if (!t?.opened) return
   t.term.scrollToBottom()
-  _userScrolledUp = false
-  _savedScrollTop = -1
 }
 
-export function isScrolledUp() { return _userScrolledUp }
+export function isScrolledUp(id?: string) {
+  if (!id) return false
+  const t = terminals.get(id)
+  if (!t?.opened) return false
+  const buf = t.term.buffer.active
+  return buf.viewportY < buf.baseY
+}
 
 export function writeSnapshot(id: string, data: string) {
   const t = terminals.get(id) || create(id)
@@ -179,14 +219,18 @@ export function writeSnapshot(id: string, data: string) {
     _pendingSnapshots.set(id, data)
     return
   }
+  // clear() wipes both viewport AND scrollback — otherwise consecutive
+  // snapshots (initial active, post-resize SIGWINCH) would append their 2000
+  // rows of history on top of what's already there, creating duplicates.
+  t.term.clear()
   t.term.write('\x1b[2J\x1b[H' + data, () => {
     t.term.scrollToBottom()
-    _userScrolledUp = false
-    _savedScrollTop = -1
   })
 }
 
-// writeScreen: ALWAYS update terminal, but preserve scroll position if user scrolled up
+// writeScreen: clear the visible area, home the cursor, dump the fresh frame.
+// `\x1b[2J` only touches the visible grid, not scrollback — so if the user has
+// scrolled up, xterm preserves their scroll position automatically.
 export function writeScreen(id: string, data: string) {
   const t = terminals.get(id)
   if (!t || !t.opened) {
@@ -194,63 +238,19 @@ export function writeScreen(id: string, data: string) {
     return
   }
   if (t.el.style.display === 'none') return
-
-  const vp = t.el.querySelector('.xterm-viewport') as HTMLElement
-  // Use the globally tracked scroll position (updated by touch handler)
-  const savedTop = _userScrolledUp ? _savedScrollTop : -1
-  const wasScrolledUp = _userScrolledUp
-
-  const lines = data.split('\r\n')
-  while (lines.length > 0 && lines[lines.length - 1] === '') lines.pop()
-  if (lines.length === 0) return
-
-  let out = '\x1b[H'
-  for (let i = 0; i < lines.length; i++) {
-    out += lines[i] + '\x1b[K'
-    if (i < lines.length - 1) out += '\r\n'
-  }
-  out += '\x1b[J'
-  t.term.write(out, () => {
-    if (wasScrolledUp && vp && savedTop >= 0) {
-      vp.scrollTop = savedTop
-    }
-  })
+  t.term.write('\x1b[2J\x1b[H' + data)
 }
 
 export function writeStream(id: string, data: string) {
   const t = terminals.get(id) || create(id)
   if (!t.opened) return
   t.term.write(data)
-  const buf = t.term.buffer.active
-  if (buf.viewportY >= buf.baseY) t.term.scrollToBottom()
 }
 
 export function show(id: string) {
   terminals.forEach((t, k) => {
     t.el.style.display = k === id ? '' : 'none'
   })
-  const t = terminals.get(id)
-  if (t?.opened) {
-    requestAnimationFrame(() => {
-      try { t.fitAddon.fit() } catch {}
-    })
-  }
-}
-
-export function resize(id: string): { cols: number; rows: number } | null {
-  const t = terminals.get(id)
-  if (!t?.opened) return null
-  try {
-    t.fitAddon.fit()
-    // Fix cols to canonical width — only rows adapt to container
-    const rows = t.term.rows
-    if (t.term.cols !== CANONICAL_COLS) {
-      t.term.resize(CANONICAL_COLS, rows)
-    }
-    return { cols: CANONICAL_COLS, rows }
-  } catch {
-    return null
-  }
 }
 
 export function search(id: string, q: string) {
@@ -266,4 +266,7 @@ export function destroy(id: string) {
   t.term.dispose()
   t.el.remove()
   terminals.delete(id)
+  _pendingSnapshots.delete(id)
+  _pendingScreens.delete(id)
+  _lastSentRows.delete(id)
 }

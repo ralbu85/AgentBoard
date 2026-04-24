@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback, memo } from 'react'
 import { PdfViewer } from '../PdfViewer'
+import { renderMarkdown } from '../../markdown'
 
 // Lazy highlight.js
 let _hljs: any = null
@@ -48,13 +49,8 @@ async function getHljs() {
   return _hljs!
 }
 
-let _renderMd: ((md: string) => string) | null = null
 async function getMarkdownRenderer() {
-  if (_renderMd) return _renderMd
-  const { marked } = await import('marked')
-  marked.setOptions({ breaks: true, gfm: true })
-  _renderMd = (md: string) => marked.parse(md) as string
-  return _renderMd
+  return renderMarkdown
 }
 
 function splitHighlightedLines(html: string): string[] {
@@ -94,7 +90,7 @@ export interface SelectionInfo {
 
 interface Props {
   content: string
-  type: 'code' | 'markdown' | 'pdf' | 'image'
+  type: 'code' | 'markdown' | 'latex' | 'pdf' | 'image'
   lang: string
   memos?: Memo[]
   noLineNumbers?: boolean
