@@ -2,6 +2,9 @@ from pydantic import BaseModel, Field
 from typing import Optional
 
 
+_SESSION_NAME_PATTERN = r"^[A-Za-z0-9_\-]{1,64}$"
+
+
 class LoginRequest(BaseModel):
     pw: str
 
@@ -18,7 +21,7 @@ class KeyRequest(BaseModel):
     key: str
 
 class AttachRequest(BaseModel):
-    sessionName: str
+    sessionName: str = Field(pattern=_SESSION_NAME_PATTERN)
     cwd: str = ""
 
 class FileWriteRequest(BaseModel):

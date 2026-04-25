@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import shlex
 from pathlib import Path
 
 TMUX_TIMEOUT = 5.0
@@ -80,7 +81,8 @@ async def list_sessions() -> list[dict]:
 
 
 async def pipe_pane_start(session_name: str, fifo_path: str) -> None:
-    await tmux_run(["pipe-pane", "-t", session_name, f"cat > {fifo_path}"])
+    # tmux runs the pipe-pane command via /bin/sh -c, so the path must be shell-quoted.
+    await tmux_run(["pipe-pane", "-t", session_name, f"cat > {shlex.quote(fifo_path)}"])
 
 
 async def pipe_pane_stop(session_name: str) -> None:
