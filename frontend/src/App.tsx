@@ -3,6 +3,7 @@ import { api } from './api'
 import { useStore } from './store'
 import { initWs, terminalHandlers, notifyActive } from './ws'
 import { Login } from './components/Login'
+import { Toaster } from './components/Toaster'
 import { Header } from './components/Header'
 import { Sidebar } from './components/Sidebar/Sidebar'
 import { TerminalPane } from './components/Terminal/TerminalPane'
@@ -75,6 +76,7 @@ export function App() {
 
   return (
     <div className="app">
+      <Toaster />
       <Header onToggleSidebar={() => setSidebarOpen((v) => !v)} />
       <div className="workspace">
         <Sidebar visible={sidebarOpen} onClose={() => setSidebarOpen(false)} width={sidebarWidth} />

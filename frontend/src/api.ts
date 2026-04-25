@@ -1,4 +1,15 @@
+import { useToasts } from './toasts'
+
 const BASE = ''
+// Endpoints whose failures the caller handles (we do not auto-toast).
+const SILENT = new Set(['/api/login', '/api/workers', '/api/config'])
+
+function reportFailure(url: string, body: any, status: number) {
+  if (SILENT.has(url)) return
+  const detail = body?.error || body?.detail || (status >= 400 ? `HTTP ${status}` : 'request failed')
+  const label = url.replace(/^\/api\//, '')
+  useToasts.getState().push(`${label}: ${typeof detail === 'string' ? detail : JSON.stringify(detail)}`)
+}
 
 async function post(url: string, body: object = {}) {
   const res = await fetch(BASE + url, {
@@ -7,13 +18,17 @@ async function post(url: string, body: object = {}) {
     credentials: 'include',
     body: JSON.stringify(body),
   })
-  return res.json()
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok || data?.ok === false) reportFailure(url, data, res.status)
+  return data
 }
 
 async function get(url: string) {
   const res = await fetch(BASE + url, { credentials: 'include' })
   if (res.status === 401) throw new Error('Unauthorized')
-  return res.json()
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) reportFailure(url, data, res.status)
+  return data
 }
 
 export const api = {
@@ -40,24 +55,24 @@ export const api = {
   saveNotes: (path: string, notes: any[]) => post('/api/notes', { path, notes }),
   deleteNote: (path: string, startLine: number, endLine: number) => post('/api/notes/delete', { path, startLine, endLine }),
   upload: async (dir: string, file: File) => {
-    const res = await fetch(`/api/upload?dir=${encodeURIComponent(dir)}&name=${encodeURIComponent(file.name)}`, {
-      method: 'POST',
-      credentials: 'include',
-      body: file,
-    })
-    return res.json()
+    const url = `/api/upload?dir=${encodeURIComponent(dir)}&name=${encodeURIComponent(file.name)}`
+    const res = await fetch(url, { method: 'POST', credentials: 'include', body: file })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok || data?.ok === false) reportFailure('/api/upload', data, res.status)
+    return data
   },
   uploadMany: async (dir: string, files: File[] | FileList): Promise<string[]> => {
     const arr = Array.from(files)
     const results: string[] = []
     for (const f of arr) {
-      const res = await fetch(`/api/upload?dir=${encodeURIComponent(dir)}&name=${encodeURIComponent(f.name)}`, {
-        method: 'POST',
-        credentials: 'include',
-        body: f,
-      })
-      const json = await res.json()
-      if (json.ok && json.path) results.push(json.path)
+      const url = `/api/upload?dir=${encodeURIComponent(dir)}&name=${encodeURIComponent(f.name)}`
+      const res = await fetch(url, { method: 'POST', credentials: 'include', body: f })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok || json?.ok === false) {
+        reportFailure('/api/upload', json, res.status)
+        continue
+      }
+      if (json.path) results.push(json.path)
     }
     return results
   },

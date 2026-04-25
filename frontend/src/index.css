@@ -383,6 +383,29 @@ body {
   .scroll-bottom-btn .sb-text { display: none; }
 }
 
+.toaster {
+  position: fixed;
+  top: calc(56px + env(safe-area-inset-top, 0px));
+  right: 16px;
+  z-index: 1000;
+  display: flex; flex-direction: column; gap: 8px;
+  pointer-events: none;
+  max-width: min(420px, calc(100vw - 32px));
+}
+.toast {
+  pointer-events: auto;
+  padding: 10px 14px;
+  border-radius: 6px;
+  font-size: 13px; font-weight: 500;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+  cursor: pointer;
+  word-break: break-word;
+  animation: toast-in 0.18s ease-out;
+}
+.toast-error { background: #5a1f1f; color: #ffd7d7; border: 1px solid #8a3030; }
+.toast-info  { background: #1f3a5a; color: #d7e7ff; border: 1px solid #305580; }
+@keyframes toast-in { from { opacity: 0; transform: translateX(8px); } to { opacity: 1; transform: none; } }
+
 .terminal-state-badge {
   position: absolute; top: 8px; right: 12px; z-index: 20;
   display: flex; align-items: center; gap: 5px;
