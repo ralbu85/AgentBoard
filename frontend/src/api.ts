@@ -39,7 +39,6 @@ export const api = {
   loadNotes: (path: string) => get(`/api/notes?path=${encodeURIComponent(path)}`),
   saveNotes: (path: string, notes: any[]) => post('/api/notes', { path, notes }),
   deleteNote: (path: string, startLine: number, endLine: number) => post('/api/notes/delete', { path, startLine, endLine }),
-  latex: (path: string) => get(`/api/latex?path=${encodeURIComponent(path)}`),
   upload: async (dir: string, file: File) => {
     const res = await fetch(`/api/upload?dir=${encodeURIComponent(dir)}&name=${encodeURIComponent(file.name)}`, {
       method: 'POST',
