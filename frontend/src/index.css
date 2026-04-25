@@ -240,6 +240,15 @@ body {
 }
 
 .session-list { padding: 0 4px 4px; }
+.session-filter-wrap { padding: 4px 4px 6px; position: sticky; top: 0; background: var(--bg-secondary); z-index: 1; }
+.session-filter {
+  width: 100%; padding: 6px 10px;
+  background: var(--bg-primary); color: var(--text-primary);
+  border: 1px solid var(--border); border-radius: 6px;
+  font-size: 12px; outline: none;
+}
+.session-filter:focus { border-color: var(--accent); }
+.session-filter::-webkit-search-cancel-button { cursor: pointer; }
 
 .session-item {
   display: flex; align-items: center; gap: 6px;

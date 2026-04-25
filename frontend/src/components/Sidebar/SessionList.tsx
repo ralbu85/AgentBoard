@@ -34,6 +34,7 @@ export function SessionList({ onSelect, onOpenFiles }: Props) {
   const setActive = useStore((s) => s.setActive)
   const removeSession = useStore((s) => s.removeSession)
   const [editingId, setEditingId] = useState<string | null>(null)
+  const [filter, setFilter] = useState('')
   const editRef = useRef<HTMLInputElement>(null)
 
   const handleSelect = (id: string) => {
@@ -74,10 +75,35 @@ export function SessionList({ onSelect, onOpenFiles }: Props) {
     onOpenFiles?.()
   }
 
-  const ids = Object.keys(sessions)
+  const allIds = Object.keys(sessions)
+  const q = filter.trim().toLowerCase()
+  const ids = q
+    ? allIds.filter((id) => {
+        const s = sessions[id]
+        const title = titles[id] || ''
+        return (
+          title.toLowerCase().includes(q) ||
+          s.cmd.toLowerCase().includes(q) ||
+          s.cwd.toLowerCase().includes(q) ||
+          s.sessionName.toLowerCase().includes(q) ||
+          id.includes(q)
+        )
+      })
+    : allIds
 
   return (
     <div className="session-list">
+      {allIds.length >= 5 && (
+        <div className="session-filter-wrap">
+          <input
+            className="session-filter"
+            type="search"
+            placeholder={`Filter ${allIds.length} sessions…`}
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+          />
+        </div>
+      )}
       {ids.map((id) => {
         const s = sessions[id]
         const state = effectiveState(id) || 'running'
@@ -126,7 +152,7 @@ export function SessionList({ onSelect, onOpenFiles }: Props) {
           </div>
         )
       })}
-      {ids.length === 0 && <div className="empty-msg">No sessions</div>}
+      {ids.length === 0 && <div className="empty-msg">{q ? 'No matches' : 'No sessions'}</div>}
     </div>
   )
 }
