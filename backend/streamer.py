@@ -38,6 +38,27 @@ ACTIVE_POLL_MS = 80
 BG_POLL_MS = 2000
 MIN_BROADCAST_INTERVAL = 0.08  # 80ms min between broadcasts per session
 
+# Active poll dynamically slows when the primary session has been quiet.
+# Saves CPU on idle dashboards while staying responsive when output is flowing.
+_ACTIVE_POLL_TIERS = (
+    (1.0, 0.08),    # output within last 1s → 80ms
+    (5.0, 0.20),    # 1–5s quiet → 200ms
+    (30.0, 0.50),   # 5–30s quiet → 500ms
+)
+_ACTIVE_POLL_IDLE_S = 1.0  # >30s quiet → 1000ms
+
+def _active_sleep_for(primary_id: str | None) -> float:
+    if not primary_id:
+        return ACTIVE_POLL_MS / 1000
+    last_change = _last_change_at.get(primary_id)
+    if last_change is None:
+        return ACTIVE_POLL_MS / 1000
+    idle_for = _time.monotonic() - last_change
+    for threshold, sleep_s in _ACTIVE_POLL_TIERS:
+        if idle_for < threshold:
+            return sleep_s
+    return _ACTIVE_POLL_IDLE_S
+
 # Strip cursor visibility/position codes that cause false diffs (cursor blink)
 _CURSOR_RE = _re.compile(r'\x1b\[\??(25[hl]|\d*[ABCDHJ])')
 
@@ -211,10 +232,12 @@ async def poll_now(id: str):
 
 async def _poll_active():
     _rr_index = 0
+    primary: str | None = None
     while True:
-        await asyncio.sleep(ACTIVE_POLL_MS / 1000)
+        await asyncio.sleep(_active_sleep_for(primary))
         active_ids = list(get_active_session_ids())
         if not active_ids:
+            primary = None
             continue
 
         # Prioritize the most recently activated session
