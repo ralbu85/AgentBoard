@@ -10,14 +10,35 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, Request, Query
 from fastapi.responses import StreamingResponse, JSONResponse, HTMLResponse
 
+from . import config
 from .auth import verify
 
 router = APIRouter(prefix="/api")
 
 
+def _safe_path(path: str) -> Path | None:
+    """Resolve path and verify it lies inside an ALLOWED_ROOTS entry. Returns None on violation."""
+    if not path:
+        return None
+    try:
+        p = Path(os.path.expanduser(path)).resolve()
+    except (OSError, ValueError):
+        return None
+    for root in config.ALLOWED_ROOTS:
+        if p == root or p.is_relative_to(root):
+            return p
+    return None
+
+
+def _forbidden():
+    return JSONResponse({"error": "Forbidden path"}, 403)
+
+
 @router.get("/browse")
 async def browse(path: str = Query("~"), _=Depends(verify)):
-    p = Path(os.path.expanduser(path)).resolve()
+    p = _safe_path(path)
+    if p is None:
+        return _forbidden()
     if not p.is_dir():
         return {"path": str(p), "dirs": []}
     dirs = sorted([d.name for d in p.iterdir() if d.is_dir() and not d.name.startswith(".")])
@@ -26,7 +47,9 @@ async def browse(path: str = Query("~"), _=Depends(verify)):
 
 @router.get("/files")
 async def files(path: str = Query("~"), _=Depends(verify)):
-    p = Path(os.path.expanduser(path)).resolve()
+    p = _safe_path(path)
+    if p is None:
+        return _forbidden()
     if not p.is_dir():
         return {"path": str(p), "entries": []}
     entries = []
@@ -48,7 +71,9 @@ async def files(path: str = Query("~"), _=Depends(verify)):
 
 @router.get("/file")
 async def read_file(path: str = Query(...), _=Depends(verify)):
-    p = Path(os.path.expanduser(path)).resolve()
+    p = _safe_path(path)
+    if p is None:
+        return _forbidden()
     if not p.is_file():
         return JSONResponse({"error": "Not a file"}, 404)
     if p.stat().st_size > 10 * 1024 * 1024:
@@ -62,7 +87,9 @@ async def read_file(path: str = Query(...), _=Depends(verify)):
 
 @router.get("/file-raw")
 async def read_file_raw(path: str = Query(...), _=Depends(verify)):
-    p = Path(os.path.expanduser(path)).resolve()
+    p = _safe_path(path)
+    if p is None:
+        return _forbidden()
     if not p.is_file():
         return JSONResponse({"error": "Not a file"}, 404)
     mime = mimetypes.guess_type(str(p))[0] or "application/octet-stream"
@@ -77,9 +104,10 @@ async def read_file_raw(path: str = Query(...), _=Depends(verify)):
 
 @router.post("/file")
 async def write_file(req: dict, _=Depends(verify)):
-    path = req.get("path", "")
+    p = _safe_path(req.get("path", ""))
+    if p is None:
+        return _forbidden()
     content = req.get("content", "")
-    p = Path(os.path.expanduser(path)).resolve()
     try:
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(content)
@@ -90,8 +118,10 @@ async def write_file(req: dict, _=Depends(verify)):
 
 @router.post("/rename")
 async def rename(req: dict, _=Depends(verify)):
-    src = Path(os.path.expanduser(req.get("from", ""))).resolve()
-    dst = Path(os.path.expanduser(req.get("to", ""))).resolve()
+    src = _safe_path(req.get("from", ""))
+    dst = _safe_path(req.get("to", ""))
+    if src is None or dst is None:
+        return _forbidden()
     try:
         src.rename(dst)
     except Exception as e:
@@ -101,7 +131,9 @@ async def rename(req: dict, _=Depends(verify)):
 
 @router.post("/delete")
 async def delete(req: dict, _=Depends(verify)):
-    p = Path(os.path.expanduser(req.get("path", ""))).resolve()
+    p = _safe_path(req.get("path", ""))
+    if p is None:
+        return _forbidden()
     try:
         if p.is_dir():
             shutil.rmtree(p)
@@ -114,7 +146,9 @@ async def delete(req: dict, _=Depends(verify)):
 
 @router.post("/mkdir")
 async def mkdir(req: dict, _=Depends(verify)):
-    p = Path(os.path.expanduser(req.get("path", ""))).resolve()
+    p = _safe_path(req.get("path", ""))
+    if p is None:
+        return _forbidden()
     try:
         p.mkdir(parents=True, exist_ok=True)
     except Exception as e:
@@ -129,7 +163,9 @@ _LATEX_CACHE: dict[str, tuple[float, str]] = {}  # path → (mtime, html)
 
 @router.get("/latex")
 async def render_latex(path: str = Query(...), _=Depends(verify)):
-    p = Path(os.path.expanduser(path)).resolve()
+    p = _safe_path(path)
+    if p is None:
+        return _forbidden()
     if not p.is_file():
         return JSONResponse({"error": "Not a file"}, 404)
 
@@ -185,8 +221,11 @@ async def render_latex(path: str = Query(...), _=Depends(verify)):
 
 @router.get("/latex-css/{name}")
 async def latex_css(name: str):
-    css_file = _LATEXML_CSS_DIR / name
-    if not css_file.is_file():
+    try:
+        css_file = (_LATEXML_CSS_DIR / name).resolve()
+    except (OSError, ValueError):
+        return JSONResponse({"error": "Not found"}, 404)
+    if not css_file.is_relative_to(_LATEXML_CSS_DIR) or not css_file.is_file():
         return JSONResponse({"error": "Not found"}, 404)
     return StreamingResponse(
         iter([css_file.read_bytes()]),
@@ -197,8 +236,12 @@ async def latex_css(name: str):
 
 @router.post("/upload")
 async def upload(request: Request, id: str = "", name: str = "", dir: str = "", _=Depends(verify)):
-    target_dir = Path(os.path.expanduser(dir)).resolve() if dir else Path.home()
-    target = target_dir / name
+    target_dir = _safe_path(dir) if dir else Path.home()
+    if target_dir is None:
+        return _forbidden()
+    target = _safe_path(str(target_dir / name))
+    if target is None:
+        return _forbidden()
     try:
         body = await request.body()
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -220,33 +263,39 @@ def _notes_file(filepath: str) -> Path:
 
 @router.get("/notes")
 async def get_notes(path: str = Query(...), _=Depends(verify)):
-    p = str(Path(os.path.expanduser(path)).resolve())
-    nf = _notes_file(p)
+    p = _safe_path(path)
+    if p is None:
+        return _forbidden()
+    nf = _notes_file(str(p))
     if not nf.exists():
-        return {"path": p, "notes": []}
+        return {"path": str(p), "notes": []}
     try:
         data = json.loads(nf.read_text())
-        return {"path": p, "notes": data.get("notes", [])}
+        return {"path": str(p), "notes": data.get("notes", [])}
     except Exception:
-        return {"path": p, "notes": []}
+        return {"path": str(p), "notes": []}
 
 
 @router.post("/notes")
 async def save_notes(req: dict, _=Depends(verify)):
-    filepath = str(Path(os.path.expanduser(req.get("path", ""))).resolve())
+    p = _safe_path(req.get("path", ""))
+    if p is None:
+        return _forbidden()
     notes = req.get("notes", [])
     NOTES_DIR.mkdir(parents=True, exist_ok=True)
-    nf = _notes_file(filepath)
-    nf.write_text(json.dumps({"filePath": filepath, "notes": notes, "updatedAt": int(time.time())}, ensure_ascii=False))
+    nf = _notes_file(str(p))
+    nf.write_text(json.dumps({"filePath": str(p), "notes": notes, "updatedAt": int(time.time())}, ensure_ascii=False))
     return {"ok": True}
 
 
 @router.post("/notes/delete")
 async def delete_note(req: dict, _=Depends(verify)):
-    filepath = str(Path(os.path.expanduser(req.get("path", ""))).resolve())
+    p = _safe_path(req.get("path", ""))
+    if p is None:
+        return _forbidden()
     start = req.get("startLine")
     end = req.get("endLine")
-    nf = _notes_file(filepath)
+    nf = _notes_file(str(p))
     if not nf.exists():
         return {"ok": True}
     try:

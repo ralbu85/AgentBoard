@@ -29,3 +29,11 @@ DEFAULT_COMMAND: str = _cfg.get("defaultCommand", "claude")
 
 FIFO_DIR = Path("/tmp")
 TITLES_FILE = PROJECT_ROOT / ".session-titles.json"
+
+# File API access boundary. Override with AGENTBOARD_ALLOWED_ROOTS=/a,/b,/c.
+_default_roots = [str(Path.home()), "/workspace"]
+ALLOWED_ROOTS: list[Path] = [
+    Path(os.path.expanduser(r)).resolve()
+    for r in os.getenv("AGENTBOARD_ALLOWED_ROOTS", ",".join(_default_roots)).split(",")
+    if r.strip()
+]
