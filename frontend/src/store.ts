@@ -10,7 +10,7 @@ export interface ViewerTab {
   lang: string
 }
 
-interface TermHubState {
+interface AppState {
   sessions: Record<string, Session>
   activeId: string | null
   titles: Record<string, string>
@@ -36,7 +36,7 @@ interface TermHubState {
   setSessions: (sessions: Session[]) => void
 }
 
-export const useStore = create<TermHubState>((set, get) => ({
+export const useStore = create<AppState>((set, get) => ({
   sessions: {},
   activeId: null,
   titles: {},
@@ -94,7 +94,7 @@ export const useStore = create<TermHubState>((set, get) => ({
   removeSession: (id) => {
     const state = get()
     const { [id]: _, ...rest } = state.sessions
-    const updates: Partial<TermHubState> = { sessions: rest }
+    const updates: Partial<AppState> = { sessions: rest }
     if (state.activeId === id) {
       const ids = Object.keys(rest)
       updates.activeId = ids.length > 0 ? ids[0] : null
