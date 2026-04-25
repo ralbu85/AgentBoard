@@ -93,10 +93,10 @@ export function open(id: string, container: HTMLElement) {
   }
 }
 
-// Keep the font at its natural target size (no desktop zoom-in). On desktop
-// the row count grows to fill the container so actual terminal content reaches
-// the bottom. On mobile we lock to CANONICAL_ROWS to avoid shrinking the font.
+// Rows scale to fill the terminal container on both mobile and desktop —
+// width drives font, height drives row count.
 const TARGET_FONT = isMobile ? 10 : 13
+const MIN_FONT = 8
 const _lastSentRows = new Map<string, number>()
 
 export function refit(id: string) {
@@ -106,43 +106,31 @@ export function refit(id: string) {
   if (!container) return
 
   const cH = container.clientHeight
-  if (cH <= 0) return
+  const cW = container.clientWidth
+  if (cH <= 0 || cW <= 0) return
 
   const core = (t.term as any)._core
   const cellH = core?._renderService?.dimensions?.css?.cell?.height
-  if (!cellH) return
+  const cellW = core?._renderService?.dimensions?.css?.cell?.width
+  if (!cellH || !cellW) return
 
   const curFont = (t.term.options.fontSize as number) || TARGET_FONT
-  const cellPerFont = cellH / curFont
-  const neededH = cellPerFont * TARGET_FONT * CANONICAL_ROWS
+  const cellWPerFont = cellW / curFont
+  const fontByWidth = Math.floor(cW / (CANONICAL_COLS * cellWPerFont))
+  const newFont = Math.max(MIN_FONT, Math.min(TARGET_FONT, fontByWidth))
 
-  let newFont: number
-  if (neededH <= cH) {
-    newFont = TARGET_FONT
-  } else {
-    const scaleH = cH / (CANONICAL_ROWS * cellH)
-    newFont = Math.max(8, Math.floor(curFont * scaleH))
-  }
-
-  let fontChanged = false
   if (newFont !== curFont) {
     t.term.options.fontSize = newFont
-    fontChanged = true
   }
+  const effectiveCellH = core?._renderService?.dimensions?.css?.cell?.height || cellH
 
-  const effectiveCellH = fontChanged
-    ? (core?._renderService?.dimensions?.css?.cell?.height || cellH * (newFont / curFont))
-    : cellH
+  const fitRows = Math.max(CANONICAL_ROWS, Math.min(200, Math.floor(cH / effectiveCellH)))
 
-  const fitRows = isMobile
-    ? CANONICAL_ROWS
-    : Math.max(CANONICAL_ROWS, Math.min(200, Math.floor(cH / effectiveCellH)))
-
-  if (fontChanged || t.term.rows !== fitRows || t.term.cols !== CANONICAL_COLS) {
+  if (t.term.rows !== fitRows || t.term.cols !== CANONICAL_COLS) {
     t.term.resize(CANONICAL_COLS, fitRows)
   }
 
-  if (!isMobile && _lastSentRows.get(id) !== fitRows) {
+  if (_lastSentRows.get(id) !== fitRows) {
     _lastSentRows.set(id, fitRows)
     send({ type: 'resize', id, rows: fitRows })
   }

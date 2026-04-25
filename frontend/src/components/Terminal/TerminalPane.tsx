@@ -35,16 +35,25 @@ export function TerminalPane() {
     return () => clearInterval(interval)
   }, [])
 
-  // Re-scale font when container size changes (window resize, sidebar toggle, split drag…)
+  // Refit on container size changes. Debounced so keyboard show/hide animation
+  // (many ResizeObserver fires) collapses into one resize round-trip.
   useEffect(() => {
+    let timer: number | undefined
     const doRefit = () => {
-      const id = useStore.getState().activeId
-      if (id) requestAnimationFrame(() => TM.refit(id))
+      window.clearTimeout(timer)
+      timer = window.setTimeout(() => {
+        const id = useStore.getState().activeId
+        if (id) TM.refit(id)
+      }, 150)
     }
     window.addEventListener('resize', doRefit)
     const ro = new ResizeObserver(doRefit)
     if (containerRef.current) ro.observe(containerRef.current)
-    return () => { window.removeEventListener('resize', doRefit); ro.disconnect() }
+    return () => {
+      window.clearTimeout(timer)
+      window.removeEventListener('resize', doRefit)
+      ro.disconnect()
+    }
   }, [])
 
   const handleScrollBottom = () => {
@@ -61,7 +70,14 @@ export function TerminalPane() {
         </div>
       )}
       {showScrollBtn && (
-        <button className="scroll-bottom-btn" onClick={handleScrollBottom}>↓ Bottom</button>
+        <button
+          className="scroll-bottom-btn"
+          onClick={handleScrollBottom}
+          aria-label="Scroll to bottom"
+        >
+          <span className="sb-arrow">↓</span>
+          <span className="sb-text"> Bottom</span>
+        </button>
       )}
     </div>
   )
