@@ -7,6 +7,7 @@ from typing import Set
 from fastapi import WebSocket, WebSocketDisconnect
 
 from . import tmux, streamer
+from .auth import verify_ws
 from .sessions import store, CANONICAL_COLS, CANONICAL_ROWS
 
 clients: Set[WebSocket] = set()
@@ -45,6 +46,11 @@ async def _safe_send(ws: WebSocket, data: str):
 
 async def handle_ws(ws: WebSocket):
     await ws.accept()
+    if not verify_ws(ws):
+        # Accept-then-close so the client sees the 4401 application close code
+        # (closing pre-accept becomes an HTTP 403 the browser can't read).
+        await ws.close(code=4401)
+        return
     async with _lock:
         clients.add(ws)
 

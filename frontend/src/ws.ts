@@ -35,9 +35,14 @@ export function initWs() {
     }
   }
 
-  ws.onclose = () => {
+  ws.onclose = (e) => {
     document.getElementById('status-dot')?.classList.add('off')
     ws = null
+    if (e.code === 4401) {
+      // Server rejected the cookie — bounce to login via fresh load
+      location.reload()
+      return
+    }
     setTimeout(initWs, 2000)
   }
 
