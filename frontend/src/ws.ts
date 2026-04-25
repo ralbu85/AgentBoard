@@ -4,6 +4,7 @@ import type { WsMessage } from './types'
 let ws: WebSocket | null = null
 let _pendingActive: string | null = null
 const _pendingSend: object[] = []
+let _retryDelay = 1000  // ms; doubles per failure up to 30s
 
 // Terminal write callbacks — set by TerminalManager
 export const terminalHandlers = {
@@ -22,6 +23,7 @@ export function initWs() {
 
   ws.onopen = () => {
     document.getElementById('status-dot')?.classList.remove('off')
+    _retryDelay = 1000  // reset backoff on successful connect
     // Always re-send current active session on (re)connect
     const activeId = _pendingActive || useStore.getState().activeId
     if (activeId) {
@@ -43,7 +45,8 @@ export function initWs() {
       location.reload()
       return
     }
-    setTimeout(initWs, 2000)
+    setTimeout(initWs, _retryDelay)
+    _retryDelay = Math.min(_retryDelay * 2, 30000)
   }
 
   ws.onmessage = (e) => {
