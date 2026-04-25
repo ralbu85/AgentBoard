@@ -210,11 +210,13 @@ export function writeSnapshot(id: string, data: string) {
     _pendingSnapshots.set(id, data)
     return
   }
-  // clear() wipes both viewport AND scrollback — otherwise consecutive
-  // snapshots (initial active, post-resize SIGWINCH) would append their 2000
-  // rows of history on top of what's already there, creating duplicates.
-  t.term.clear()
-  t.term.write('\x1b[2J\x1b[H' + data, () => {
+  // \x1b[3J trims xterm's scrollback, \x1b[2J clears the visible rows,
+  // \x1b[H homes the cursor. Embedding all three in the data string puts
+  // them in the same write-queue entry as the snapshot — atomic relative
+  // to other queued writes. (term.clear() runs synchronously but write()
+  // is async, so a fast resync that triggers two snapshots in flight
+  // could otherwise stack their contents.)
+  t.term.write('\x1b[3J\x1b[2J\x1b[H' + data, () => {
     t.term.scrollToBottom()
   })
 }
