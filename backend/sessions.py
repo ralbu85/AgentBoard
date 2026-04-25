@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Callable, Optional
 
 from . import config, tmux
+from .logger import log
 
 # Tmux pane size is FIXED at these values for every session.
 # Clients (desktop + mobile) never resize — they always render this canonical size.
@@ -63,14 +64,15 @@ class SessionStore:
         if config.TITLES_FILE.exists():
             try:
                 self._titles = json.loads(config.TITLES_FILE.read_text())
-            except Exception:
+            except Exception as e:
+                log.warning("titles file unreadable, resetting: %s", e)
                 self._titles = {}
 
     def _save_titles(self):
         try:
             config.TITLES_FILE.write_text(json.dumps(self._titles))
-        except Exception:
-            pass
+        except Exception as e:
+            log.warning("titles file save failed: %s", e)
 
     def set_title(self, id: str, title: str | None):
         if title:

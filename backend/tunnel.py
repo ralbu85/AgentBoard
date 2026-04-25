@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import re
 from . import config
+from .logger import log
 
 
 _proc: asyncio.subprocess.Process | None = None
@@ -70,7 +71,7 @@ async def _run_loop():
         except asyncio.CancelledError:
             break
         except Exception:
-            pass
+            log.exception("cloudflared tunnel crashed; restarting in 5s")
 
         _url = None
         await asyncio.sleep(5)
@@ -86,5 +87,5 @@ async def _post_discord(url: str):
             stderr=asyncio.subprocess.DEVNULL,
         )
         await proc.wait()
-    except Exception:
-        pass
+    except Exception as e:
+        log.warning("discord webhook post failed: %s", e)

@@ -11,6 +11,7 @@ from fastapi.responses import StreamingResponse, JSONResponse
 
 from . import config
 from .auth import verify
+from .logger import log
 
 router = APIRouter(prefix="/api")
 
@@ -26,6 +27,7 @@ def _safe_path(path: str) -> Path | None:
     for root in config.ALLOWED_ROOTS:
         if p == root or p.is_relative_to(root):
             return p
+    log.warning("path traversal blocked: %r → %s", path, p)
     return None
 
 
@@ -193,7 +195,8 @@ async def get_notes(path: str = Query(...), _=Depends(verify)):
     try:
         data = json.loads(nf.read_text())
         return {"path": str(p), "notes": data.get("notes", [])}
-    except Exception:
+    except Exception as e:
+        log.warning("notes file unreadable for %s: %s", p, e)
         return {"path": str(p), "notes": []}
 
 
@@ -223,6 +226,6 @@ async def delete_note(req: dict, _=Depends(verify)):
         data = json.loads(nf.read_text())
         data["notes"] = [n for n in data.get("notes", []) if not (n.get("startLine") == start and n.get("endLine") == end)]
         nf.write_text(json.dumps(data, ensure_ascii=False))
-    except Exception:
-        pass
+    except Exception as e:
+        log.warning("note delete failed for %s: %s", p, e)
     return {"ok": True}

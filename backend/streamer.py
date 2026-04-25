@@ -16,6 +16,7 @@ import os
 from typing import Callable
 
 from . import tmux, config
+from .logger import log
 from .state_detector import detect_state
 
 _broadcast: Callable | None = None
@@ -156,7 +157,7 @@ async def _read_fifo(id: str, session_name: str, fifo: str):
     except asyncio.CancelledError:
         pass
     except Exception:
-        pass
+        log.exception("FIFO reader crashed for session id=%s name=%s", id, session_name)
     finally:
         if fd is not None:
             try:
@@ -185,7 +186,8 @@ async def get_snapshot(id: str, session_name: str) -> str:
     try:
         visible = await tmux.capture_pane(session_name, lines=0, ansi=True)
         _last_screen[id] = _strip_cursor(visible)
-    except Exception:
+    except Exception as e:
+        log.debug("snapshot fallback (visible capture failed) for %s: %s", session_name, e)
         _last_screen[id] = _strip_cursor(raw)
 
     return raw.rstrip("\n").replace("\n", "\r\n")
@@ -201,8 +203,8 @@ async def poll_now(id: str):
         if output != _last_screen.get(id):
             _last_screen[id] = output
             broadcast({"type": "screen", "id": id, "data": output.rstrip("\n").replace("\n", "\r\n")})
-    except Exception:
-        pass
+    except Exception as e:
+        log.debug("poll_now capture failed for %s: %s", s.session_name, e)
 
 
 # ── Background polling ──
@@ -249,8 +251,8 @@ async def _poll_active():
                     _last_state_check[sid] = now
                     stable_for = now - _last_change_at.get(sid, 0)
                     _detect_state(sid, s, output, stable_for)
-            except Exception:
-                pass
+            except Exception as e:
+                log.debug("active poll failed for %s: %s", s.session_name, e)
 
 
 async def _poll_background():
@@ -279,8 +281,8 @@ async def _poll_background():
                 )
                 _update_info(id, s, info)
                 _detect_state(id, s, tail)
-            except Exception:
-                pass
+            except Exception as e:
+                log.debug("background poll failed for %s: %s", s.session_name, e)
 
 
 async def _poll_active_info():
@@ -298,8 +300,8 @@ async def _poll_active_info():
                 info = await tmux.display_info(s.session_name)
                 _update_info(sid, s, info)
                 # State detection already handled by _poll_active — skip here
-            except Exception:
-                pass
+            except Exception as e:
+                log.debug("active info poll failed for %s: %s", s.session_name, e)
 
 
 # ── Helpers ──

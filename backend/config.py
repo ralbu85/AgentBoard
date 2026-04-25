@@ -20,8 +20,10 @@ _cfg: dict = {}
 if _cfg_path.exists():
     try:
         _cfg = json.loads(_cfg_path.read_text())
-    except Exception:
-        pass
+    except Exception as e:
+        # config is optional; just warn so the user can spot a malformed file
+        import sys
+        print(f"warning: config.json unreadable, using defaults: {e}", file=sys.stderr)
 
 BASE_PATH: str = _cfg.get("basePath", "")
 FAVORITES: list = _cfg.get("favorites", [])

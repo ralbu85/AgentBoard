@@ -7,6 +7,7 @@ from fastapi import FastAPI, Response
 from fastapi.responses import FileResponse
 
 from . import config, streamer, tunnel
+from .logger import log
 from .sessions import store
 from .routes_session import router as session_router
 from .routes_file import router as file_router
@@ -32,9 +33,9 @@ async def lifespan(app: FastAPI):
         await tunnel.start()
 
     if config.PASSWORD == "changeme":
-        print(f"\n  ⚠  Using default password 'changeme' — set DASHBOARD_PASSWORD in .env\n")
+        log.warning("Using default password 'changeme' — set DASHBOARD_PASSWORD in .env")
 
-    print(f"  AgentBoard running on http://localhost:{config.PORT}\n")
+    log.info("AgentBoard running on http://localhost:%s", config.PORT)
     yield
 
     await streamer.stop_all()

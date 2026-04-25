@@ -8,6 +8,7 @@ from fastapi import WebSocket, WebSocketDisconnect
 
 from . import tmux, streamer
 from .auth import verify_ws
+from .logger import log
 from .sessions import store, CANONICAL_COLS, CANONICAL_ROWS
 
 clients: Set[WebSocket] = set()
@@ -31,7 +32,8 @@ def broadcast(msg: dict):
         try:
             if ws.client_state.name == "CONNECTED":
                 asyncio.create_task(_safe_send(ws, data))
-        except Exception:
+        except Exception as e:
+            log.debug("broadcast: dropping dead client: %s", e)
             dead.append(ws)
     for ws in dead:
         clients.discard(ws)
@@ -40,7 +42,8 @@ def broadcast(msg: dict):
 async def _safe_send(ws: WebSocket, data: str):
     try:
         await ws.send_text(data)
-    except Exception:
+    except Exception as e:
+        log.debug("ws send failed (client dropped): %s", e)
         clients.discard(ws)
 
 
@@ -77,8 +80,8 @@ async def handle_ws(ws: WebSocket):
         titles = store.titles
         if titles:
             await ws.send_text(json.dumps({"type": "titles", "titles": titles}))
-    except Exception:
-        pass
+    except Exception as e:
+        log.debug("ws initial state send failed: %s", e)
 
     # Message loop
     try:
@@ -89,7 +92,7 @@ async def handle_ws(ws: WebSocket):
     except WebSocketDisconnect:
         pass
     except Exception:
-        pass
+        log.exception("ws message loop crashed")
     finally:
         async with _lock:
             clients.discard(ws)
