@@ -24,6 +24,10 @@ export function TerminalPane() {
     if (!activeId || !containerRef.current) return
     TM.open(activeId, containerRef.current)
     TM.show(activeId)
+    // The terminal element may have been sized for a different container
+    // (rotation, split-pane drag, mobile keyboard) before this session was
+    // last viewed. Recompute now that it's visible again.
+    TM.refit(activeId)
   }, [activeId])
 
   // Poll scroll state for button visibility

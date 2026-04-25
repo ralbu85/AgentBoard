@@ -29,7 +29,7 @@ export function create(id: string): TermInstance {
   const term = new Terminal({
     cols: CANONICAL_COLS,
     rows: CANONICAL_ROWS,
-    cursorBlink: true,
+    cursorBlink: !isMobile,  // mobile has no stdin — blinking cursor only confuses
     cursorStyle: 'bar',
     disableStdin: isMobile,
     scrollback: 10000,
@@ -116,15 +116,18 @@ export function refit(id: string) {
 
   const curFont = (t.term.options.fontSize as number) || TARGET_FONT
   const cellWPerFont = cellW / curFont
+  const cellHPerFont = cellH / curFont
   const fontByWidth = Math.floor(cW / (CANONICAL_COLS * cellWPerFont))
   const newFont = Math.max(MIN_FONT, Math.min(TARGET_FONT, fontByWidth))
 
   if (newFont !== curFont) {
     t.term.options.fontSize = newFont
   }
-  const effectiveCellH = core?._renderService?.dimensions?.css?.cell?.height || cellH
+  // Project cell height from the (font-independent) ratio so we don't read a
+  // stale dimension before xterm has applied the new fontSize.
+  const projectedCellH = cellHPerFont * newFont
 
-  const fitRows = Math.max(CANONICAL_ROWS, Math.min(200, Math.floor(cH / effectiveCellH)))
+  const fitRows = Math.max(CANONICAL_ROWS, Math.min(200, Math.floor(cH / projectedCellH)))
 
   if (t.term.rows !== fitRows || t.term.cols !== CANONICAL_COLS) {
     t.term.resize(CANONICAL_COLS, fitRows)
