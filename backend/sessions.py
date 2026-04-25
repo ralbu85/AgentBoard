@@ -109,13 +109,22 @@ class SessionStore:
     async def spawn(self, cwd: str, cmd: str = "") -> Session:
         cmd = cmd or config.DEFAULT_COMMAND
         cwd = cwd or os.path.expanduser("~")
+
+        # Reserve the id synchronously (before any await) so concurrent spawns
+        # never collide on _next_id or pick the same `term-N` session name.
         id_str = str(self._next_id)
+        self._next_id += 1
         session_name = f"term-{id_str}"
 
-        await tmux.new_session(session_name, cwd, cmd)
-        await tmux.resize_window(session_name, CANONICAL_COLS, CANONICAL_ROWS)
+        try:
+            await tmux.new_session(session_name, cwd, cmd)
+            await tmux.resize_window(session_name, CANONICAL_COLS, CANONICAL_ROWS)
+        except Exception:
+            log.exception("spawn failed for %s", session_name)
+            raise
 
-        s = self.add(session_name, cwd, cmd)
+        s = Session(id=id_str, session_name=session_name, cwd=cwd, cmd=cmd)
+        self.sessions[id_str] = s
         self.broadcast({
             "type": "spawned",
             "id": s.id, "cwd": s.cwd, "cmd": s.cmd,
