@@ -48,9 +48,6 @@ cd frontend && npm install
 
 # Start only
 ./start.sh
-
-# Test (mobile emulation via Playwright)
-backend/.venv/bin/python test-mobile.py
 ```
 
 ## Key Design Decisions
@@ -105,14 +102,3 @@ backend/.venv/bin/python test-mobile.py
 ### WebSocket (`/ws`)
 Client→Server: `resize`, `active`, `resync`, `title`, `key`, `terminal-input`, `input`
 Server→Client: `spawned`, `snapshot`, `screen`, `stream`, `status`, `cwd`, `aiState`, `info`, `title`, `titles`
-
-## Test Environment
-
-```bash
-# Playwright mobile emulation test
-backend/.venv/bin/python test-mobile.py
-
-# Tests: login, UP/DOWN scroll, momentum, position preservation,
-#        scroll-to-bottom button, send button
-# Note: CDP touch direction is OPPOSITE of real device
-```
