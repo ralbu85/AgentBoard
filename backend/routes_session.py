@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, Response, Request, HTTPException
 
 from .auth import verify
 from .sessions import store
-from .models import LoginRequest, SpawnRequest, InputRequest, KeyRequest, AttachRequest
+from .models import LoginRequest, SpawnRequest, InputRequest, KeyRequest, AttachRequest, SessionIdRequest
 from . import config, tmux, streamer
 
 router = APIRouter(prefix="/api")
@@ -55,33 +55,30 @@ async def spawn(req: SpawnRequest, _=Depends(verify)):
 
 
 @router.post("/kill")
-async def kill(req: dict, _=Depends(verify)):
-    id = req.get("id", "")
-    s = store.get(id)
+async def kill(req: SessionIdRequest, _=Depends(verify)):
+    s = store.get(req.id)
     if s:
-        await streamer.stop_stream(id, s.session_name)
-    ok = await store.kill(id)
+        await streamer.stop_stream(req.id, s.session_name)
+    ok = await store.kill(req.id)
     return {"ok": ok}
 
 
 @router.post("/remove")
-async def remove(req: dict, _=Depends(verify)):
-    id = req.get("id", "")
-    s = store.get(id)
+async def remove(req: SessionIdRequest, _=Depends(verify)):
+    s = store.get(req.id)
     if s:
-        await streamer.stop_stream(id, s.session_name)
-    store.remove(id)
+        await streamer.stop_stream(req.id, s.session_name)
+    store.remove(req.id)
     return {"ok": True}
 
 
 @router.post("/reconnect")
-async def reconnect(req: dict, _=Depends(verify)):
-    id = req.get("id", "")
-    ok = await store.reconnect(id)
+async def reconnect(req: SessionIdRequest, _=Depends(verify)):
+    ok = await store.reconnect(req.id)
     if ok:
-        s = store.get(id)
+        s = store.get(req.id)
         if s:
-            await streamer.start_stream(id, s.session_name)
+            await streamer.start_stream(req.id, s.session_name)
     return {"ok": ok}
 
 

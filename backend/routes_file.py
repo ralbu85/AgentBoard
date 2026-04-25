@@ -12,6 +12,7 @@ from fastapi.responses import StreamingResponse, JSONResponse
 from . import config
 from .auth import verify
 from .logger import log
+from .models import FileWriteRequest, RenameRequest, DeleteRequest, MkdirRequest
 
 router = APIRouter(prefix="/api")
 
@@ -104,23 +105,22 @@ async def read_file_raw(path: str = Query(...), _=Depends(verify)):
 
 
 @router.post("/file")
-async def write_file(req: dict, _=Depends(verify)):
-    p = _safe_path(req.get("path", ""))
+async def write_file(req: FileWriteRequest, _=Depends(verify)):
+    p = _safe_path(req.path)
     if p is None:
         return _forbidden()
-    content = req.get("content", "")
     try:
         p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(content)
+        p.write_text(req.content)
     except Exception as e:
         return {"ok": False, "error": str(e)}
     return {"ok": True, "path": str(p)}
 
 
 @router.post("/rename")
-async def rename(req: dict, _=Depends(verify)):
-    src = _safe_path(req.get("from", ""))
-    dst = _safe_path(req.get("to", ""))
+async def rename(req: RenameRequest, _=Depends(verify)):
+    src = _safe_path(req.from_path)
+    dst = _safe_path(req.to_path)
     if src is None or dst is None:
         return _forbidden()
     try:
@@ -131,8 +131,8 @@ async def rename(req: dict, _=Depends(verify)):
 
 
 @router.post("/delete")
-async def delete(req: dict, _=Depends(verify)):
-    p = _safe_path(req.get("path", ""))
+async def delete(req: DeleteRequest, _=Depends(verify)):
+    p = _safe_path(req.path)
     if p is None:
         return _forbidden()
     try:
@@ -146,8 +146,8 @@ async def delete(req: dict, _=Depends(verify)):
 
 
 @router.post("/mkdir")
-async def mkdir(req: dict, _=Depends(verify)):
-    p = _safe_path(req.get("path", ""))
+async def mkdir(req: MkdirRequest, _=Depends(verify)):
+    p = _safe_path(req.path)
     if p is None:
         return _forbidden()
     try:
