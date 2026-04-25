@@ -20,7 +20,7 @@ else
 fi
 
 for i in $(seq 1 10); do
-  if curl -s -o /dev/null -w '' http://localhost:$PORT/ 2>/dev/null; then
+  if curl -sf -o /dev/null http://localhost:$PORT/api/health 2>/dev/null; then
     echo "Server ready on :$PORT (v=$V)"
     exit 0
   fi

@@ -49,6 +49,11 @@ app.include_router(file_router)
 app.add_api_websocket_route("/ws", handle_ws)
 
 
+@app.get("/api/health")
+async def health():
+    return {"ok": True, "sessions": len(store.sessions)}
+
+
 def _serve_index():
     """Always read index.html fresh from disk so deploys take effect immediately."""
     html_path = _frontend_dist / "index.html"
