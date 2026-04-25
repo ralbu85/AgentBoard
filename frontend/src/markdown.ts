@@ -1,5 +1,6 @@
 import { Marked } from 'marked'
 import markedKatex from 'marked-katex-extension'
+import { sanitize } from './sanitize'
 
 const md = new Marked()
 md.use(markedKatex({ throwOnError: false, nonStandard: true }))
@@ -30,5 +31,5 @@ export function renderMarkdown(src: string, filePath?: string): string {
       return `<img src="${resolveImgSrc(imgSrc, baseDir)}"`
     })
   }
-  return html
+  return sanitize(html)
 }

@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback, memo } from 'react'
 import { PdfViewer } from '../PdfViewer'
 import { renderMarkdown } from '../../markdown'
+import { sanitize } from '../../sanitize'
 
 // Lazy highlight.js
 let _hljs: any = null
@@ -117,6 +118,7 @@ export const FileContent = memo(function FileContent({ content, type, lang, memo
           } else {
             html = hljs.highlightAuto(content).value
           }
+          html = sanitize(html)
           setHighlighted(html)
           setHighlightedLines(splitHighlightedLines(html))
         } catch {}

@@ -3,6 +3,7 @@ import { api } from '../api'
 import { useStore } from '../store'
 import type { FileEntry } from '../types'
 import { renderMarkdown } from '../markdown'
+import { sanitize } from '../sanitize'
 import { PdfViewer } from './PdfViewer'
 
 // ── Tree Node component (VS Code style) ──
@@ -108,8 +109,10 @@ async function getHljs() {
 function lazyHighlight(code: string, lang: string): Promise<string> {
   return getHljs().then(hljs => {
     try {
-      if (lang && hljs.getLanguage(lang)) return hljs.highlight(code, { language: lang }).value
-      return hljs.highlightAuto(code).value
+      const html = (lang && hljs.getLanguage(lang))
+        ? hljs.highlight(code, { language: lang }).value
+        : hljs.highlightAuto(code).value
+      return sanitize(html)
     } catch { return code.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') }
   })
 }
