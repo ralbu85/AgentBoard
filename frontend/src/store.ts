@@ -99,7 +99,7 @@ export const useStore = create<AppState>((set, get) => ({
       const ids = Object.keys(rest)
       updates.activeId = ids.length > 0 ? ids[0] : null
     }
-    set(updates as any)
+    set(updates)
   },
 
   setSessions: (sessions) => {

@@ -59,7 +59,7 @@ export function SpawnModal({ open, onClose }: Props) {
       } else {
         setError(res.error || 'Failed')
       }
-    } catch (e: any) { setError(e?.message || 'Error') }
+    } catch (e) { setError(e instanceof Error ? e.message : 'Error') }
     setSubmitting(false)
   }
 

@@ -158,7 +158,7 @@ export function FilePanel({ initialPath, onClose }: Props) {
   const [path, setPath] = useState(initialPath)
   const [pathInput, setPathInput] = useState(initialPath)
   const [entries, setEntries] = useState<FileEntry[]>([])
-  const [preview, setPreview] = useState<{name: string; content: string; type: 'code'|'markdown'|'pdf'|'image'; lang: string; path?: string} | null>(null)
+  const [preview, setPreview] = useState<{name: string; content: string; type: 'code'|'markdown'|'latex'|'pdf'|'image'; lang: string; path?: string} | null>(null)
   const [loading, setLoading] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -194,7 +194,7 @@ export function FilePanel({ initialPath, onClose }: Props) {
     if (entry.type === 'dir') { setPath(full); setPreview(null); return }
     const e = getExt(entry.name)
 
-    const makeTab = (name: string, content: string, type: 'code'|'markdown'|'pdf'|'image', lang: string) => ({
+    const makeTab = (name: string, content: string, type: 'code'|'markdown'|'latex'|'pdf'|'image', lang: string) => ({
       id: full, name, path: full, content, type, lang,
     })
 
@@ -355,7 +355,7 @@ export function FilePanel({ initialPath, onClose }: Props) {
         <TreeDir dirPath={initialPath} name={folder} depth={0} onFileClick={(fullPath, entry) => {
           // Reuse existing handleClick logic but with full path
           const e = getExt(entry.name)
-          const makeTab = (name: string, content: string, type: 'code'|'markdown'|'pdf'|'image', lang: string) => ({
+          const makeTab = (name: string, content: string, type: 'code'|'markdown'|'latex'|'pdf'|'image', lang: string) => ({
             id: fullPath, name, path: fullPath, content, type, lang,
           })
           if (PDF_EXTS.has(e)) {

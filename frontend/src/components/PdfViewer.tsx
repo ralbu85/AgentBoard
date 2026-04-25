@@ -70,9 +70,10 @@ export function PdfViewer({ url }: Props) {
         pdfRef.current = pdf
         setPages(pdf.numPages)
         setStatus('')
-      } catch (e: any) {
+      } catch (e) {
         if (cancelled) return
-        setError(e?.name === 'AbortError' ? 'Timeout' : (e?.message || String(e)))
+        const err = e as { name?: string; message?: string } | null
+        setError(err?.name === 'AbortError' ? 'Timeout' : (err?.message || String(e)))
         setStatus('')
       }
     }

@@ -144,7 +144,7 @@ export const FileContent = memo(function FileContent({ content, type, lang, memo
     const findPos = (node: Node, offset: number) => {
       let el: HTMLElement | null = node instanceof HTMLElement ? node : node.parentElement
       while (el && el.tagName !== 'TR') el = el.parentElement
-      const line = el ? Array.from(rows).indexOf(el) + 1 : 0
+      const line = el ? Array.from(rows).indexOf(el as HTMLTableRowElement) + 1 : 0
       const td = el?.querySelector('.fv-line-content')
       if (!td) return { line, col: offset + 1 }
       const r = document.createRange()

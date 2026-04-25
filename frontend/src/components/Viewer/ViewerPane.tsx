@@ -4,7 +4,6 @@ import { api } from '../../api'
 import { FileContent, type Memo, type SelectionInfo } from './FileContent'
 import { CodeEditor } from './CodeEditor'
 import { renderMarkdown } from '../../markdown'
-import { api } from '../../api'
 
 type SplitDir = 'horizontal' | 'vertical'
 type DropZone = 'left' | 'right' | 'top' | 'bottom' | 'center'

@@ -14,7 +14,7 @@ export const terminalHandlers = {
 }
 
 // Debug counters (accessible from console/tests)
-;(window as any).__wsDebug = { screenCount: 0, lastScreenId: '', lastScreenLen: 0, snapshotCount: 0 }
+window.__wsDebug = { screenCount: 0, lastScreenId: '', lastScreenLen: 0, snapshotCount: 0 }
 
 export function initWs() {
   if (ws && (ws.readyState === WebSocket.CONNECTING || ws.readyState === WebSocket.OPEN)) return
@@ -56,10 +56,10 @@ export function initWs() {
     // Only use snapshot + screen (capture-pane polling).
     // Do NOT use stream (pipe-pane) — raw escape sequences destroy scrollback.
     if (msg.type === 'snapshot') {
-      (window as any).__wsDebug.snapshotCount++
+      window.__wsDebug.snapshotCount++
       terminalHandlers.onSnapshot?.(msg.id, msg.data)
     } else if (msg.type === 'screen') {
-      const d = (window as any).__wsDebug
+      const d = window.__wsDebug
       d.screenCount++
       d.lastScreenId = msg.id
       d.lastScreenLen = msg.data?.length || 0
@@ -80,7 +80,7 @@ export function send(msg: object) {
 }
 
 export function notifyActive(id: string | null) {
-  const d = (window as any).__wsDebug
+  const d = window.__wsDebug
   if (d) { d.lastNotifyActive = id; d.notifyActiveCount = (d.notifyActiveCount || 0) + 1; d.wsState = ws?.readyState }
   if (ws && ws.readyState === WebSocket.OPEN) {
     send({ type: 'active', id: id || '' })

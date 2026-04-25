@@ -1,12 +1,14 @@
 import { useToasts } from './toasts'
+import type { Memo } from './components/Viewer/FileContent'
 
 const BASE = ''
 // Endpoints whose failures the caller handles (we do not auto-toast).
 const SILENT = new Set(['/api/login', '/api/workers', '/api/config'])
 
-function reportFailure(url: string, body: any, status: number) {
+function reportFailure(url: string, body: unknown, status: number) {
   if (SILENT.has(url)) return
-  const detail = body?.error || body?.detail || (status >= 400 ? `HTTP ${status}` : 'request failed')
+  const b = body as { error?: unknown; detail?: unknown } | null
+  const detail = b?.error ?? b?.detail ?? (status >= 400 ? `HTTP ${status}` : 'request failed')
   const label = url.replace(/^\/api\//, '')
   useToasts.getState().push(`${label}: ${typeof detail === 'string' ? detail : JSON.stringify(detail)}`)
 }
@@ -52,7 +54,7 @@ export const api = {
   delete: (path: string) => post('/api/delete', { path }),
   mkdir: (path: string) => post('/api/mkdir', { path }),
   loadNotes: (path: string) => get(`/api/notes?path=${encodeURIComponent(path)}`),
-  saveNotes: (path: string, notes: any[]) => post('/api/notes', { path, notes }),
+  saveNotes: (path: string, notes: Memo[]) => post('/api/notes', { path, notes }),
   deleteNote: (path: string, startLine: number, endLine: number) => post('/api/notes/delete', { path, startLine, endLine }),
   upload: async (dir: string, file: File) => {
     const url = `/api/upload?dir=${encodeURIComponent(dir)}&name=${encodeURIComponent(file.name)}`
