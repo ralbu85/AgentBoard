@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends, Response, Request
+import time
+
+from fastapi import APIRouter, Depends, Response, Request, HTTPException
 
 from .auth import verify
 from .sessions import store
@@ -8,12 +10,34 @@ from . import config, tmux, streamer
 router = APIRouter(prefix="/api")
 
 
+# Per-IP login throttle: { ip: (failed_count, locked_until_ts) }
+_LOGIN_FAILS: dict[str, tuple[int, float]] = {}
+_LOGIN_MAX_FAILS = 5
+_LOGIN_LOCKOUT_S = 60.0
+
+
 @router.post("/login")
-async def login(req: LoginRequest, response: Response):
+async def login(req: LoginRequest, request: Request, response: Response):
     import hashlib, hmac
+    ip = request.client.host if request.client else "?"
+    fails, locked_until = _LOGIN_FAILS.get(ip, (0, 0.0))
+    now = time.monotonic()
+    if locked_until > now:
+        retry_after = int(locked_until - now) + 1
+        raise HTTPException(status_code=429, detail=f"Too many failed logins; retry in {retry_after}s")
+    if locked_until and locked_until <= now:
+        # Lockout expired — start fresh so a single typo doesn't immediately re-lock
+        fails = 0
+        locked_until = 0.0
+
     token = hmac.new(b"termhub", req.pw.encode(), hashlib.sha256).hexdigest()
     if token != config.AUTH_TOKEN:
+        fails += 1
+        locked_until = now + _LOGIN_LOCKOUT_S if fails >= _LOGIN_MAX_FAILS else 0.0
+        _LOGIN_FAILS[ip] = (fails, locked_until)
         return {"ok": False}
+
+    _LOGIN_FAILS.pop(ip, None)  # Successful login resets the counter for this IP
     response.set_cookie("token", config.AUTH_TOKEN, path="/", httponly=True)
     return {"ok": True}
 
