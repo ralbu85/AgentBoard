@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Optional
@@ -61,16 +62,33 @@ class SessionStore:
     # ── Titles ──
 
     def _load_titles(self):
-        if config.TITLES_FILE.exists():
+        if not config.TITLES_FILE.exists():
+            return
+        try:
+            self._titles = json.loads(config.TITLES_FILE.read_text())
+        except Exception as e:
+            # Don't silently overwrite an unreadable file — a save right after
+            # would erase the (likely truncated) JSON for good. Move it aside
+            # so the operator can recover anything salvageable, then start fresh.
+            backup = config.TITLES_FILE.with_name(
+                f"{config.TITLES_FILE.name}.corrupt-{int(time.time())}"
+            )
             try:
-                self._titles = json.loads(config.TITLES_FILE.read_text())
-            except Exception as e:
-                log.warning("titles file unreadable, resetting: %s", e)
-                self._titles = {}
+                config.TITLES_FILE.rename(backup)
+                log.warning("titles file unreadable, moved to %s: %s", backup, e)
+            except Exception as backup_err:
+                log.warning("titles file unreadable AND backup failed: %s / %s", e, backup_err)
+            self._titles = {}
 
     def _save_titles(self):
+        # Atomic write: a SIGTERM mid-write used to truncate the file, which
+        # then failed to parse on next start and got reset to {}. write to a
+        # sibling tmp + os.replace() keeps the original intact until the new
+        # contents are fully on disk.
         try:
-            config.TITLES_FILE.write_text(json.dumps(self._titles))
+            tmp = config.TITLES_FILE.with_name(config.TITLES_FILE.name + ".tmp")
+            tmp.write_text(json.dumps(self._titles))
+            os.replace(tmp, config.TITLES_FILE)
         except Exception as e:
             log.warning("titles file save failed: %s", e)
 

@@ -52,9 +52,16 @@ export function initWs() {
   ws.onmessage = (e) => {
     const msg: WsMessage = JSON.parse(e.data)
 
-    // Route terminal data to xterm.js (outside React render)
-    // Only use snapshot + screen (capture-pane polling).
-    // Do NOT use stream (pipe-pane) — raw escape sequences destroy scrollback.
+    // Route terminal data to xterm.js (outside React render).
+    //  - snapshot: full pane + 2000 lines of scrollback. Sent on session switch,
+    //              resize, resync, AND mid-burst (when tmux #{history_size} grew
+    //              between two polls — see streamer._poll_active). writeSnapshot
+    //              rebuilds the buffer atomically.
+    //  - screen:   visible viewport overwrite (poll, ~80ms). Cheap diff frames
+    //              that only touch the visible grid; scrollback is preserved.
+    //  - stream:   raw pipe-pane FIFO. Disabled on the client — its escape
+    //              sequences would shred xterm's scrollback. Backend-only,
+    //              used solely to fill the state-detection ring buffer.
     if (msg.type === 'snapshot') {
       window.__wsDebug.snapshotCount++
       terminalHandlers.onSnapshot?.(msg.id, msg.data)

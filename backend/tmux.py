@@ -39,6 +39,12 @@ async def capture_pane(session_name: str, lines: int = 50, ansi: bool = True) ->
     return await tmux_run(args)
 
 
+async def history_size(session_name: str) -> int:
+    """Number of lines currently in the pane's scrollback (above visible area)."""
+    raw = (await tmux_run(["display-message", "-t", session_name, "-p", "#{history_size}"])).strip()
+    return int(raw) if raw.isdigit() else 0
+
+
 async def send_keys(session_name: str, keys: str, literal: bool = False) -> None:
     args = ["send-keys", "-t", session_name]
     if literal:

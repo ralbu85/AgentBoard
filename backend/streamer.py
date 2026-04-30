@@ -27,6 +27,7 @@ _last_screen: dict[str, str] = {}            # id → last capture for diffing
 _last_broadcast_time: dict[str, float] = {}  # id → last broadcast monotonic time
 _last_change_at: dict[str, float] = {}       # id → monotonic time of last output change
 _last_state_check: dict[str, float] = {}     # id → monotonic time of last state check
+_last_history_size: dict[str, int] = {}      # id → tmux #{history_size} at last poll
 
 import re as _re
 import time as _time
@@ -134,6 +135,7 @@ async def stop_stream(id: str, session_name: str):
     _last_screen.pop(id, None)
     _last_change_at.pop(id, None)
     _last_state_check.pop(id, None)
+    _last_history_size.pop(id, None)
 
 
 async def _read_fifo(id: str, session_name: str, fifo: str):
@@ -211,6 +213,13 @@ async def get_snapshot(id: str, session_name: str) -> str:
         log.debug("snapshot fallback (visible capture failed) for %s: %s", session_name, e)
         _last_screen[id] = _strip_cursor(raw)
 
+    # Sync history baseline so the next active poll doesn't re-broadcast
+    # scrollback already included in this snapshot
+    try:
+        _last_history_size[id] = await tmux.history_size(session_name)
+    except Exception as e:
+        log.debug("history_size sync failed for %s: %s", session_name, e)
+
     return raw.rstrip("\n").replace("\n", "\r\n")
 
 
@@ -257,6 +266,34 @@ async def _poll_active():
             if not s or s.status in ("stopped", "completed"):
                 continue
             try:
+                # Detect scrollback growth: lines that scrolled off visible since
+                # the last poll. capture-pane(lines=0) only sees the post-burst
+                # viewport, so a fast burst (e.g. `cat largefile`) loses everything
+                # above it. When history grew, re-snapshot atomically — writeSnapshot
+                # rebuilds scrollback + visible in one write and preserves the
+                # ordering, sidestepping the cursor games that an append-style stream
+                # would require.
+                current_hist = await tmux.history_size(s.session_name)
+                last_hist = _last_history_size.get(sid)
+                if last_hist is not None and current_hist > last_hist:
+                    snapshot_raw = await tmux.capture_pane(s.session_name, lines=2000, ansi=True)
+                    if snapshot_raw:
+                        broadcast({
+                            "type": "snapshot",
+                            "id": sid,
+                            "data": snapshot_raw.rstrip("\n").replace("\n", "\r\n"),
+                        })
+                        _last_broadcast_time[sid] = now
+                    visible = await tmux.capture_pane(s.session_name, lines=0, ansi=True)
+                    _last_screen[sid] = _strip_cursor(visible)
+                    _last_history_size[sid] = current_hist
+                    _last_change_at[sid] = now
+                    _last_state_check[sid] = now
+                    _detect_state(sid, s, visible, 0.0)
+                    continue
+
+                _last_history_size[sid] = current_hist
+
                 output = await tmux.capture_pane(s.session_name, lines=0, ansi=True)
                 stripped = _strip_cursor(output)
                 changed = stripped != _last_screen.get(sid)

@@ -114,6 +114,7 @@ cd frontend && npm run dev
 ### Terminal / rendering
 - **Don't apply snapshots incrementally.** Stacks the scrollback every switch. Build the full payload, write once.
 - **Don't pipe raw `pipe-pane` output to xterm.** Escape sequences shred the scrollback. We poll `capture-pane` instead.
+- **Don't `screen`-broadcast (visible-only) when scrollback grew between polls.** `capture-pane -S 0` only sees the post-burst viewport, so anything that scrolled off during a fast burst (`cat largefile`) vanishes from the client. `_poll_active` watches `#{history_size}` and re-snapshots when it grows. Stream-style append doesn't work here either — it duplicates already-visible lines and leaves cursor in the wrong row. Atomic snapshot is the only correct option.
 - **Don't fight xterm's touch handlers — disable them.** `pointer-events: none` on `.xterm*` and ride your own.
 - **Don't trust Playwright/CDP touch direction.** It's inverted vs real devices. Verify on a phone.
 - **Don't tune polling globally.** Adaptive only — active fast, background slow.
@@ -126,6 +127,7 @@ cd frontend && npm run dev
 ### Concurrency
 - **Don't `await` before reserving a session id in `spawn()`.** Two parallel spawns will collide. Reserve sync, fill async.
 - **Don't reconnect the WebSocket on a tight loop.** Backoff exponentially with a cap.
+- **Don't `write_text` JSON state in-place.** A SIGTERM between truncate and write leaves a half-written file; on next start `_load_titles` parsed an empty/garbage file, reset `_titles` to `{}`, and the next save committed the wipe to disk. Atomic write (`tmp + os.replace`) + don't auto-overwrite an unparseable file (rename to `.corrupt-<ts>` first) — see `sessions.py`.
 
 ### Security
 - **Don't accept untyped JSON.** Pydantic + max-length on every model — we got bit by huge payloads.
