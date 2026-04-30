@@ -9,12 +9,15 @@ md.use({ breaks: true, gfm: true })
 /** Resolve image src to /api/file-raw endpoint */
 function resolveImgSrc(src: string, baseDir: string): string {
   if (src.startsWith('http://') || src.startsWith('https://') || src.startsWith('data:')) return src
+  // marked URL-encodes non-ASCII chars in image src; decode before re-encoding to avoid double-encoding (e.g. Korean/space paths).
+  let decoded = src
+  try { decoded = decodeURIComponent(src) } catch { /* leave as-is on malformed sequence */ }
   let full: string
-  if (src.startsWith('/')) {
-    full = src
+  if (decoded.startsWith('/')) {
+    full = decoded
   } else {
     const parts = baseDir.replace(/\/$/, '').split('/')
-    for (const seg of src.split('/')) {
+    for (const seg of decoded.split('/')) {
       if (seg === '..') parts.pop()
       else if (seg !== '.') parts.push(seg)
     }
