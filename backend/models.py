@@ -2,6 +2,10 @@ from pydantic import BaseModel, Field
 
 
 _SESSION_NAME_PATTERN = r"^[A-Za-z0-9_\-]{1,64}$"
+_HOST_PATTERN = r"^local$|^[a-z0-9_-]{1,32}$"
+# Ids may be namespaced as "<host>:<localId>" for remote sessions, so the bound
+# is larger than a bare local id (host<=32 + ':' + local).
+_ID_MAX = 128
 _PATH_MAX = 4096
 _CONTENT_MAX = 10 * 1024 * 1024  # mirrors the 10MB read limit in routes_file
 _INPUT_MAX = 1024 * 1024         # paste-friendly upper bound for terminal input
@@ -13,13 +17,15 @@ class LoginRequest(BaseModel):
 class SpawnRequest(BaseModel):
     cwd: str = Field(default="", max_length=_PATH_MAX)
     cmd: str = Field(default="", max_length=_PATH_MAX)
+    host: str = Field(default="local", pattern=_HOST_PATTERN)
+    reqId: str = Field(default="", max_length=64)
 
 class InputRequest(BaseModel):
-    id: str = Field(min_length=1, max_length=64)
+    id: str = Field(min_length=1, max_length=_ID_MAX)
     text: str = Field(max_length=_INPUT_MAX)
 
 class KeyRequest(BaseModel):
-    id: str = Field(min_length=1, max_length=64)
+    id: str = Field(min_length=1, max_length=_ID_MAX)
     key: str = Field(min_length=1, max_length=64)
 
 class AttachRequest(BaseModel):
@@ -27,7 +33,7 @@ class AttachRequest(BaseModel):
     cwd: str = Field(default="", max_length=_PATH_MAX)
 
 class SessionIdRequest(BaseModel):
-    id: str = Field(min_length=1, max_length=64)
+    id: str = Field(min_length=1, max_length=_ID_MAX)
 
 class FileWriteRequest(BaseModel):
     path: str = Field(min_length=1, max_length=_PATH_MAX)
@@ -44,3 +50,13 @@ class DeleteRequest(BaseModel):
 
 class MkdirRequest(BaseModel):
     path: str = Field(min_length=1, max_length=_PATH_MAX)
+
+class NotesSaveRequest(BaseModel):
+    path: str = Field(min_length=1, max_length=_PATH_MAX)
+    # Bounded list so a client can't grow the on-disk notes file without limit.
+    notes: list[dict] = Field(default_factory=list, max_length=10000)
+
+class NoteDeleteRequest(BaseModel):
+    path: str = Field(min_length=1, max_length=_PATH_MAX)
+    startLine: int | None = None
+    endLine: int | None = None

@@ -28,9 +28,25 @@ load_dotenv(PROJECT_ROOT.parent.parent / ".env")  # /workspace/.env when nested 
 load_dotenv(Path("/root/TermHub/.env"))            # legacy fallback location
 
 PORT = int(os.getenv("AGENTBOARD_PORT", os.getenv("V3_PORT", "3002")))
+# Bind to loopback by default: nginx (same host) proxies :12019 → here, and
+# remote agents dial in via nginx over wss, so the backend never needs to be
+# reachable directly on the network. Override with AGENTBOARD_HOST if needed.
+HOST = os.getenv("AGENTBOARD_HOST", "127.0.0.1")
 PASSWORD = os.getenv("DASHBOARD_PASSWORD", "changeme")
+# Refuse to serve with the shipped default password (auth would be bypassable
+# since the token is a deterministic hash of it). Set AGENTBOARD_ALLOW_DEFAULT_PW=1
+# only for throwaway local dev.
+ALLOW_DEFAULT_PW = os.getenv("AGENTBOARD_ALLOW_DEFAULT_PW", "") == "1"
+# Send the auth cookie only over HTTPS. Default off so plain-HTTP access (e.g.
+# a LAN dev setup) still works; turn on once you serve over TLS.
+COOKIE_SECURE = os.getenv("AGENTBOARD_COOKIE_SECURE", "") == "1"
 DISCORD_WEBHOOK = os.getenv("DISCORD_WEBHOOK", "")
 AUTH_TOKEN = hmac.new(b"termhub", PASSWORD.encode(), hashlib.sha256).hexdigest()
+
+# Shared secret remote agents present to /agent-ws. Defaults to AUTH_TOKEN for
+# zero-config single-secret setups; set a separate AGENT_TOKEN to decouple the
+# agent's full-shell access from the dashboard login password.
+AGENT_TOKEN = os.getenv("AGENT_TOKEN", AUTH_TOKEN)
 
 _cfg_path = PROJECT_ROOT / "config.json"
 _cfg: dict = {}

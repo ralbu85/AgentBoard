@@ -36,7 +36,8 @@ async function get(url: string) {
 export const api = {
   login: (pw: string) => post('/api/login', { pw }),
   workers: () => get('/api/workers'),
-  spawn: (cwd: string, cmd = '') => post('/api/spawn', { cwd, cmd }),
+  hosts: () => get('/api/hosts'),
+  spawn: (cwd: string, cmd = '', host = 'local', reqId = '') => post('/api/spawn', { cwd, cmd, host, reqId }),
   kill: (id: string) => post('/api/kill', { id }),
   remove: (id: string) => post('/api/remove', { id }),
   reconnect: (id: string) => post('/api/reconnect', { id }),

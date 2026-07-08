@@ -6,23 +6,19 @@ from typing import Set
 
 from fastapi import WebSocket, WebSocketDisconnect
 
-from . import tmux, streamer
+from . import tmux, streamer, commands
+from .agents import registry
 from .auth import verify_ws
 from .logger import log
+from .namespace import LOCAL, split_id
 from .sessions import store, CANONICAL_COLS, CANONICAL_ROWS
 
 clients: Set[WebSocket] = set()
 _lock = asyncio.Lock()
 
-SEQ_MAP = {
-    "\r": "Enter", "\x1b": "Escape", "\t": "Tab",
-    "\x1b[A": "Up", "\x1b[B": "Down", "\x1b[C": "Right", "\x1b[D": "Left",
-    "\x7f": "BSpace", "\x08": "BSpace",
-    "\x03": "C-c", "\x04": "C-d", "\x1a": "C-z",
-    "\x1b[H": "Home", "\x1b[F": "End",
-    "\x1b[5~": "PageUp", "\x1b[6~": "PageDown",
-    "\x1b[3~": "DC",
-}
+# Which remote (host, local_id) each browser ws is currently viewing. Lets us
+# tell an agent to drop back to background polling once its last viewer leaves.
+_ws_remote: dict[int, tuple[str, str]] = {}
 
 
 def broadcast(msg: dict):
@@ -80,6 +76,30 @@ async def handle_ws(ws: WebSocket):
         titles = store.titles
         if titles:
             await ws.send_text(json.dumps({"type": "titles", "titles": titles}))
+
+        # Replay remote sessions from connected agents (mirror) so a browser
+        # connecting after an agent sees its sessions. ids are already prefixed.
+        for d in registry.mirror():
+            await ws.send_text(json.dumps({
+                "type": "spawned",
+                "id": d["id"], "cwd": d["cwd"], "cmd": d["cmd"],
+                "status": d["status"], "sessionName": d["sessionName"],
+                "host": d["host"], "hostLabel": d["hostLabel"],
+            }))
+            if d["status"] != "stopped":
+                await ws.send_text(json.dumps({"type": "status", "id": d["id"], "status": d["status"]}))
+            if d.get("aiState"):
+                await ws.send_text(json.dumps({"type": "aiState", "id": d["id"], "state": d["aiState"]}))
+            if d.get("cwd"):
+                await ws.send_text(json.dumps({"type": "cwd", "id": d["id"], "cwd": d["cwd"]}))
+            if d.get("process") or d.get("createdAt"):
+                await ws.send_text(json.dumps({
+                    "type": "info", "id": d["id"],
+                    "process": d["process"], "createdAt": d["createdAt"], "memKB": d["memKB"],
+                }))
+        remote_titles = registry.mirror_titles()
+        if remote_titles:
+            await ws.send_text(json.dumps({"type": "titles", "titles": remote_titles}))
     except Exception as e:
         log.debug("ws initial state send failed: %s", e)
 
@@ -97,69 +117,83 @@ async def handle_ws(ws: WebSocket):
         async with _lock:
             clients.discard(ws)
         streamer.remove_client(id(ws))
+        await _release_remote(id(ws))
 
 
 async def _handle_msg(msg: dict, ws: WebSocket):
     msg_type = msg.get("type", "")
-    msg_id = msg.get("id", "")
+    host, local_id = split_id(msg.get("id", ""))
 
-    if msg_type == "resize":
-        rows = msg.get("rows")
-        if isinstance(rows, int) and CANONICAL_ROWS <= rows <= 200:
-            s = store.get(msg_id)
-            if s and rows != s.display_rows:
-                s.display_rows = rows
-                await tmux.resize_window(s.session_name, CANONICAL_COLS, rows)
-                # Give the TUI time to handle SIGWINCH and redraw
-                await asyncio.sleep(0.15)
-                # Full snapshot with history so the viewport fills via scrollback
-                output = await streamer.get_snapshot(msg_id, s.session_name)
-                if output:
-                    broadcast({"type": "snapshot", "id": msg_id, "data": output})
+    # `active` needs cross-host coordination (only one fast-polled session per
+    # machine), so it's handled specially rather than blindly forwarded.
+    if msg_type == "active":
+        await _handle_active(host, local_id, ws)
+        return
 
-    elif msg_type == "active":
-        streamer.set_active(msg_id or None, ws_id=id(ws))
-        if msg_id:
-            s = store.get(msg_id)
-            if s:
-                # Apply the session's current display size (last client's resize wins)
-                await tmux.resize_window(s.session_name, CANONICAL_COLS, s.display_rows)
-                output = await streamer.get_snapshot(msg_id, s.session_name)
-                if output:
-                    await ws.send_text(json.dumps({"type": "snapshot", "id": msg_id, "data": output}))
+    if host != LOCAL:
+        # Remote session — forward the command to its agent with the bare id.
+        m = dict(msg)
+        m["id"] = local_id
+        await registry.send(host, m)
+        return
 
-    elif msg_type == "resync":
-        s = store.get(msg_id)
-        if s:
-            output = await streamer.get_snapshot(msg_id, s.session_name)
-            if output:
-                await ws.send_text(json.dumps({"type": "snapshot", "id": msg_id, "data": output}))
+    async def reply(m: dict):
+        try:
+            await ws.send_text(json.dumps(m))
+        except Exception as e:
+            log.debug("ws reply failed: %s", e)
 
-    elif msg_type == "title":
-        store.set_title(msg_id, msg.get("title"))
+    m = dict(msg)
+    m["id"] = local_id
+    await commands.apply_command(store, streamer, tmux, m, reply=reply, ws_id=id(ws))
 
-    elif msg_type == "key":
-        s = store.get(msg_id)
-        if s:
-            await tmux.send_keys(s.session_name, msg.get("key", ""))
-            await streamer.poll_now(msg_id)
 
-    elif msg_type == "terminal-input":
-        s = store.get(msg_id)
-        data = msg.get("data", "")
-        if s and data:
-            mapped = SEQ_MAP.get(data)
-            if mapped:
-                await tmux.send_keys(s.session_name, mapped)
-            else:
-                await tmux.send_keys(s.session_name, data, literal=True)
-            await streamer.poll_now(msg_id)
+async def _handle_active(host: str, local_id: str, ws: WebSocket):
+    """Switch the active (fast-polled) session, coordinating across machines.
 
-    elif msg_type == "input":
-        s = store.get(msg_id)
-        if s:
-            lines = msg.get("text", "").split("\n")
-            for line in lines:
-                await tmux.send_keys(s.session_name, line, literal=True)
-                await tmux.send_keys(s.session_name, "Enter")
-            await streamer.poll_now(msg_id)
+    Each browser ws is tracked independently on the owning agent via its hub
+    ws_id (sent as `wsId`), so two browsers viewing different sessions on the
+    same host each get their own 80 ms poll instead of clobbering one slot.
+    """
+    ws_id = id(ws)
+
+    async def reply(m: dict):
+        try:
+            await ws.send_text(json.dumps(m))
+        except Exception as e:
+            log.debug("ws reply failed: %s", e)
+
+    prev = _ws_remote.pop(ws_id, None)
+    new_remote = (host, local_id) if (host != LOCAL and local_id) else None
+
+    # Demote this browser's previous remote view on its owning agent (per-ws).
+    if prev and prev != new_remote:
+        await registry.send(prev[0], {"type": "active", "id": "", "wsId": ws_id})
+
+    if host == LOCAL:
+        # Local session (or deactivate when local_id == ""). set_active + snapshot.
+        await commands.apply_command(
+            store, streamer, tmux,
+            {"type": "active", "id": local_id}, reply=reply, ws_id=ws_id,
+        )
+    else:
+        # Viewing a remote session: this ws has no local active session.
+        streamer.set_active(None, ws_id=ws_id)
+        if new_remote:
+            _ws_remote[ws_id] = new_remote
+            await registry.send(host, {"type": "active", "id": local_id, "wsId": ws_id})
+
+
+async def _release_remote(ws_id: int):
+    """A browser disconnected — deactivate the remote session it was viewing."""
+    prev = _ws_remote.pop(ws_id, None)
+    if prev:
+        await registry.send(prev[0], {"type": "active", "id": "", "wsId": ws_id})
+
+
+async def resume_active_for_host(host: str):
+    """After an agent (re)connects, resume fast-polling the sessions browsers are
+    currently viewing on it — the agent starts with no active state."""
+    for ws_id, (h, local_id) in list(_ws_remote.items()):
+        if h == host:
+            await registry.send(host, {"type": "active", "id": local_id, "wsId": ws_id})

@@ -121,6 +121,23 @@ body {
 }
 .spawn-input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
 
+.spawn-host-select {
+  width: 100%; padding: 6px 10px; font-size: 13px;
+  background: var(--bg-primary); color: var(--text-primary);
+  border: 1px solid var(--border); border-radius: 6px; outline: none;
+}
+.spawn-host-select:focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+
+/* Multi-machine: per-host group header in the session list */
+.session-group-header {
+  padding: 8px 10px 4px; font-size: 10px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.8px; color: var(--text-muted);
+}
+.header-host-label {
+  font-size: 11px; padding: 1px 6px; border-radius: 4px;
+  background: var(--accent-soft); color: var(--text-muted);
+}
+
 .spawn-recents { display: flex; flex-direction: column; gap: 1px; margin-top: 4px; }
 .spawn-recent {
   display: flex; align-items: center; gap: 6px;

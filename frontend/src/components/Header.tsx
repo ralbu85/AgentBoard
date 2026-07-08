@@ -38,6 +38,12 @@ export function Header({ onToggleSidebar }: Props) {
   const activeState = activeId ? effectiveState(activeId) || 'idle' : null
   const activeDisplay = ACTIVE_STATE_DISPLAY[activeState || 'idle']
 
+  // Show which machine the active session lives on (remote only).
+  const activeSession = activeId ? sessions[activeId] : null
+  const activeHostLabel = activeSession && activeSession.host && activeSession.host !== 'local'
+    ? (activeSession.hostLabel || activeSession.host)
+    : null
+
   const handleSpawn = () => setShowSpawn(true)
 
   const handleScan = async () => {
@@ -68,6 +74,7 @@ export function Header({ onToggleSidebar }: Props) {
       </div>
       {activeDisplay && (
         <div className={`header-active-state ${activeDisplay.cls}`}>
+          {activeHostLabel && <span className="header-host-label">{activeHostLabel}</span>}
           <span>{activeDisplay.icon}</span> {activeDisplay.label}
         </div>
       )}

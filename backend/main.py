@@ -12,6 +12,7 @@ from .sessions import store
 from .routes_session import router as session_router
 from .routes_file import router as file_router
 from .ws import handle_ws, broadcast
+from .agent_ws import handle_agent_ws
 
 _frontend_dist = Path(__file__).parent.parent / "frontend" / "dist"
 
@@ -32,8 +33,11 @@ async def lifespan(app: FastAPI):
     if config.DISCORD_WEBHOOK:
         await tunnel.start()
 
-    if config.PASSWORD == "changeme":
-        log.warning("Using default password 'changeme' — set DASHBOARD_PASSWORD in .env")
+    if config.PASSWORD == "changeme" and not config.ALLOW_DEFAULT_PW:
+        raise RuntimeError(
+            "Refusing to start with the default password. Set DASHBOARD_PASSWORD "
+            "in .env (or AGENTBOARD_ALLOW_DEFAULT_PW=1 for throwaway local dev)."
+        )
 
     log.info("AgentBoard running on http://localhost:%s", config.PORT)
     yield
@@ -47,6 +51,7 @@ app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None)
 app.include_router(session_router)
 app.include_router(file_router)
 app.add_api_websocket_route("/ws", handle_ws)
+app.add_api_websocket_route("/agent-ws", handle_agent_ws)
 
 
 @app.get("/api/health")
@@ -70,8 +75,12 @@ if _frontend_dist.exists():
     @app.get("/{full_path:path}")
     async def serve_spa(full_path: str):
         if full_path:
-            static = _frontend_dist / full_path
-            if static.is_file():
+            # Contain the resolved path under dist — `..`/encoded-slash traversal
+            # (e.g. /..%2f..%2fetc/passwd) would otherwise read arbitrary files
+            # unauthenticated, since this route has no auth dependency.
+            dist_root = _frontend_dist.resolve()
+            static = (_frontend_dist / full_path).resolve()
+            if static.is_file() and static.is_relative_to(dist_root):
                 mime = mimetypes.guess_type(str(static))[0] or "application/octet-stream"
                 return Response(
                     content=static.read_bytes(),
@@ -85,7 +94,7 @@ def run():
     import uvicorn
     uvicorn.run(
         "backend.main:app",
-        host="0.0.0.0",
+        host=config.HOST,
         port=config.PORT,
         log_level="warning",
     )

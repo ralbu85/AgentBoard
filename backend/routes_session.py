@@ -5,7 +5,9 @@ from fastapi import APIRouter, Depends, Response, Request, HTTPException
 from .auth import verify
 from .sessions import store
 from .models import LoginRequest, SpawnRequest, InputRequest, KeyRequest, AttachRequest, SessionIdRequest
-from . import config, tmux, streamer
+from .agents import registry
+from .namespace import LOCAL, split_id
+from . import config, tmux, streamer, commands
 
 router = APIRouter(prefix="/api")
 
@@ -31,44 +33,59 @@ async def login(req: LoginRequest, request: Request, response: Response):
         locked_until = 0.0
 
     token = hmac.new(b"termhub", req.pw.encode(), hashlib.sha256).hexdigest()
-    if token != config.AUTH_TOKEN:
+    if not hmac.compare_digest(token, config.AUTH_TOKEN):
         fails += 1
         locked_until = now + _LOGIN_LOCKOUT_S if fails >= _LOGIN_MAX_FAILS else 0.0
         _LOGIN_FAILS[ip] = (fails, locked_until)
         return {"ok": False}
 
     _LOGIN_FAILS.pop(ip, None)  # Successful login resets the counter for this IP
-    response.set_cookie("token", config.AUTH_TOKEN, path="/", httponly=True)
+    response.set_cookie(
+        "token", config.AUTH_TOKEN, path="/",
+        httponly=True, samesite="lax", secure=config.COOKIE_SECURE,
+    )
     return {"ok": True}
 
 
 @router.get("/workers")
 async def workers(_=Depends(verify)):
+    # Local sessions carry no host field; the frontend defaults them to "local".
+    # Remote sessions reach the browser over the WebSocket mirror, not here.
     return [s.to_dict() for s in store.all()]
+
+
+@router.get("/hosts")
+async def hosts(_=Depends(verify)):
+    return [{"host": LOCAL, "label": "This machine", "online": True}] + registry.all_hosts()
 
 
 @router.post("/spawn")
 async def spawn(req: SpawnRequest, _=Depends(verify)):
-    s = await store.spawn(req.cwd, req.cmd)
-    await streamer.start_stream(s.id, s.session_name)
-    return {"ok": True, "id": s.id}
+    cmd_msg = {"type": "spawn", "cwd": req.cwd, "cmd": req.cmd, "reqId": req.reqId}
+    if req.host != LOCAL:
+        ok = await registry.send(req.host, cmd_msg)
+        return {"ok": ok}
+    new_id = await commands.apply_command(store, streamer, tmux, cmd_msg)
+    return {"ok": new_id is not None, "id": new_id}
 
 
 @router.post("/kill")
 async def kill(req: SessionIdRequest, _=Depends(verify)):
-    s = store.get(req.id)
-    if s:
-        await streamer.stop_stream(req.id, s.session_name)
-    ok = await store.kill(req.id)
+    host, local_id = split_id(req.id)
+    if host != LOCAL:
+        ok = await registry.send(host, {"type": "kill", "id": local_id})
+        return {"ok": ok}
+    ok = await commands.apply_command(store, streamer, tmux, {"type": "kill", "id": local_id})
     return {"ok": ok}
 
 
 @router.post("/remove")
 async def remove(req: SessionIdRequest, _=Depends(verify)):
-    s = store.get(req.id)
-    if s:
-        await streamer.stop_stream(req.id, s.session_name)
-    store.remove(req.id)
+    host, local_id = split_id(req.id)
+    if host != LOCAL:
+        ok = await registry.send(host, {"type": "remove", "id": local_id})
+        return {"ok": ok}
+    await commands.apply_command(store, streamer, tmux, {"type": "remove", "id": local_id})
     return {"ok": True}
 
 
@@ -107,35 +124,32 @@ async def scan(_=Depends(verify)):
 
 @router.post("/input")
 async def input_text(req: InputRequest, _=Depends(verify)):
-    s = store.get(req.id)
-    if not s:
-        return {"ok": False}
-    lines = req.text.split("\n")
-    for line in lines:
-        await tmux.send_keys(s.session_name, line, literal=True)
-        await tmux.send_keys(s.session_name, "Enter")
-    await streamer.poll_now(req.id)
+    host, local_id = split_id(req.id)
+    if host != LOCAL:
+        ok = await registry.send(host, {"type": "input", "id": local_id, "text": req.text})
+        return {"ok": ok}
+    await commands.apply_command(store, streamer, tmux, {"type": "input", "id": local_id, "text": req.text})
     return {"ok": True}
 
 
 @router.post("/paste")
 async def paste_text(req: InputRequest, _=Depends(verify)):
     """Paste multi-line text as a single block (no line-by-line splitting)."""
-    s = store.get(req.id)
-    if not s:
-        return {"ok": False}
-    await tmux.paste_text(s.session_name, req.text)
-    await streamer.poll_now(req.id)
+    host, local_id = split_id(req.id)
+    if host != LOCAL:
+        ok = await registry.send(host, {"type": "paste", "id": local_id, "text": req.text})
+        return {"ok": ok}
+    await commands.apply_command(store, streamer, tmux, {"type": "paste", "id": local_id, "text": req.text})
     return {"ok": True}
 
 
 @router.post("/key")
 async def send_key(req: KeyRequest, _=Depends(verify)):
-    s = store.get(req.id)
-    if not s:
-        return {"ok": False}
-    await tmux.send_keys(s.session_name, req.key)
-    await streamer.poll_now(req.id)
+    host, local_id = split_id(req.id)
+    if host != LOCAL:
+        ok = await registry.send(host, {"type": "key", "id": local_id, "key": req.key})
+        return {"ok": ok}
+    await commands.apply_command(store, streamer, tmux, {"type": "key", "id": local_id, "key": req.key})
     return {"ok": True}
 
 
@@ -145,5 +159,7 @@ async def get_config(_=Depends(verify)):
 
 
 @router.post("/perf")
-async def perf(req: dict, _=Depends(verify)):
+async def perf(_=Depends(verify)):
+    # No-op sink; accepts no body (an untyped dict body was an unbounded-payload
+    # footgun and the endpoint does nothing with it).
     return {"ok": True}

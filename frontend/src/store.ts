@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import type { Session, WsMessage } from './types'
+import { useToasts } from './toasts'
 
 export interface ViewerTab {
   id: string
@@ -24,6 +25,10 @@ interface AppState {
   // Completion flash tracking
   _completedAt: Record<string, number>
 
+  // Correlation map for spawns: reqId -> new session id (so the spawner can
+  // match its own session, even amid concurrent spawns on the same host).
+  _spawnReqs: Record<string, string>
+
   // Actions
   setActive: (id: string | null) => void
   removeSession: (id: string) => void
@@ -43,6 +48,7 @@ export const useStore = create<AppState>((set, get) => ({
   tunnelUrl: null,
   _viewerState: {},
   _completedAt: {},
+  _spawnReqs: {},
 
   // These are unused placeholders — use selectors instead:
   // useStore(s => s._viewerState[s.activeId]?.tabs || [])
@@ -104,7 +110,7 @@ export const useStore = create<AppState>((set, get) => ({
 
   setSessions: (sessions) => {
     const map: Record<string, Session> = {}
-    for (const s of sessions) map[s.id] = s
+    for (const s of sessions) map[s.id] = { ...s, host: s.host || 'local' }
     set({ sessions: map })
   },
 
@@ -126,10 +132,29 @@ export const useStore = create<AppState>((set, get) => ({
               process: '',
               createdAt: 0,
               memKB: 0,
+              host: msg.host || 'local',
+              hostLabel: msg.hostLabel,
             },
           },
+          ...(msg.reqId ? { _spawnReqs: { ...state._spawnReqs, [msg.reqId]: msg.id } } : {}),
         })
         break
+
+      case 'spawn-error':
+        useToasts.getState().push(`세션 생성 실패${msg.hostLabel ? ` (${msg.hostLabel})` : ''}: ${msg.error}`)
+        break
+
+      case 'removed': {
+        if (!state.sessions[msg.id]) break
+        const { [msg.id]: _, ...rest } = state.sessions
+        const updates: Partial<AppState> = { sessions: rest }
+        if (state.activeId === msg.id) {
+          const ids = Object.keys(rest)
+          updates.activeId = ids.length > 0 ? ids[0] : null
+        }
+        set(updates)
+        break
+      }
 
       case 'status': {
         const s = state.sessions[msg.id]

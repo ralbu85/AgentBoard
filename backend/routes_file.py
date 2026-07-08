@@ -12,7 +12,10 @@ from fastapi.responses import StreamingResponse, JSONResponse
 from . import config
 from .auth import verify
 from .logger import log
-from .models import FileWriteRequest, RenameRequest, DeleteRequest, MkdirRequest
+from .models import (
+    FileWriteRequest, RenameRequest, DeleteRequest, MkdirRequest,
+    NotesSaveRequest, NoteDeleteRequest,
+)
 
 router = APIRouter(prefix="/api")
 
@@ -158,7 +161,13 @@ async def mkdir(req: MkdirRequest, _=Depends(verify)):
 
 
 @router.post("/upload")
-async def upload(request: Request, id: str = "", name: str = "", dir: str = "", _=Depends(verify)):
+async def upload(
+    request: Request,
+    id: str = Query("", max_length=128),
+    name: str = Query("", max_length=255),
+    dir: str = Query("", max_length=4096),
+    _=Depends(verify),
+):
     target_dir = _safe_path(dir) if dir else Path.home()
     if target_dir is None:
         return _forbidden()
@@ -201,24 +210,23 @@ async def get_notes(path: str = Query(...), _=Depends(verify)):
 
 
 @router.post("/notes")
-async def save_notes(req: dict, _=Depends(verify)):
-    p = _safe_path(req.get("path", ""))
+async def save_notes(req: NotesSaveRequest, _=Depends(verify)):
+    p = _safe_path(req.path)
     if p is None:
         return _forbidden()
-    notes = req.get("notes", [])
     NOTES_DIR.mkdir(parents=True, exist_ok=True)
     nf = _notes_file(str(p))
-    nf.write_text(json.dumps({"filePath": str(p), "notes": notes, "updatedAt": int(time.time())}, ensure_ascii=False))
+    nf.write_text(json.dumps({"filePath": str(p), "notes": req.notes, "updatedAt": int(time.time())}, ensure_ascii=False))
     return {"ok": True}
 
 
 @router.post("/notes/delete")
-async def delete_note(req: dict, _=Depends(verify)):
-    p = _safe_path(req.get("path", ""))
+async def delete_note(req: NoteDeleteRequest, _=Depends(verify)):
+    p = _safe_path(req.path)
     if p is None:
         return _forbidden()
-    start = req.get("startLine")
-    end = req.get("endLine")
+    start = req.startLine
+    end = req.endLine
     nf = _notes_file(str(p))
     if not nf.exists():
         return {"ok": True}

@@ -124,7 +124,7 @@ class SessionStore:
         self._titles.pop(id, None)
         self._save_titles()
 
-    async def spawn(self, cwd: str, cmd: str = "") -> Session:
+    async def spawn(self, cwd: str, cmd: str = "", req_id: str | None = None) -> Session:
         cmd = cmd or config.DEFAULT_COMMAND
         cwd = cwd or os.path.expanduser("~")
 
@@ -143,11 +143,16 @@ class SessionStore:
 
         s = Session(id=id_str, session_name=session_name, cwd=cwd, cmd=cmd)
         self.sessions[id_str] = s
-        self.broadcast({
+        msg = {
             "type": "spawned",
             "id": s.id, "cwd": s.cwd, "cmd": s.cmd,
             "status": s.status, "sessionName": s.session_name,
-        })
+        }
+        # Echo the requester's correlation id so the spawning browser can match
+        # THIS session (not another concurrent spawn on the same host).
+        if req_id:
+            msg["reqId"] = req_id
+        self.broadcast(msg)
         return s
 
     async def kill(self, id: str) -> bool:

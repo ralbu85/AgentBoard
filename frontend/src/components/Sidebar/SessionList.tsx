@@ -81,15 +81,84 @@ export function SessionList({ onSelect, onOpenFiles }: Props) {
     ? allIds.filter((id) => {
         const s = sessions[id]
         const title = titles[id] || ''
+        const hostLabel = s.hostLabel || s.host || ''
         return (
           title.toLowerCase().includes(q) ||
           s.cmd.toLowerCase().includes(q) ||
           s.cwd.toLowerCase().includes(q) ||
           s.sessionName.toLowerCase().includes(q) ||
+          hostLabel.toLowerCase().includes(q) ||
           id.includes(q)
         )
       })
     : allIds
+
+  // Group by host. 'local' first, remaining hosts alphabetically by label.
+  const groups = new Map<string, string[]>()
+  for (const id of ids) {
+    const host = sessions[id].host || 'local'
+    if (!groups.has(host)) groups.set(host, [])
+    groups.get(host)!.push(id)
+  }
+  const hostLabelOf = (host: string) =>
+    host === 'local' ? 'This machine' : (sessions[groups.get(host)![0]].hostLabel || host)
+  const orderedHosts = [...groups.keys()].sort((a, b) => {
+    if (a === 'local') return -1
+    if (b === 'local') return 1
+    return hostLabelOf(a).localeCompare(hostLabelOf(b))
+  })
+  // Always show the machine header (even with just "This machine") so the
+  // multi-computer grouping is visible; remote groups appear as agents connect.
+  const showHeaders = groups.size > 0
+
+  const renderItem = (id: string) => {
+    const s = sessions[id]
+    const state = effectiveState(id) || 'running'
+    const title = titles[id] || `#${id} ${s.cmd}`
+    const isActive = id === activeId
+    const folder = s.cwd.split('/').pop() || s.cwd
+
+    return (
+      <div
+        key={id}
+        className={`session-item ${isActive ? 'active' : ''}`}
+        onClick={() => handleSelect(id)}
+      >
+        <span className={`session-dot dot-${state}`} style={{ background: STATE_COLORS[state] || '#6e7681' }} />
+        <div className="session-info">
+          {editingId === id ? (
+            <input ref={editRef} className="session-title-input" defaultValue={title}
+              onBlur={e => saveTitle(id, e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') saveTitle(id, (e.target as HTMLInputElement).value); if (e.key === 'Escape') setEditingId(null) }}
+              onClick={e => e.stopPropagation()}
+              autoFocus
+            />
+          ) : (
+            <div className="session-title" onDoubleClick={e => startEdit(e, id)}>{title}</div>
+          )}
+          <div className="session-meta">
+            <span className="session-path">{folder}</span>
+            <span className={`session-state state-${state}`}>{STATE_LABELS[state] || state}</span>
+          </div>
+        </div>
+        {onOpenFiles && s.status !== 'stopped' && s.status !== 'completed' && (
+          <button
+            className="btn btn-xs session-files-btn"
+            onClick={(e) => handleFiles(e, id)}
+            title="Browse files"
+          >
+            <svg width="12" height="12" viewBox="0 0 20 20" fill="none"><path d="M2 5C2 4 3 3 4 3H8L10 5H16C17 5 18 6 18 7V15C18 16 17 17 16 17H4C3 17 2 16 2 15V5Z" stroke="currentColor" strokeWidth="1.5"/></svg>
+          </button>
+        )}
+        <button
+          className={`btn btn-xs session-action ${s.status === 'stopped' || s.status === 'completed' ? 'action-remove' : ''}`}
+          onClick={(e) => handleAction(e, id, s)}
+        >
+          {s.status === 'stopped' || s.status === 'completed' ? '✕' : '■'}
+        </button>
+      </div>
+    )
+  }
 
   return (
     <div className="session-list">
@@ -104,54 +173,12 @@ export function SessionList({ onSelect, onOpenFiles }: Props) {
           />
         </div>
       )}
-      {ids.map((id) => {
-        const s = sessions[id]
-        const state = effectiveState(id) || 'running'
-        const title = titles[id] || `#${id} ${s.cmd}`
-        const isActive = id === activeId
-        const folder = s.cwd.split('/').pop() || s.cwd
-
-        return (
-          <div
-            key={id}
-            className={`session-item ${isActive ? 'active' : ''}`}
-            onClick={() => handleSelect(id)}
-          >
-            <span className={`session-dot dot-${state}`} style={{ background: STATE_COLORS[state] || '#6e7681' }} />
-            <div className="session-info">
-              {editingId === id ? (
-                <input ref={editRef} className="session-title-input" defaultValue={title}
-                  onBlur={e => saveTitle(id, e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter') saveTitle(id, (e.target as HTMLInputElement).value); if (e.key === 'Escape') setEditingId(null) }}
-                  onClick={e => e.stopPropagation()}
-                  autoFocus
-                />
-              ) : (
-                <div className="session-title" onDoubleClick={e => startEdit(e, id)}>{title}</div>
-              )}
-              <div className="session-meta">
-                <span className="session-path">{folder}</span>
-                <span className={`session-state state-${state}`}>{STATE_LABELS[state] || state}</span>
-              </div>
-            </div>
-            {onOpenFiles && s.status !== 'stopped' && s.status !== 'completed' && (
-              <button
-                className="btn btn-xs session-files-btn"
-                onClick={(e) => handleFiles(e, id)}
-                title="Browse files"
-              >
-                <svg width="12" height="12" viewBox="0 0 20 20" fill="none"><path d="M2 5C2 4 3 3 4 3H8L10 5H16C17 5 18 6 18 7V15C18 16 17 17 16 17H4C3 17 2 16 2 15V5Z" stroke="currentColor" strokeWidth="1.5"/></svg>
-              </button>
-            )}
-            <button
-              className={`btn btn-xs session-action ${s.status === 'stopped' || s.status === 'completed' ? 'action-remove' : ''}`}
-              onClick={(e) => handleAction(e, id, s)}
-            >
-              {s.status === 'stopped' || s.status === 'completed' ? '\u2715' : '\u25A0'}
-            </button>
-          </div>
-        )
-      })}
+      {orderedHosts.map((host) => (
+        <div className="session-group" key={host}>
+          {showHeaders && <div className="session-group-header">{hostLabelOf(host)}</div>}
+          {groups.get(host)!.map(renderItem)}
+        </div>
+      ))}
       {ids.length === 0 && <div className="empty-msg">{q ? 'No matches' : 'No sessions'}</div>}
     </div>
   )
