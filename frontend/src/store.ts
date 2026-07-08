@@ -201,7 +201,10 @@ export const useStore = create<AppState>((set, get) => ({
         if (s) set({
           sessions: {
             ...state.sessions,
-            [msg.id]: { ...s, process: msg.process, createdAt: msg.createdAt, memKB: msg.memKB },
+            [msg.id]: {
+              ...s, process: msg.process, createdAt: msg.createdAt, memKB: msg.memKB,
+              altScreen: msg.altScreen ?? s.altScreen,
+            },
           },
         })
         break

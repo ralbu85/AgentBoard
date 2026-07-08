@@ -191,27 +191,50 @@ async def _read_fifo(id: str, session_name: str, fifo: str):
 
 # ── Snapshots ──
 
+# Max scrollback lines carried in a snapshot. Caps snapshot weight while still
+# giving deep scroll-up history. (Configurable via env for heavy/light setups.)
+SNAPSHOT_HISTORY = int(os.getenv("AGENTBOARD_SNAPSHOT_HISTORY", "2000"))
+
+
+def _combine_snapshot(history: str, current: str) -> str:
+    """Scroll-back history above, the EXACT current screen at the bottom.
+
+    Composing them explicitly (instead of one `-S -N` capture) guarantees the
+    live screen sits accurately at the viewport bottom while the history stays
+    scroll-up only — works for normal panes and full-screen (alt-screen) apps
+    alike, whose current screen and scrollback live in different tmux buffers.
+    """
+    h = history.rstrip("\n")
+    c = current.rstrip("\n")
+    body = (h + "\n" + c) if h else c
+    return body.replace("\n", "\r\n")
+
+
 async def get_snapshot(id: str, session_name: str) -> str:
     from .sessions import store
     s = store.get(id)
     if not s:
         return ""
 
-    raw, info_str = await asyncio.gather(
-        tmux.capture_pane(session_name, lines=2000, ansi=True),
-        tmux.display_info(session_name),
-    )
+    info_str = await tmux.display_info(session_name)
+    alt = info_str.get("alt_screen", False)
+    current = await tmux.capture_pane(session_name, lines=0, ansi=True)
+    if alt:
+        # Full-screen app (alt-screen): its scrollback lives INSIDE the app, not
+        # in tmux. tmux's normal-buffer scrollback is frozen/stale, so stitching
+        # it under the current screen makes scroll-up jump to unrelated old
+        # content (out of order). Show only the faithful current screen.
+        combined = current.rstrip("\n").replace("\n", "\r\n")
+    else:
+        # Normal pane: history (above the visible screen) + the exact current
+        # screen — contiguous and in order. See _combine_snapshot.
+        history = await tmux.capture_pane(session_name, lines=SNAPSHOT_HISTORY, ansi=True, end=-1)
+        combined = _combine_snapshot(history, current)
 
     _update_info(id, s, info_str)
-    _detect_state(id, s, raw)
-    # Cache visible-area capture (same format as _poll_active uses)
-    # so the next poll doesn't see a diff and overwrite the snapshot
-    try:
-        visible = await tmux.capture_pane(session_name, lines=0, ansi=True)
-        _last_screen[id] = _strip_cursor(visible)
-    except Exception as e:
-        log.debug("snapshot fallback (visible capture failed) for %s: %s", session_name, e)
-        _last_screen[id] = _strip_cursor(raw)
+    _detect_state(id, s, current)
+    # Cache the visible capture so the next poll doesn't see a diff and re-broadcast.
+    _last_screen[id] = _strip_cursor(current)
 
     # Sync history baseline so the next active poll doesn't re-broadcast
     # scrollback already included in this snapshot
@@ -220,7 +243,7 @@ async def get_snapshot(id: str, session_name: str) -> str:
     except Exception as e:
         log.debug("history_size sync failed for %s: %s", session_name, e)
 
-    return raw.rstrip("\n").replace("\n", "\r\n")
+    return combined
 
 
 async def poll_now(id: str):
@@ -276,15 +299,17 @@ async def _poll_active():
                 current_hist = await tmux.history_size(s.session_name)
                 last_hist = _last_history_size.get(sid)
                 if last_hist is not None and current_hist > last_hist:
-                    snapshot_raw = await tmux.capture_pane(s.session_name, lines=2000, ansi=True)
-                    if snapshot_raw:
-                        broadcast({
-                            "type": "snapshot",
-                            "id": sid,
-                            "data": snapshot_raw.rstrip("\n").replace("\n", "\r\n"),
-                        })
-                        _last_broadcast_time[sid] = now
+                    # Scrollback grew — re-snapshot. Alt-screen: current only (its
+                    # scrollback isn't in tmux); normal: history + current screen.
                     visible = await tmux.capture_pane(s.session_name, lines=0, ansi=True)
+                    if s.alt_screen:
+                        snapshot_data = visible.rstrip("\n").replace("\n", "\r\n")
+                    else:
+                        history = await tmux.capture_pane(s.session_name, lines=SNAPSHOT_HISTORY, ansi=True, end=-1)
+                        snapshot_data = _combine_snapshot(history, visible)
+                    if snapshot_data:
+                        broadcast({"type": "snapshot", "id": sid, "data": snapshot_data})
+                        _last_broadcast_time[sid] = now
                     _last_screen[sid] = _strip_cursor(visible)
                     _last_history_size[sid] = current_hist
                     _last_change_at[sid] = now
@@ -370,14 +395,21 @@ def _update_info(id: str, s, info: dict):
     cwd = info.get("cwd", "")
     process = info.get("process", "")
     created_at = info.get("created_at", 0)
+    alt_screen = info.get("alt_screen", False)
 
     if cwd and cwd != s.cwd:
         s.cwd = cwd
         broadcast({"type": "cwd", "id": id, "cwd": cwd})
-    if process != s.process or created_at != s.created_at:
+    # Re-broadcast info when process/uptime OR alt-screen state changes (the
+    # latter drives the "full-screen — no scrollback" badge).
+    if process != s.process or created_at != s.created_at or alt_screen != s.alt_screen:
         s.process = process
         s.created_at = created_at
-        broadcast({"type": "info", "id": id, "process": process, "createdAt": created_at, "memKB": s.mem_kb})
+        s.alt_screen = alt_screen
+        broadcast({
+            "type": "info", "id": id, "process": process,
+            "createdAt": created_at, "memKB": s.mem_kb, "altScreen": alt_screen,
+        })
 
 
 _pending_idle: dict[str, float] = {}  # id → monotonic time when idle was first detected

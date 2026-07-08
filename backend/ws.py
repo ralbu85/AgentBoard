@@ -73,10 +73,11 @@ async def handle_ws(ws: WebSocket):
                 await ws.send_text(json.dumps({"type": "aiState", "id": s.id, "state": s.ai_state}))
             if s.cwd:
                 await ws.send_text(json.dumps({"type": "cwd", "id": s.id, "cwd": s.cwd}))
-            if s.process or s.created_at:
+            if s.process or s.created_at or s.alt_screen:
                 await ws.send_text(json.dumps({
                     "type": "info", "id": s.id,
-                    "process": s.process, "createdAt": s.created_at, "memKB": s.mem_kb,
+                    "process": s.process, "createdAt": s.created_at,
+                    "memKB": s.mem_kb, "altScreen": s.alt_screen,
                 }))
 
         titles = store.titles
@@ -98,10 +99,11 @@ async def handle_ws(ws: WebSocket):
                 await ws.send_text(json.dumps({"type": "aiState", "id": d["id"], "state": d["aiState"]}))
             if d.get("cwd"):
                 await ws.send_text(json.dumps({"type": "cwd", "id": d["id"], "cwd": d["cwd"]}))
-            if d.get("process") or d.get("createdAt"):
+            if d.get("process") or d.get("createdAt") or d.get("altScreen"):
                 await ws.send_text(json.dumps({
                     "type": "info", "id": d["id"],
-                    "process": d["process"], "createdAt": d["createdAt"], "memKB": d["memKB"],
+                    "process": d["process"], "createdAt": d["createdAt"],
+                    "memKB": d["memKB"], "altScreen": d.get("altScreen", False),
                 }))
         remote_titles = registry.mirror_titles()
         if remote_titles:

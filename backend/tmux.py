@@ -32,8 +32,14 @@ async def is_alive(session_name: str) -> bool:
     return proc.returncode == 0
 
 
-async def capture_pane(session_name: str, lines: int = 50, ansi: bool = True) -> str:
+async def capture_pane(session_name: str, lines: int = 50, ansi: bool = True,
+                       end: int | None = None) -> str:
+    # -S -lines: start `lines` rows up in the scrollback. -E <end>: stop at that
+    # row (line 0 = top of the visible screen, negatives = history). `end=-1`
+    # captures history ONLY (everything above the current screen).
     args = ["capture-pane", "-t", session_name, "-p", "-S", f"-{lines}"]
+    if end is not None:
+        args += ["-E", str(end)]
     if ansi:
         args.append("-e")
     return await tmux_run(args)
@@ -65,7 +71,7 @@ async def resize_window_height(session_name: str, rows: int) -> None:
 async def display_info(session_name: str) -> dict:
     raw = await tmux_run([
         "display-message", "-t", session_name, "-p",
-        "#{pane_current_path}|#{pane_current_command}|#{session_created}|#{pane_pid}"
+        "#{pane_current_path}|#{pane_current_command}|#{session_created}|#{pane_pid}|#{alternate_on}"
     ])
     parts = raw.strip().split("|")
     return {
@@ -73,6 +79,9 @@ async def display_info(session_name: str) -> dict:
         "process": parts[1] if len(parts) > 1 else "",
         "created_at": int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else 0,
         "pid": int(parts[3]) if len(parts) > 3 and parts[3].isdigit() else 0,
+        # 1 while a full-screen app (vim/less/TUI) holds the alternate screen —
+        # that buffer has no scrollback, so the client can't scroll it.
+        "alt_screen": parts[4] == "1" if len(parts) > 4 else False,
     }
 
 

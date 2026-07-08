@@ -26,6 +26,7 @@ class Session:
     process: str = ""
     created_at: int = 0
     mem_kb: int = 0
+    alt_screen: bool = False   # full-screen app active → no scrollback
     cols: int = CANONICAL_COLS
     rows: int = CANONICAL_ROWS
     display_rows: int = CANONICAL_ROWS
@@ -41,6 +42,7 @@ class Session:
             "process": self.process,
             "createdAt": self.created_at,
             "memKB": self.mem_kb,
+            "altScreen": self.alt_screen,
         }
 
 

@@ -2,6 +2,17 @@ import { Terminal } from '@xterm/xterm'
 import { SearchAddon } from '@xterm/addon-search'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import { send } from '../../ws'
+import { useStore } from '../../store'
+
+// Full-screen (alt-screen) apps keep their history inside the app, reachable
+// with PageUp/PageDown — not in the terminal's scrollback. So translate scroll
+// gestures on those sessions into page keys sent to the app.
+function _isAltScreen(id: string): boolean {
+  return !!useStore.getState().sessions[id]?.altScreen
+}
+function _sendPage(id: string, up: boolean) {
+  send({ type: 'key', id, key: up ? 'PageUp' : 'PageDown' })
+}
 
 // Canonical tmux pane size — every client renders this exact shape.
 // Backend pins the tmux pane to the same values, so there's no resize whiplash
@@ -75,7 +86,8 @@ export function open(id: string, container: HTMLElement) {
     t.term.open(t.el)
     t.opened = true
     t.term.resize(CANONICAL_COLS, CANONICAL_ROWS)
-    if (isMobile) _setupMobileScroll(t)
+    if (isMobile) _setupMobileScroll(id, t)
+    else _setupWheelPaging(id, t)
     t.term.reset()
     refit(id)
     setTimeout(() => {
@@ -139,7 +151,25 @@ export function refit(id: string) {
   }
 }
 
-function _setupMobileScroll(t: TermInstance) {
+// Desktop: on a full-screen session, a mouse wheel scrolls the APP's history
+// (PageUp/PageDown) instead of the terminal's empty scrollback. Normal sessions
+// keep native xterm scrollback.
+function _setupWheelPaging(id: string, t: TermInstance) {
+  let accum = 0
+  let lastSend = 0
+  t.el.addEventListener('wheel', (e) => {
+    if (!_isAltScreen(id)) return  // normal session → native scrollback
+    e.preventDefault()
+    const now = Date.now()
+    accum += e.deltaY
+    if (now - lastSend < 60 || Math.abs(accum) < 24) return
+    _sendPage(id, accum < 0)
+    accum = 0
+    lastSend = now
+  }, { passive: false })
+}
+
+function _setupMobileScroll(id: string, t: TermInstance) {
   const wrap = t.el
   const vp = wrap.querySelector('.xterm-viewport') as HTMLElement
   if (!vp) return
@@ -155,12 +185,15 @@ function _setupMobileScroll(t: TermInstance) {
   let velocity = 0
   let ts = 0
   let raf = 0
+  let pageAccum = 0
+  let lastPage = 0
 
   wrap.addEventListener('touchstart', (e) => {
     e.stopPropagation()
     cancelAnimationFrame(raf)
     lastY = e.touches[0].clientY
     velocity = 0
+    pageAccum = 0
     ts = Date.now()
   }, { capture: true, passive: true })
 
@@ -171,13 +204,25 @@ function _setupMobileScroll(t: TermInstance) {
     const now = Date.now()
     const dt = now - ts
     if (dt > 0) velocity = dy / dt
-    vp.scrollTop += dy
+    if (_isAltScreen(id)) {
+      // Full-screen app: drive the app's own scroll with page keys.
+      // finger up → dy positive → earlier content → PageUp.
+      pageAccum += dy
+      if (now - lastPage > 110 && Math.abs(pageAccum) > 40) {
+        _sendPage(id, pageAccum > 0)
+        pageAccum = 0
+        lastPage = now
+      }
+    } else {
+      vp.scrollTop += dy
+    }
     lastY = y
     ts = now
   }, { capture: true, passive: true })
 
   wrap.addEventListener('touchend', (e) => {
     e.stopPropagation()
+    if (_isAltScreen(id)) return  // page-key scroll has no momentum
     if (Math.abs(velocity) < 0.05) return
     let v = velocity
     const tick = () => {

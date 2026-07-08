@@ -8,6 +8,7 @@ export interface Session {
   process: string
   createdAt: number
   memKB: number
+  altScreen?: boolean     // full-screen app (vim/TUI) active → no scrollback
   host: string            // 'local' for the hub's own machine, else the agent's host id
   hostLabel?: string      // human-friendly machine name
 }
@@ -36,7 +37,7 @@ export type WsMessage =
   | { type: 'removed'; id: string }
   | { type: 'cwd'; id: string; cwd: string }
   | { type: 'aiState'; id: string; state: string }
-  | { type: 'info'; id: string; process: string; createdAt: number; memKB: number }
+  | { type: 'info'; id: string; process: string; createdAt: number; memKB: number; altScreen?: boolean }
   | { type: 'title'; id: string; title: string }
   | { type: 'titles'; titles: Record<string, string> }
   | { type: 'spawn-error'; reqId: string; error: string; host?: string; hostLabel?: string }

@@ -61,6 +61,7 @@ class AgentConn:
                 "process": "",
                 "createdAt": 0,
                 "memKB": 0,
+                "altScreen": False,
             }
         elif mtype == "removed":
             self.sessions.pop(mid, None)
@@ -89,6 +90,7 @@ class AgentConn:
                 s["process"] = msg.get("process", s["process"])
                 s["createdAt"] = msg.get("createdAt", s["createdAt"])
                 s["memKB"] = msg.get("memKB", s["memKB"])
+                s["altScreen"] = msg.get("altScreen", s.get("altScreen", False))
 
 
 class AgentRegistry:
