@@ -72,15 +72,15 @@ export function FolderList({ onSelect }: Props) {
         return (
           <div key={cwd} className={`folder-item ${isActive ? 'active' : ''}`}
             title={cwd} onClick={() => selectFolder(cwd)}>
-            <span className={`folder-attn ${attention ? 'on' : ''}`} />
-            <svg className="folder-ico" width="15" height="15" viewBox="0 0 20 20" fill="none">
+            <svg className="folder-ico" width="16" height="16" viewBox="0 0 20 20" fill="none">
               <path d="M2 5C2 4 3 3 4 3H8L10 5H16C17 5 18 6 18 7V15C18 16 17 17 16 17H4C3 17 2 16 2 15V5Z"
                 fill={isActive ? 'var(--accent)' : 'none'} opacity={isActive ? '0.25' : '1'}
                 stroke="currentColor" strokeWidth="1.4" />
             </svg>
             <span className="folder-name">{name}</span>
             {remote && <span className="folder-host">{remote}</span>}
-            <span className="folder-count">{running}</span>
+            {attention && <span className="folder-attn on" title="입력 대기 중" />}
+            {running > 0 && <span className="folder-count">{running}</span>}
           </div>
         )
       })}

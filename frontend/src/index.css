@@ -204,6 +204,9 @@ body {
   background: var(--accent-soft); color: var(--text-muted);
 }
 .btn.notif-on { color: var(--amber, #fbbf24); }
+/* Keep the header-right icon button (notification bell) sized like the text
+   buttons next to it, not oversized like the sidebar hamburger. */
+.header-right .btn-icon { font-size: 15px; padding: 4px 7px; line-height: 1; }
 
 /* Quick-approve banner: appears over the terminal when a session is waiting. */
 .quick-approve {
@@ -460,13 +463,13 @@ body {
 .session-tab:hover .session-tab-close, .session-tab.active .session-tab-close { opacity: 0.7; }
 .session-tab-close:hover { background: var(--red); color: #fff; opacity: 1; }
 /* Split launcher: "+" (default profile) | "▾" (profile menu) */
-.session-tab-addwrap { position: relative; flex-shrink: 0; display: flex; align-items: center; margin-bottom: 3px; }
+.session-tab-addwrap { position: relative; flex-shrink: 0; display: flex; align-items: stretch; align-self: flex-end; height: 26px; margin: 0 0 4px 6px; }
 .session-tab-add-main, .session-tab-add-caret {
   border: 1px solid var(--border); background: var(--bg-tertiary); color: var(--text-secondary);
-  cursor: pointer; padding: 4px 8px; font-size: var(--fs-sm);
+  cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.12s;
 }
-.session-tab-add-main { border-radius: var(--radius-sm) 0 0 var(--radius-sm); font-size: 16px; border-right: none; }
-.session-tab-add-caret { border-radius: 0 var(--radius-sm) var(--radius-sm) 0; font-size: 10px; }
+.session-tab-add-main { border-radius: var(--radius-sm) 0 0 var(--radius-sm); padding: 0 10px; font-size: 15px; border-right: none; }
+.session-tab-add-caret { border-radius: 0 var(--radius-sm) var(--radius-sm) 0; padding: 0 6px; font-size: 9px; }
 .session-tab-add-main:hover, .session-tab-add-caret:hover { background: var(--accent-soft); color: var(--accent); }
 .tab-add-menu .taa-sep { height: 1px; background: var(--border); margin: 3px 2px; }
 
