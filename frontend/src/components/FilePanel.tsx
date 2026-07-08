@@ -7,28 +7,30 @@ import { sanitize } from '../sanitize'
 import { PdfViewer } from './PdfViewer'
 
 // ── Tree Node component (VS Code style) ──
-function TreeDir({ dirPath, name, depth, onFileClick }: {
+function TreeDir({ dirPath, name, depth, onFileClick, refresh, bump }: {
   dirPath: string; name: string; depth: number
   onFileClick: (path: string, entry: FileEntry) => void
+  refresh: number; bump: () => void
 }) {
   const [open, setOpen] = useState(depth === 0)
   const [entries, setEntries] = useState<FileEntry[]>([])
   const [loaded, setLoaded] = useState(false)
 
-  const load = useCallback(async () => {
-    if (loaded) return
+  const reload = useCallback(async () => {
     try {
       const res = await api.files(dirPath)
       setEntries(res.entries || [])
       setLoaded(true)
     } catch { /* */ }
-  }, [dirPath, loaded])
+  }, [dirPath])
 
-  useEffect(() => { if (open && !loaded) load() }, [open, loaded, load])
+  useEffect(() => { if (open && !loaded) reload() }, [open, loaded, reload])
   // Auto-open root
-  useEffect(() => { if (depth === 0) { setOpen(true); load() } }, [depth, load])
+  useEffect(() => { if (depth === 0) { setOpen(true); reload() } }, [depth, reload])
+  // Reload when a file op elsewhere bumps the shared refresh token.
+  useEffect(() => { if (loaded) reload() }, [refresh])
 
-  const toggle = () => { setOpen(v => !v); if (!loaded) load() }
+  const toggle = () => { setOpen(v => !v); if (!loaded) reload() }
 
   return (
     <>
@@ -41,12 +43,17 @@ function TreeDir({ dirPath, name, depth, onFileClick }: {
               stroke="var(--accent)" strokeWidth="1.5"/>
           </svg>
           <span className="tree-name tree-dirname">{name}</span>
+          <RowActions>
+            <button title="\uC0C8 \uD3F4\uB354" onClick={() => doMkdir(dirPath, bump)}>\uFF0B</button>
+            <button title="\uC774\uB984 \uBCC0\uACBD" onClick={() => doRename(dirPath, name, bump)}>\u270E</button>
+            <button title="\uC0AD\uC81C" onClick={() => doDelete(dirPath, name, bump)}>\uD83D\uDDD1</button>
+          </RowActions>
         </div>
       )}
       {open && entries.map(entry => {
         const full = `${dirPath}/${entry.name}`
         if (entry.type === 'dir') {
-          return <TreeDir key={entry.name} dirPath={full} name={entry.name} depth={depth + 1} onFileClick={onFileClick} />
+          return <TreeDir key={entry.name} dirPath={full} name={entry.name} depth={depth + 1} onFileClick={onFileClick} refresh={refresh} bump={bump} />
         }
         return (
           <div key={entry.name} className="tree-row tree-file" style={{ paddingLeft: (depth + 1) * 12 + 4 }}
@@ -58,6 +65,11 @@ function TreeDir({ dirPath, name, depth, onFileClick }: {
             </svg>
             <span className="tree-name">{entry.name}</span>
             <span className="tree-size">{fmtSize(entry.size)}</span>
+            <RowActions>
+              <button title="\uB2E4\uC6B4\uB85C\uB4DC" onClick={() => doDownload(full, entry.name)}>\u2B07</button>
+              <button title="\uC774\uB984 \uBCC0\uACBD" onClick={() => doRename(full, entry.name, bump)}>\u270E</button>
+              <button title="\uC0AD\uC81C" onClick={() => doDelete(full, entry.name, bump)}>\uD83D\uDDD1</button>
+            </RowActions>
           </div>
         )
       })}
@@ -69,6 +81,37 @@ function fmtSize(bytes: number) {
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`
+}
+
+// ── OS-like file operations (reuse existing REST endpoints) ──
+async function doRename(fullPath: string, name: string, onDone: () => void) {
+  const nn = window.prompt('새 이름', name)?.trim()
+  if (!nn || nn === name) return
+  const parent = fullPath.slice(0, fullPath.length - name.length)  // keeps trailing '/'
+  const res = await api.rename(fullPath, parent + nn)
+  if (res?.ok !== false) onDone()
+}
+async function doDelete(fullPath: string, name: string, onDone: () => void) {
+  if (!window.confirm(`삭제: ${name}\n되돌릴 수 없습니다.`)) return
+  const res = await api.delete(fullPath)
+  if (res?.ok !== false) onDone()
+}
+function doDownload(fullPath: string, name: string) {
+  const a = document.createElement('a')
+  a.href = `/api/file-raw?path=${encodeURIComponent(fullPath)}`
+  a.download = name
+  a.click()
+}
+async function doMkdir(parentPath: string, onDone: () => void) {
+  const nn = window.prompt(`새 폴더 이름 (${parentPath.split('/').pop() || parentPath} 안에)`)?.trim()
+  if (!nn) return
+  const res = await api.mkdir(`${parentPath}/${nn}`)
+  if (res?.ok !== false) onDone()
+}
+
+// Small action buttons shown on hover for a tree row.
+function RowActions({ children }: { children: React.ReactNode }) {
+  return <span className="tree-actions" onClick={(e) => e.stopPropagation()}>{children}</span>
 }
 
 // Lazy-loaded heavy modules
@@ -220,14 +263,17 @@ export function FilePanel({ initialPath, onClose }: Props) {
 
   const [dragOver, setDragOver] = useState(false)
   const [uploading, setUploading] = useState(0)
+  const [refresh, setRefresh] = useState(0)
+  const bump = useCallback(() => setRefresh((n) => n + 1), [])
 
-  async function uploadFiles(files: FileList | File[]) {
+  async function uploadFiles(files: FileList | File[], targetDir?: string) {
     const arr = Array.from(files)
     if (arr.length === 0) return
     setUploading(arr.length)
     try {
-      await api.uploadMany(path, arr)
+      await api.uploadMany(targetDir || path, arr)
       loadDir(path)
+      bump()  // refresh the tree too
     } finally {
       setUploading(0)
     }
@@ -341,7 +387,10 @@ export function FilePanel({ initialPath, onClose }: Props) {
       onDrop={onDrop}
     >
       <div className="fp-header">
-        <div className="fp-folder">{folder}{uploading > 0 ? ` · 업로드 중 ${uploading}` : ''}</div>
+        <div className="fp-folder" title={path}>📁 {folder}{uploading > 0 ? ` · 업로드 중 ${uploading}` : ''}</div>
+        <button className="fv-btn file-newfolder-btn" onClick={() => doMkdir(initialPath, bump)} title="New folder">
+          <svg width="14" height="14" viewBox="0 0 20 20" fill="none"><path d="M2 5C2 4 3 3 4 3H8L10 5H16C17 5 18 6 18 7V15C18 16 17 17 16 17H4C3 17 2 16 2 15V5Z" stroke="currentColor" strokeWidth="1.5"/><path d="M10 9V13M8 11H12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
+        </button>
         <button className="fv-btn file-upload-btn" onClick={() => fileInputRef.current?.click()} title="Upload">
           <svg width="14" height="14" viewBox="0 0 20 20" fill="none"><path d="M10 14V4M10 4L6 8M10 4L14 8M4 16H16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
         </button>
@@ -352,7 +401,7 @@ export function FilePanel({ initialPath, onClose }: Props) {
       </div>
       {dragOver && <div className="fp-drop-overlay">파일을 놓아 업로드</div>}
       <div className="file-list">
-        <TreeDir dirPath={initialPath} name={folder} depth={0} onFileClick={(fullPath, entry) => {
+        <TreeDir dirPath={initialPath} name={folder} depth={0} refresh={refresh} bump={bump} onFileClick={(fullPath, entry) => {
           // Reuse existing handleClick logic but with full path
           const e = getExt(entry.name)
           const makeTab = (name: string, content: string, type: 'code'|'markdown'|'latex'|'pdf'|'image', lang: string) => ({

@@ -1,15 +1,10 @@
 import { useState, useCallback, useEffect } from 'react'
 import { useStore } from '../../store'
-import { TerminalPane } from '../Terminal/TerminalPane'
-import { InputCard } from '../Terminal/InputCard'
+import { TerminalArea } from '../Terminal/TerminalArea'
 import { ViewerPane } from './ViewerPane'
 import { PaneResizer } from './PaneResizer'
 
-interface Props {
-  activeId: string | null
-}
-
-export function DesktopSplitLayout({ activeId }: Props) {
+export function DesktopSplitLayout() {
   const [leftWidth, setLeftWidth] = useState(55)
   const hasViewerTabs = useStore(s => (s._viewerState[s.activeId || '']?.tabs || []).length > 0)
 
@@ -37,8 +32,7 @@ export function DesktopSplitLayout({ activeId }: Props) {
     return (
       <div className="split-layout">
         <div className="pane-terminal" style={{ width: '100%' }}>
-          <TerminalPane />
-          {activeId && <InputCard sessionId={activeId} />}
+          <TerminalArea />
         </div>
       </div>
     )
@@ -47,8 +41,7 @@ export function DesktopSplitLayout({ activeId }: Props) {
   return (
     <div className="split-layout">
       <div className="pane-terminal" style={{ width: `${leftWidth}%` }}>
-        <TerminalPane />
-        {activeId && <InputCard sessionId={activeId} />}
+        <TerminalArea />
       </div>
       <PaneResizer onResize={onResize} onResizeEnd={onResizeEnd} />
       <div className="pane-viewer" style={{ width: `${100 - leftWidth}%` }}>

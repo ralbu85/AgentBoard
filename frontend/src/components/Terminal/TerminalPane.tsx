@@ -29,9 +29,13 @@ export function TerminalPane() {
   const containerRef = useRef<HTMLDivElement>(null)
   const activeId = useStore((s) => s.activeId)
   const effectiveState = useStore((s) => s.effectiveState)
+  const altScreen = useStore((s) => (s.activeId ? s.sessions[s.activeId]?.altScreen : false))
   const [showScrollBtn, setShowScrollBtn] = useState(false)
   const currentState = activeId ? effectiveState(activeId) : null
   const stateInfo = STATE_DISPLAY[currentState || ''] || STATE_DISPLAY.idle
+  // Full-screen apps scroll via the app (PageUp forwarded), so xterm's own
+  // scroll state can't tell us — always offer the jump-to-bottom button there.
+  const btnVisible = showScrollBtn || !!altScreen
 
   useEffect(() => {
     if (!activeId || !containerRef.current) return
@@ -79,7 +83,13 @@ export function TerminalPane() {
   }, [])
 
   const handleScrollBottom = () => {
-    if (activeId) TM.scrollToBottom(activeId)
+    if (!activeId) return
+    TM.scrollToBottom(activeId)
+    if (altScreen) {
+      // App-managed scroll (Claude TUI etc.): jump the app itself to the latest.
+      api.key(activeId, 'End')
+      for (let i = 0; i < 4; i++) api.key(activeId, 'PageDown')
+    }
     setShowScrollBtn(false)
   }
 
@@ -91,14 +101,15 @@ export function TerminalPane() {
           {stateInfo.label}
         </div>
       )}
-      {showScrollBtn && (
+      {btnVisible && (
         <button
           className="scroll-bottom-btn"
           onClick={handleScrollBottom}
-          aria-label="Scroll to bottom"
+          aria-label="맨 아래로"
+          title="맨 아래로"
         >
           <span className="sb-arrow">↓</span>
-          <span className="sb-text"> Bottom</span>
+          <span className="sb-text"> 맨아래</span>
         </button>
       )}
       {activeId && currentState === 'waiting' && (

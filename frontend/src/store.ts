@@ -1,6 +1,7 @@
 import { create } from 'zustand'
-import type { Session, WsMessage } from './types'
+import type { Session, WsMessage, SpawnProfile } from './types'
 import { useToasts } from './toasts'
+import { api } from './api'
 
 export interface ViewerTab {
   id: string
@@ -29,7 +30,41 @@ interface AppState {
   // match its own session, even amid concurrent spawns on the same host).
   _spawnReqs: Record<string, string>
 
+  // Spawn modal open state + optional pre-fill (folder/host), so any component
+  // (e.g. a folder header's "+ new session here") can launch it pre-filled.
+  spawnOpen: boolean
+  spawnPreset: { cwd?: string; host?: string }
+
+  // The folder shown in the workspace file panel. Follows the selected folder
+  // or the active session; null → fall back to the active session's cwd.
+  workspaceCwd: string | null
+
+  // How the workspace shows its sessions: one at a time, or all tiled.
+  viewMode: 'single' | 'grid'
+
+  // Launch profiles for the "+" button (Claude variants, Codex, terminal, …).
+  profiles: SpawnProfile[]
+  profileEditorOpen: boolean
+
+  // Registered workspace folders — a workspace can exist with 0 sessions, so
+  // these are tracked explicitly (persisted) in addition to session-derived ones.
+  workspaceFolders: string[]
+  workspaceModalOpen: boolean
+
   // Actions
+  openProfileEditor: () => void
+  closeProfileEditor: () => void
+  openWorkspaceModal: () => void
+  closeWorkspaceModal: () => void
+  addWorkspaceFolder: (cwd: string) => void
+  removeWorkspaceFolder: (cwd: string) => void
+  openSpawn: (preset?: { cwd?: string; host?: string }) => void
+  closeSpawn: () => void
+  setWorkspace: (cwd: string) => void
+  setViewMode: (m: 'single' | 'grid') => void
+  upsertSession: (s: { id: string; cwd: string; cmd: string; host?: string }) => void
+  loadProfiles: () => Promise<void>
+  saveProfiles: (profiles: SpawnProfile[]) => Promise<void>
   setActive: (id: string | null) => void
   removeSession: (id: string) => void
   openTab: (tab: ViewerTab) => void
@@ -49,12 +84,62 @@ export const useStore = create<AppState>((set, get) => ({
   _viewerState: {},
   _completedAt: {},
   _spawnReqs: {},
+  spawnOpen: false,
+  spawnPreset: {},
+  workspaceCwd: null,
+  viewMode: ((typeof localStorage !== 'undefined' && localStorage.getItem('agentboard.viewMode')) as 'single' | 'grid') || 'single',
+  profiles: [],
+  profileEditorOpen: false,
+  workspaceFolders: (() => {
+    try { return JSON.parse(localStorage.getItem('agentboard.workspaceFolders') || '[]') } catch { return [] }
+  })(),
+  workspaceModalOpen: false,
 
   // These are unused placeholders — use selectors instead:
   // useStore(s => s._viewerState[s.activeId]?.tabs || [])
   viewerTabs: [],
   activeTabId: null,
 
+  openSpawn: (preset = {}) => set({ spawnOpen: true, spawnPreset: preset }),
+  closeSpawn: () => set({ spawnOpen: false, spawnPreset: {} }),
+  setWorkspace: (cwd) => set({ workspaceCwd: cwd }),
+  setViewMode: (m) => { try { localStorage.setItem('agentboard.viewMode', m) } catch {} ; set({ viewMode: m }) },
+  // Optimistic insert so a just-created session's tab appears instantly; the
+  // ws `spawned` event reconciles it (same id). No-op if it already arrived.
+  upsertSession: (s) => set((state) => state.sessions[s.id] ? {} : {
+    sessions: {
+      ...state.sessions,
+      [s.id]: {
+        id: s.id, sessionName: '', cwd: s.cwd, cmd: s.cmd,
+        status: 'running', aiState: null, process: '', createdAt: 0, memKB: 0,
+        host: s.host || 'local',
+      },
+    },
+  }),
+  openProfileEditor: () => set({ profileEditorOpen: true }),
+  closeProfileEditor: () => set({ profileEditorOpen: false }),
+  openWorkspaceModal: () => set({ workspaceModalOpen: true }),
+  closeWorkspaceModal: () => set({ workspaceModalOpen: false }),
+  addWorkspaceFolder: (cwd) => set((state) => {
+    if (state.workspaceFolders.includes(cwd)) return {}
+    const next = [...state.workspaceFolders, cwd]
+    try { localStorage.setItem('agentboard.workspaceFolders', JSON.stringify(next)) } catch {}
+    return { workspaceFolders: next }
+  }),
+  removeWorkspaceFolder: (cwd) => set((state) => {
+    const next = state.workspaceFolders.filter((f) => f !== cwd)
+    try { localStorage.setItem('agentboard.workspaceFolders', JSON.stringify(next)) } catch {}
+    return { workspaceFolders: next }
+  }),
+  loadProfiles: async () => {
+    try { const r = await api.profiles(); set({ profiles: Array.isArray(r?.profiles) ? r.profiles : [] }) }
+    catch { /* keep empty */ }
+  },
+  saveProfiles: async (profiles) => {
+    set({ profiles })  // optimistic
+    try { const r = await api.saveProfiles(profiles); if (Array.isArray(r?.profiles)) set({ profiles: r.profiles }) }
+    catch { useToasts.getState().push('프로필 저장 실패') }
+  },
   setActive: (id) => set({ activeId: id }),
 
   openTab: (tab) => {

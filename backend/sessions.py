@@ -128,10 +128,18 @@ class SessionStore:
 
     async def spawn(self, cwd: str, cmd: str = "", req_id: str | None = None) -> Session:
         cmd = cmd or config.DEFAULT_COMMAND
-        cwd = cwd or os.path.expanduser("~")
+        # Canonicalize to the path tmux will later report as pane_current_path
+        # (a /proc cwd symlink → realpath). If we stored the raw arg (e.g. "~"),
+        # the first poll would rewrite cwd to the resolved path and the session
+        # would jump folder-groups — its tab appearing then vanishing.
+        cwd = os.path.realpath(os.path.expanduser(cwd or "~"))
 
         # Reserve the id synchronously (before any await) so concurrent spawns
         # never collide on _next_id or pick the same `term-N` session name.
+        # Skip any id already in use (guards against _next_id drift after a
+        # restart/recover reusing a live session's number).
+        while str(self._next_id) in self.sessions:
+            self._next_id += 1
         id_str = str(self._next_id)
         self._next_id += 1
         session_name = f"term-{id_str}"

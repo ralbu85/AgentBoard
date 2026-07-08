@@ -392,14 +392,14 @@ async def _poll_active_info():
 # ── Helpers ──
 
 def _update_info(id: str, s, info: dict):
-    cwd = info.get("cwd", "")
     process = info.get("process", "")
     created_at = info.get("created_at", 0)
     alt_screen = info.get("alt_screen", False)
 
-    if cwd and cwd != s.cwd:
-        s.cwd = cwd
-        broadcast({"type": "cwd", "id": id, "cwd": cwd})
+    # NOTE: cwd is intentionally NOT updated from the live pane. It's frozen at
+    # spawn/recover time so a session stays grouped under the folder it was
+    # created in — otherwise a shell `cd` (or a bashrc that cd's) would move the
+    # session to another folder group and its tab would vanish mid-use.
     # Re-broadcast info when process/uptime OR alt-screen state changes (the
     # latter drives the "full-screen — no scrollback" badge).
     if process != s.process or created_at != s.created_at or alt_screen != s.alt_screen:

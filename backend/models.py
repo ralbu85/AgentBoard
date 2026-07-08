@@ -68,3 +68,13 @@ class PushSubscribeRequest(BaseModel):
 
 class PushUnsubscribeRequest(BaseModel):
     endpoint: str = Field(min_length=1, max_length=2048)
+
+class SpawnProfile(BaseModel):
+    id: str = Field(min_length=1, max_length=64)
+    label: str = Field(min_length=1, max_length=64)
+    icon: str = Field(default="", max_length=8)
+    command: str = Field(min_length=1, max_length=1024)
+    default: bool = False
+
+class ProfilesRequest(BaseModel):
+    profiles: list[SpawnProfile] = Field(default_factory=list, max_length=50)

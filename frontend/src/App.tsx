@@ -6,8 +6,7 @@ import { Login } from './components/Login'
 import { Toaster } from './components/Toaster'
 import { Header } from './components/Header'
 import { Sidebar } from './components/Sidebar/Sidebar'
-import { TerminalPane } from './components/Terminal/TerminalPane'
-import { InputCard } from './components/Terminal/InputCard'
+import { TerminalArea } from './components/Terminal/TerminalArea'
 import { DesktopSplitLayout } from './components/Viewer/DesktopSplitLayout'
 import * as TM from './components/Terminal/TerminalManager'
 
@@ -18,7 +17,6 @@ export function App() {
   const [loadingMsg, setLoadingMsg] = useState('Connecting...')
   const [sidebarOpen, setSidebarOpen] = useState(window.innerWidth > 768)
   const [sidebarWidth, setSidebarWidth] = useState(220)
-  const activeId = useStore((s) => s.activeId)
 
   useEffect(() => {
     setLoadingMsg('Loading sessions...')
@@ -26,6 +24,7 @@ export function App() {
       .then((sessions) => {
         setLoadingMsg(`${sessions.length} sessions loaded`)
         useStore.getState().setSessions(sessions)
+        useStore.getState().loadProfiles()
         setAuthed(true)
       })
       .catch(() => setAuthed(false))
@@ -125,12 +124,9 @@ export function App() {
         )}
         <main className="main-area">
           {isDesktop() ? (
-            <DesktopSplitLayout activeId={activeId} />
+            <DesktopSplitLayout />
           ) : (
-            <>
-              <TerminalPane />
-              {activeId && <InputCard sessionId={activeId} />}
-            </>
+            <TerminalArea />
           )}
         </main>
       </div>

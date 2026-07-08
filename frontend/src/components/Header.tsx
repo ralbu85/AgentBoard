@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react'
 import { useStore } from '../store'
 import { api } from '../api'
 import { SpawnModal } from './SpawnModal/SpawnModal'
+import { ProfileEditor } from './SpawnModal/ProfileEditor'
+import { WorkspaceModal } from './Sidebar/WorkspaceModal'
 import { pushSupported, notificationsEnabled, enableNotifications, disableNotifications } from '../push'
 import { useToasts } from '../toasts'
 
@@ -23,7 +25,9 @@ export function Header({ onToggleSidebar }: Props) {
   const effectiveState = useStore((s) => s.effectiveState)
   const [unmanaged, setUnmanaged] = useState<any[]>([])
   const [showScan, setShowScan] = useState(false)
-  const [showSpawn, setShowSpawn] = useState(false)
+  const spawnOpen = useStore((s) => s.spawnOpen)
+  const openSpawn = useStore((s) => s.openSpawn)
+  const closeSpawn = useStore((s) => s.closeSpawn)
   const [notif, setNotif] = useState(false)
   const canNotify = pushSupported()
 
@@ -67,7 +71,13 @@ export function Header({ onToggleSidebar }: Props) {
     ? (activeSession.hostLabel || activeSession.host)
     : null
 
-  const handleSpawn = () => setShowSpawn(true)
+  const handleSpawn = () => {
+    // Default to the current workspace folder so the user isn't asked to pick one.
+    const st = useStore.getState()
+    const cwd = st.workspaceCwd || (st.activeId ? st.sessions[st.activeId]?.cwd : undefined) || '~'
+    const host = st.activeId ? (st.sessions[st.activeId]?.host || 'local') : 'local'
+    openSpawn({ cwd, host })
+  }
 
   const handleScan = async () => {
     const list = await api.scan()
@@ -115,7 +125,9 @@ export function Header({ onToggleSidebar }: Props) {
         <button className="btn btn-primary" onClick={handleSpawn}>+ New</button>
       </div>
 
-      <SpawnModal open={showSpawn} onClose={() => setShowSpawn(false)} />
+      <SpawnModal open={spawnOpen} onClose={closeSpawn} />
+      <ProfileEditor />
+      <WorkspaceModal />
 
       {showScan && (
         <div className="scan-popup">

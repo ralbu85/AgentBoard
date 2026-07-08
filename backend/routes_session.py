@@ -6,11 +6,11 @@ from .auth import verify
 from .sessions import store
 from .models import (
     LoginRequest, SpawnRequest, InputRequest, KeyRequest, AttachRequest,
-    SessionIdRequest, PushSubscribeRequest, PushUnsubscribeRequest,
+    SessionIdRequest, PushSubscribeRequest, PushUnsubscribeRequest, ProfilesRequest,
 )
 from .agents import registry
 from .namespace import LOCAL, split_id
-from . import config, tmux, streamer, commands, push
+from . import config, tmux, streamer, commands, push, profiles
 
 router = APIRouter(prefix="/api")
 
@@ -158,7 +158,19 @@ async def send_key(req: KeyRequest, _=Depends(verify)):
 
 @router.get("/config")
 async def get_config(_=Depends(verify)):
-    return {"basePath": config.BASE_PATH}
+    return {"basePath": config.BASE_PATH, "favorites": config.FAVORITES,
+            "defaultCommand": config.DEFAULT_COMMAND}
+
+
+@router.get("/profiles")
+async def get_profiles(_=Depends(verify)):
+    return {"profiles": profiles.load()}
+
+
+@router.put("/profiles")
+async def put_profiles(req: ProfilesRequest, _=Depends(verify)):
+    profiles.save([p.model_dump() for p in req.profiles])
+    return {"ok": True, "profiles": profiles.load()}
 
 
 @router.get("/push/key")

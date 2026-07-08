@@ -33,6 +33,18 @@ async function get(url: string) {
   return data
 }
 
+async function put(url: string, body: object = {}) {
+  const res = await fetch(BASE + url, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(body),
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok || data?.ok === false) reportFailure(url, data, res.status)
+  return data
+}
+
 export const api = {
   login: (pw: string) => post('/api/login', { pw }),
   workers: () => get('/api/workers'),
@@ -47,6 +59,8 @@ export const api = {
   paste: (id: string, text: string) => post('/api/paste', { id, text }),
   key: (id: string, key: string) => post('/api/key', { id, key }),
   config: () => get('/api/config'),
+  profiles: () => get('/api/profiles'),
+  saveProfiles: (profiles: object[]) => put('/api/profiles', { profiles }),
   pushKey: () => get('/api/push/key'),
   pushSubscribe: (sub: object) => post('/api/push/subscribe', sub),
   pushUnsubscribe: (endpoint: string) => post('/api/push/unsubscribe', { endpoint }),

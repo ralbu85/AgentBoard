@@ -1,7 +1,4 @@
-import { useState, useRef } from 'react'
-import { useStore } from '../../store'
-import { SessionList } from './SessionList'
-import { FilePanel } from '../FilePanel'
+import { FolderList } from './FolderList'
 
 interface Props {
   visible: boolean
@@ -9,67 +6,17 @@ interface Props {
   width?: number
 }
 
+// The left column: workspace (folder) navigation only. Sessions and files live
+// in the main area now (see TerminalArea).
 export function Sidebar({ visible, onClose, width }: Props) {
-  const [showFiles, setShowFiles] = useState(false)
-  const [fileHeight, setFileHeight] = useState(280)
-  const activeId = useStore(s => s.activeId)
-  const cwd = useStore(s => activeId ? s.sessions[activeId]?.cwd || '~' : '~')
   const isMobile = window.innerWidth <= 768
-  const dragging = useRef(false)
-
   if (!visible) return null
-
-  const handleOpenFiles = () => {
-    setShowFiles(true)
-  }
-
-  const onResizeStart = (e: React.MouseEvent) => {
-    e.preventDefault()
-    dragging.current = true
-    const startY = e.clientY
-    const startH = fileHeight
-    document.body.style.cursor = 'row-resize'
-    document.body.style.userSelect = 'none'
-    const onMove = (ev: MouseEvent) => {
-      if (!dragging.current) return
-      const sidebar = document.querySelector('.sidebar') as HTMLElement
-      const maxH = sidebar ? sidebar.clientHeight - 80 : 600
-      setFileHeight(Math.min(maxH, Math.max(60, startH - (ev.clientY - startY))))
-    }
-    const onUp = () => {
-      dragging.current = false
-      document.body.style.cursor = ''
-      document.body.style.userSelect = ''
-      document.removeEventListener('mousemove', onMove)
-      document.removeEventListener('mouseup', onUp)
-    }
-    document.addEventListener('mousemove', onMove)
-    document.addEventListener('mouseup', onUp)
-  }
 
   return (
     <>
       <div className="sidebar-backdrop" onClick={onClose} />
       <aside className="sidebar" style={width && !isMobile ? { width } : undefined}>
-        <div className="sidebar-section sidebar-sessions" style={!isMobile && showFiles ? { flex: 'none', maxHeight: '50%' } : undefined}>
-          <div className="sidebar-section-header">Sessions</div>
-          <SessionList
-            onSelect={isMobile ? onClose : undefined}
-            onOpenFiles={!isMobile ? handleOpenFiles : undefined}
-          />
-        </div>
-        {!isMobile && showFiles && (
-          <div className="sidebar-files-section" style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-            <div className="sidebar-files-resizer" onMouseDown={onResizeStart} />
-            <div className="sidebar-files-header">
-              <span className="sidebar-files-label">FILES</span>
-              <button className="btn btn-xs sidebar-files-close" onClick={() => setShowFiles(false)}>&times;</button>
-            </div>
-            <div className="sidebar-filepanel" style={{ flex: 1, overflow: 'auto' }}>
-              <FilePanel key={activeId || ''} initialPath={cwd} onClose={() => setShowFiles(false)} />
-            </div>
-          </div>
-        )}
+        <FolderList onSelect={isMobile ? onClose : undefined} />
       </aside>
     </>
   )

@@ -19,6 +19,14 @@ export interface HostInfo {
   online: boolean
 }
 
+export interface SpawnProfile {
+  id: string
+  label: string
+  icon: string
+  command: string
+  default?: boolean
+}
+
 export interface FileEntry {
   name: string
   type: 'dir' | 'file'

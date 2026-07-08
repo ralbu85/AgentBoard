@@ -33,8 +33,18 @@ export function SessionList({ onSelect, onOpenFiles }: Props) {
   const effectiveState = useStore((s) => s.effectiveState)
   const setActive = useStore((s) => s.setActive)
   const removeSession = useStore((s) => s.removeSession)
+  const openSpawn = useStore((s) => s.openSpawn)
+  const workspaceCwd = useStore((s) => s.workspaceCwd)
+  const setWorkspace = useStore((s) => s.setWorkspace)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [filter, setFilter] = useState('')
+  const [groupBy, setGroupBy] = useState<'folder' | 'host'>(
+    () => (localStorage.getItem('agentboard.groupBy') as 'folder' | 'host') || 'folder'
+  )
+  const setGroup = (g: 'folder' | 'host') => { setGroupBy(g); localStorage.setItem('agentboard.groupBy', g) }
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
+  const toggleCollapse = (key: string) =>
+    setCollapsed((prev) => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n })
   const editRef = useRef<HTMLInputElement>(null)
 
   const handleSelect = (id: string) => {
@@ -43,7 +53,15 @@ export function SessionList({ onSelect, onOpenFiles }: Props) {
     // session doesn't change activeId (no effect), so resync explicitly.
     if (id === activeId) send({ type: 'resync', id })
     setActive(id)
+    setWorkspace(sessions[id]?.cwd || '~')  // files panel follows the session's folder
     onSelect?.()
+  }
+
+  // Clicking a folder header makes it the active workspace (files panel + new session).
+  const selectFolder = (key: string) => {
+    if (groupBy !== 'folder') return
+    setWorkspace(key)
+    setCollapsed((prev) => { const n = new Set(prev); n.delete(key); return n })  // ensure expanded
   }
 
   const startEdit = (e: React.MouseEvent, id: string) => {
@@ -72,6 +90,7 @@ export function SessionList({ onSelect, onOpenFiles }: Props) {
     e.stopPropagation()
     // Switch to this session first, then open files (effect notifies + snapshots)
     if (id !== activeId) setActive(id)
+    setWorkspace(sessions[id]?.cwd || '~')
     onOpenFiles?.()
   }
 
@@ -93,22 +112,26 @@ export function SessionList({ onSelect, onOpenFiles }: Props) {
       })
     : allIds
 
-  // Group by host. 'local' first, remaining hosts alphabetically by label.
+  // Group by folder (cwd) or machine (host). Folder is the default — the user
+  // often runs several sessions in one project folder.
   const groups = new Map<string, string[]>()
   for (const id of ids) {
-    const host = sessions[id].host || 'local'
-    if (!groups.has(host)) groups.set(host, [])
-    groups.get(host)!.push(id)
+    const s = sessions[id]
+    const key = groupBy === 'folder' ? (s.cwd || '~') : (s.host || 'local')
+    if (!groups.has(key)) groups.set(key, [])
+    groups.get(key)!.push(id)
   }
-  const hostLabelOf = (host: string) =>
-    host === 'local' ? 'This machine' : (sessions[groups.get(host)![0]].hostLabel || host)
-  const orderedHosts = [...groups.keys()].sort((a, b) => {
-    if (a === 'local') return -1
-    if (b === 'local') return 1
-    return hostLabelOf(a).localeCompare(hostLabelOf(b))
+  const labelOf = (key: string) => {
+    if (groupBy === 'host') return key === 'local' ? 'This machine' : (sessions[groups.get(key)![0]].hostLabel || key)
+    return key === '~' ? '~' : (key.split('/').pop() || key)
+  }
+  const orderedKeys = [...groups.keys()].sort((a, b) => {
+    if (groupBy === 'host') {
+      if (a === 'local') return -1
+      if (b === 'local') return 1
+    }
+    return labelOf(a).localeCompare(labelOf(b))
   })
-  // Always show the machine header (even with just "This machine") so the
-  // multi-computer grouping is visible; remote groups appear as agents connect.
   const showHeaders = groups.size > 0
 
   const renderItem = (id: string) => {
@@ -117,6 +140,11 @@ export function SessionList({ onSelect, onOpenFiles }: Props) {
     const title = titles[id] || `#${id} ${s.cmd}`
     const isActive = id === activeId
     const folder = s.cwd.split('/').pop() || s.cwd
+    // In folder mode the group header already names the folder, so showing it on
+    // every row is redundant — surface the machine (for remote) instead.
+    const contextLabel = groupBy === 'folder'
+      ? (s.host && s.host !== 'local' ? (s.hostLabel || s.host) : '')
+      : folder
 
     return (
       <div
@@ -137,7 +165,7 @@ export function SessionList({ onSelect, onOpenFiles }: Props) {
             <div className="session-title" onDoubleClick={e => startEdit(e, id)}>{title}</div>
           )}
           <div className="session-meta">
-            <span className="session-path">{folder}</span>
+            {contextLabel && <span className="session-path">{contextLabel}</span>}
             <span className={`session-state state-${state}`}>{STATE_LABELS[state] || state}</span>
           </div>
         </div>
@@ -162,6 +190,10 @@ export function SessionList({ onSelect, onOpenFiles }: Props) {
 
   return (
     <div className="session-list">
+      <div className="session-groupby">
+        <button className={`sgb-btn ${groupBy === 'folder' ? 'active' : ''}`} onClick={() => setGroup('folder')}>폴더</button>
+        <button className={`sgb-btn ${groupBy === 'host' ? 'active' : ''}`} onClick={() => setGroup('host')}>머신</button>
+      </div>
       {allIds.length >= 5 && (
         <div className="session-filter-wrap">
           <input
@@ -173,12 +205,41 @@ export function SessionList({ onSelect, onOpenFiles }: Props) {
           />
         </div>
       )}
-      {orderedHosts.map((host) => (
-        <div className="session-group" key={host}>
-          {showHeaders && <div className="session-group-header">{hostLabelOf(host)}</div>}
-          {groups.get(host)!.map(renderItem)}
-        </div>
-      ))}
+      {orderedKeys.map((key) => {
+        const groupIds = groups.get(key)!
+        const firstHost = sessions[groupIds[0]].host || 'local'
+        const isFolder = groupBy === 'folder'
+        const isCollapsed = collapsed.has(key)
+        // Highlight the selected workspace folder; fall back to the active session's.
+        const effectiveWs = workspaceCwd || (activeId ? sessions[activeId]?.cwd : undefined)
+        const isWorkspace = isFolder && effectiveWs === key
+        return (
+          <div className="session-group" key={key}>
+            {showHeaders && (
+              <div className={`session-group-header ${isWorkspace ? 'active-workspace' : ''}`} title={key}>
+                {isFolder && (
+                  <span
+                    className={`sgh-arrow ${isCollapsed ? '' : 'open'}`}
+                    onClick={(e) => { e.stopPropagation(); toggleCollapse(key) }}
+                  >▶</span>
+                )}
+                <span className="sgh-label" onClick={() => selectFolder(key)}>{labelOf(key)}</span>
+                <span className="sgh-count">{groupIds.length}</span>
+                {isFolder && (
+                  <button
+                    className="sgh-add"
+                    title={`이 폴더에 새 세션: ${key}`}
+                    onClick={(e) => { e.stopPropagation(); openSpawn({ cwd: key, host: firstHost }) }}
+                  >
+                    +
+                  </button>
+                )}
+              </div>
+            )}
+            {!isCollapsed && groupIds.map(renderItem)}
+          </div>
+        )
+      })}
       {ids.length === 0 && <div className="empty-msg">{q ? 'No matches' : 'No sessions'}</div>}
     </div>
   )

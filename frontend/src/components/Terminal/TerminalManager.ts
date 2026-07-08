@@ -291,6 +291,20 @@ export function show(id: string) {
   })
 }
 
+// Reveal one terminal without hiding the others (grid view shows many at once).
+export function reveal(id: string) {
+  const t = terminals.get(id)
+  if (t) t.el.style.display = ''
+}
+
+// Mount a session's terminal into a grid tile: open (create/re-parent), make
+// visible, and fit it to the tile. Used by SessionGrid for each tile.
+export function mountInto(id: string, container: HTMLElement) {
+  open(id, container)
+  reveal(id)
+  refit(id)
+}
+
 export function search(id: string, q: string) {
   const t = terminals.get(id)
   if (!t?.searchAddon) return
