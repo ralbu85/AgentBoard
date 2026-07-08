@@ -61,6 +61,10 @@ BASE_PATH: str = _cfg.get("basePath", "")
 FAVORITES: list = _cfg.get("favorites", [])
 DEFAULT_COMMAND: str = _cfg.get("defaultCommand", "claude")
 
+# VAPID "sub" claim for Web Push — a mailto:/https: contact the push service can
+# reach if a subscription misbehaves. The value is not user-facing.
+VAPID_SUBJECT = os.getenv("AGENTBOARD_VAPID_SUBJECT", "mailto:agentboard@localhost")
+
 FIFO_DIR = Path("/tmp")
 TITLES_FILE = PROJECT_ROOT / ".session-titles.json"
 

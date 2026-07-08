@@ -4,10 +4,13 @@ from fastapi import APIRouter, Depends, Response, Request, HTTPException
 
 from .auth import verify
 from .sessions import store
-from .models import LoginRequest, SpawnRequest, InputRequest, KeyRequest, AttachRequest, SessionIdRequest
+from .models import (
+    LoginRequest, SpawnRequest, InputRequest, KeyRequest, AttachRequest,
+    SessionIdRequest, PushSubscribeRequest, PushUnsubscribeRequest,
+)
 from .agents import registry
 from .namespace import LOCAL, split_id
-from . import config, tmux, streamer, commands
+from . import config, tmux, streamer, commands, push
 
 router = APIRouter(prefix="/api")
 
@@ -156,6 +159,23 @@ async def send_key(req: KeyRequest, _=Depends(verify)):
 @router.get("/config")
 async def get_config(_=Depends(verify)):
     return {"basePath": config.BASE_PATH}
+
+
+@router.get("/push/key")
+async def push_key(_=Depends(verify)):
+    return {"key": push.public_key()}
+
+
+@router.post("/push/subscribe")
+async def push_subscribe(req: PushSubscribeRequest, _=Depends(verify)):
+    push.subscribe({"endpoint": req.endpoint, "keys": req.keys, "expirationTime": req.expirationTime})
+    return {"ok": True}
+
+
+@router.post("/push/unsubscribe")
+async def push_unsubscribe(req: PushUnsubscribeRequest, _=Depends(verify)):
+    push.unsubscribe(req.endpoint)
+    return {"ok": True}
 
 
 @router.post("/perf")

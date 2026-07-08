@@ -14,4 +14,11 @@ setVVH()
 vv?.addEventListener('resize', setVVH)
 window.addEventListener('orientationchange', setVVH)
 
+// Register the push service worker (best-effort; secure context only).
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => {})
+  })
+}
+
 createRoot(document.getElementById('root')!).render(<App />)

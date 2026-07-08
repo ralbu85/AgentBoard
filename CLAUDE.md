@@ -44,6 +44,8 @@ The hub is a pure relay for remote hosts: it never runs streamer/tmux for a remo
 - `routes_session.py` — REST: login, workers, spawn, kill, input, key, health
 - `routes_file.py` — REST: browse, files, read / write / upload (path-traversal safe)
 - `tunnel.py` — Cloudflare tunnel (optional)
+- `push.py` — Web Push (VAPID): fires an OS notification when a session goes
+  `waiting`/`completed`; subscriptions persisted, deduped per session
 - `models.py` — Pydantic request models with length limits
 
 ### Frontend (`frontend/src/`)
@@ -200,6 +202,20 @@ cd frontend && npm run dev
   (the agent assigns it); it matches the `spawned` event's echoed `reqId` — robust to
   concurrent spawns. Spawn failures surface via a `spawn-error` frame.
 
+### Notifications (Web Push)
+- **Hook pushes into `ws.broadcast`, not `streamer._detect_state`.** Broadcast is
+  the one choke point both local *and* remote (agent-relayed) state changes pass
+  through with correct prefixed ids. `push.maybe_push` inspects each frame.
+- **Dedup per session or you spam.** `push._last_state` latches waiting/completed
+  and resets on working/idle/running, so re-broadcasts don't re-notify.
+- **The service worker must NOT cache app assets.** `sw.js` only renders push +
+  handles clicks. Caching would serve stale JS — the app is cache-busted server-side.
+- **iOS only delivers Web Push to an installed PWA.** Manifest + apple-touch-icon +
+  "add to home screen" are required on iPhone; Android/desktop Chrome push in-tab.
+- **`.vapid_private.pem` and `.push-subs.json` are secrets/state — gitignored.**
+  The VAPID keypair is generated once on first run and must persist (regenerating
+  invalidates every existing subscription).
+
 ### Out of scope (intentionally removed)
 - **Server-side LaTeX rendering.** Heavy, error-prone, slow. Removed in `22238eb`. Use client-side KaTeX.
 - **Playwright screenshot loops for visual verification.** User runs visual checks manually. Don't add automated UI screenshot tests — see feedback memory.
@@ -233,6 +249,9 @@ cd frontend && npm run dev
 - `GET  /api/files?path=` — file listing with metadata
 - `GET  /api/file?path=` — read file
 - `POST /api/file` — `{path, content}` write file
+- `GET  /api/push/key` — VAPID public key (applicationServerKey)
+- `POST /api/push/subscribe` — `{endpoint, keys, expirationTime}` store a browser push subscription
+- `POST /api/push/unsubscribe` — `{endpoint}`
 - `GET  /api/health` — readiness probe (used by `deploy.sh`)
 
 ### WebSocket (`/ws`)

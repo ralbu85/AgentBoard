@@ -6,7 +6,7 @@ from pathlib import Path
 from fastapi import FastAPI, Response
 from fastapi.responses import FileResponse
 
-from . import config, streamer, tunnel
+from . import config, streamer, tunnel, push
 from .logger import log
 from .sessions import store
 from .routes_session import router as session_router
@@ -22,6 +22,7 @@ async def lifespan(app: FastAPI):
     store.set_broadcast(broadcast)
     streamer.set_broadcast(broadcast)
     tunnel.set_broadcast(broadcast)
+    push.init()
 
     await store.recover()
 

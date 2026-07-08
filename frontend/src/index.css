@@ -137,6 +137,24 @@ body {
   font-size: 11px; padding: 1px 6px; border-radius: 4px;
   background: var(--accent-soft); color: var(--text-muted);
 }
+.btn.notif-on { color: var(--amber, #fbbf24); }
+
+/* Quick-approve banner: appears over the terminal when a session is waiting. */
+.quick-approve {
+  position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  padding: 7px 10px; border-radius: 10px; z-index: 5;
+  background: rgba(251, 191, 36, 0.14);
+  border: 1px solid rgba(251, 191, 36, 0.5);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(6px);
+}
+.quick-approve .qa-label {
+  font-size: 12px; font-weight: 600; color: var(--amber, #fbbf24); margin-right: 2px;
+}
+.quick-approve .qa-btn { min-width: 30px; }
+.quick-approve .qa-yes { background: rgba(52, 211, 153, 0.2); color: var(--emerald, #34d399); }
+.quick-approve .qa-no  { background: rgba(248, 113, 113, 0.18); color: var(--red, #f87171); }
 
 .spawn-recents { display: flex; flex-direction: column; gap: 1px; margin-top: 4px; }
 .spawn-recent {

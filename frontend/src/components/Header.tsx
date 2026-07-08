@@ -1,7 +1,9 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useStore } from '../store'
 import { api } from '../api'
 import { SpawnModal } from './SpawnModal/SpawnModal'
+import { pushSupported, notificationsEnabled, enableNotifications, disableNotifications } from '../push'
+import { useToasts } from '../toasts'
 
 interface Props {
   onToggleSidebar: () => void
@@ -22,6 +24,27 @@ export function Header({ onToggleSidebar }: Props) {
   const [unmanaged, setUnmanaged] = useState<any[]>([])
   const [showScan, setShowScan] = useState(false)
   const [showSpawn, setShowSpawn] = useState(false)
+  const [notif, setNotif] = useState(false)
+  const canNotify = pushSupported()
+
+  useEffect(() => {
+    if (canNotify) notificationsEnabled().then(setNotif)
+  }, [canNotify])
+
+  const toggleNotif = async () => {
+    const toast = (m: string) => useToasts.getState().push(m)
+    if (notif) {
+      await disableNotifications()
+      setNotif(false)
+      toast('알림을 껐습니다')
+      return
+    }
+    const r = await enableNotifications()
+    if (r === 'ok') { setNotif(true); toast('알림 켜짐 — 세션이 입력 대기/완료되면 알려드립니다') }
+    else if (r === 'denied') toast('브라우저에서 알림이 차단됨 — 사이트 알림 권한을 허용하세요')
+    else if (r === 'unsupported') toast('이 브라우저는 푸시 알림 미지원 (iOS는 홈 화면에 추가 후 사용)')
+    else toast('알림 설정에 실패했습니다')
+  }
 
   const counts = Object.keys(sessions).reduce(
     (acc, id) => {
@@ -79,6 +102,15 @@ export function Header({ onToggleSidebar }: Props) {
         </div>
       )}
       <div className="header-right">
+        {canNotify && (
+          <button
+            className={`btn btn-icon ${notif ? 'notif-on' : ''}`}
+            onClick={toggleNotif}
+            title={notif ? '알림 켜짐 (클릭해서 끄기)' : '알림 켜기 — 입력 대기/완료 시 푸시'}
+          >
+            {notif ? '🔔' : '🔕'}
+          </button>
+        )}
         <button className="btn" onClick={handleScan} title="Detect tmux sessions">Scan</button>
         <button className="btn btn-primary" onClick={handleSpawn}>+ New</button>
       </div>

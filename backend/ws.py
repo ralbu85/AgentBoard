@@ -6,7 +6,7 @@ from typing import Set
 
 from fastapi import WebSocket, WebSocketDisconnect
 
-from . import tmux, streamer, commands
+from . import tmux, streamer, commands, push
 from .agents import registry
 from .auth import verify_ws
 from .logger import log
@@ -22,6 +22,12 @@ _ws_remote: dict[int, tuple[str, str]] = {}
 
 
 def broadcast(msg: dict):
+    # Fire an OS push on attention transitions (waiting/completed) for both local
+    # and remote sessions — every state change funnels through here.
+    try:
+        push.maybe_push(msg)
+    except Exception as e:
+        log.debug("push hook failed: %s", e)
     data = json.dumps(msg)
     dead = []
     for ws in clients:

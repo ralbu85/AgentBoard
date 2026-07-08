@@ -1,8 +1,20 @@
 import { useEffect, useRef, useState } from 'react'
 import { useStore } from '../../store'
+import { api } from '../../api'
 import * as TM from './TerminalManager'
 
 import '@xterm/xterm/css/xterm.css'
+
+// Quick responses for a session that's waiting on a prompt. Claude Code prompts
+// are usually a numbered menu (1 = affirmative) confirmed with Enter, cancelled
+// with Esc — so these cover the common cases without opening the terminal.
+const QUICK_KEYS: { label: string; key: string; cls?: string }[] = [
+  { label: 'Yes ⏎', key: 'Enter', cls: 'qa-yes' },
+  { label: '1', key: '1' },
+  { label: '2', key: '2' },
+  { label: '3', key: '3' },
+  { label: 'No (Esc)', key: 'Escape', cls: 'qa-no' },
+]
 
 const STATE_DISPLAY: Record<string, { label: string; icon: string }> = {
   working:   { label: 'Thinking', icon: '●' },
@@ -82,6 +94,20 @@ export function TerminalPane() {
           <span className="sb-arrow">↓</span>
           <span className="sb-text"> Bottom</span>
         </button>
+      )}
+      {activeId && currentState === 'waiting' && (
+        <div className="quick-approve">
+          <span className="qa-label">◆ 입력 대기 중</span>
+          {QUICK_KEYS.map((k) => (
+            <button
+              key={k.key}
+              className={`btn btn-xs qa-btn ${k.cls || ''}`}
+              onClick={() => api.key(activeId, k.key)}
+            >
+              {k.label}
+            </button>
+          ))}
+        </div>
       )}
     </div>
   )

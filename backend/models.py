@@ -60,3 +60,11 @@ class NoteDeleteRequest(BaseModel):
     path: str = Field(min_length=1, max_length=_PATH_MAX)
     startLine: int | None = None
     endLine: int | None = None
+
+class PushSubscribeRequest(BaseModel):
+    endpoint: str = Field(min_length=1, max_length=2048)
+    keys: dict = Field(default_factory=dict)
+    expirationTime: float | None = None
+
+class PushUnsubscribeRequest(BaseModel):
+    endpoint: str = Field(min_length=1, max_length=2048)

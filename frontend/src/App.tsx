@@ -54,7 +54,37 @@ export function App() {
       }
     }
     window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
+
+    // Open a session from a notification click (?session=<id> or SW message).
+    const openSession = (id: string) => {
+      if (!id) return
+      const tryOpen = () => {
+        if (useStore.getState().sessions[id]) {
+          useStore.getState().setActive(id)
+          notifyActive(id)
+          return true
+        }
+        return false
+      }
+      if (!tryOpen()) {
+        const t = setInterval(() => { if (tryOpen()) clearInterval(t) }, 200)
+        setTimeout(() => clearInterval(t), 5000)
+      }
+    }
+    const initial = new URLSearchParams(location.search).get('session')
+    if (initial) openSession(initial)
+    const onSwMsg = (e: MessageEvent) => {
+      if (e.data?.type === 'open-session' && e.data.url) {
+        const sid = new URL(e.data.url, location.origin).searchParams.get('session')
+        if (sid) openSession(sid)
+      }
+    }
+    navigator.serviceWorker?.addEventListener('message', onSwMsg)
+
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      navigator.serviceWorker?.removeEventListener('message', onSwMsg)
+    }
   }, [authed])
 
   if (authed === null) return (
