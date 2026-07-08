@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { api } from './api'
 import { useStore } from './store'
-import { initWs, terminalHandlers, notifyActive } from './ws'
+import { initWs, terminalHandlers } from './ws'
 import { Login } from './components/Login'
 import { Toaster } from './components/Toaster'
 import { Header } from './components/Header'
@@ -43,8 +43,7 @@ export function App() {
     const state = useStore.getState()
     const ids = Object.keys(state.sessions)
     if (!state.activeId && ids.length > 0) {
-      state.setActive(ids[0])
-      notifyActive(ids[0])
+      state.setActive(ids[0])  // TerminalPane's effect notifies + snapshots
     }
 
     const onKey = (e: KeyboardEvent) => {
@@ -60,8 +59,7 @@ export function App() {
       if (!id) return
       const tryOpen = () => {
         if (useStore.getState().sessions[id]) {
-          useStore.getState().setActive(id)
-          notifyActive(id)
+          useStore.getState().setActive(id)  // effect notifies + snapshots
           return true
         }
         return false

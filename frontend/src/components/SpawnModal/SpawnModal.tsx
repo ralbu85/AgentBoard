@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react'
 import { api } from '../../api'
 import { useStore } from '../../store'
-import { notifyActive, send } from '../../ws'
 import type { HostInfo } from '../../types'
 
 const PRESETS = [
@@ -76,8 +75,7 @@ export function SpawnModal({ open, onClose }: Props) {
         const newId = findNew()
         if (newId) {
           clearInterval(poll)
-          useStore.getState().setActive(newId)
-          notifyActive(newId)
+          useStore.getState().setActive(newId)  // effect notifies + snapshots
           sendExtraLines(newId)
         }
       }, 100)

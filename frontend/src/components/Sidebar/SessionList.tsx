@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react'
 import { useStore } from '../../store'
 import { api } from '../../api'
-import { notifyActive, send } from '../../ws'
+import { send } from '../../ws'
 
 const STATE_COLORS: Record<string, string> = {
   working: '#a78bfa',
@@ -38,8 +38,11 @@ export function SessionList({ onSelect, onOpenFiles }: Props) {
   const editRef = useRef<HTMLInputElement>(null)
 
   const handleSelect = (id: string) => {
+    // Switching sessions: setActive drives TerminalPane's effect, which
+    // notifyActive()s and pulls a fresh snapshot. Re-clicking the already-active
+    // session doesn't change activeId (no effect), so resync explicitly.
+    if (id === activeId) send({ type: 'resync', id })
     setActive(id)
-    notifyActive(id)
     onSelect?.()
   }
 
@@ -67,11 +70,8 @@ export function SessionList({ onSelect, onOpenFiles }: Props) {
 
   const handleFiles = (e: React.MouseEvent, id: string) => {
     e.stopPropagation()
-    // Switch to this session first, then open files
-    if (id !== activeId) {
-      setActive(id)
-      notifyActive(id)
-    }
+    // Switch to this session first, then open files (effect notifies + snapshots)
+    if (id !== activeId) setActive(id)
     onOpenFiles?.()
   }
 

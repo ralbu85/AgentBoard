@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useStore } from '../../store'
 import { api } from '../../api'
+import { notifyActive } from '../../ws'
 import * as TM from './TerminalManager'
 
 import '@xterm/xterm/css/xterm.css'
@@ -40,6 +41,11 @@ export function TerminalPane() {
     // (rotation, split-pane drag, mobile keyboard) before this session was
     // last viewed. Recompute now that it's visible again.
     TM.refit(activeId)
+    // Every session switch funnels through here (both layouts mount TerminalPane).
+    // Re-assert active so the backend returns a fresh snapshot that fully clears
+    // this terminal's old buffer — otherwise switch paths that don't call
+    // notifyActive themselves (e.g. kill/remove auto-select) leave stale content.
+    notifyActive(activeId)
   }, [activeId])
 
   // Poll scroll state for button visibility
