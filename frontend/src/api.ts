@@ -67,6 +67,7 @@ export const api = {
   browse: (path: string) => get(`/api/browse?path=${encodeURIComponent(path)}`),
   files: (path: string) => get(`/api/files?path=${encodeURIComponent(path)}`),
   readFile: (path: string) => get(`/api/file?path=${encodeURIComponent(path)}`),
+  gitDiff: (path: string) => get(`/api/git/diff?path=${encodeURIComponent(path)}`),
   writeFile: (path: string, content: string) => post('/api/file', { path, content }),
   rename: (from: string, to: string) => post('/api/rename', { from, to }),
   delete: (path: string) => post('/api/delete', { path }),

@@ -230,7 +230,25 @@ export function FilePanel({ initialPath, onClose }: Props) {
   }
 
   const openTab = useStore(s => s.openTab)
+  const openDiffTab = useStore(s => s.openDiffTab)
   const isDesktop = window.innerWidth > 768
+
+  async function newFile() {
+    const name = window.prompt('새 파일 이름')?.trim()
+    if (!name) return
+    const full = `${initialPath.replace(/\/$/, '')}/${name}`
+    const res = await api.writeFile(full, '')
+    if (res?.ok === false) return
+    bump()
+    openTab({ id: full, name, path: full, content: '', type: 'code', lang: '' })
+  }
+
+  async function showDiff() {
+    const r = await api.gitDiff(initialPath)
+    if (!r?.isRepo) { alert('이 폴더는 git 저장소가 아닙니다.'); return }
+    const fname = (initialPath.split('/').filter(Boolean).pop() || initialPath) + (r.truncated ? ' (일부)' : '')
+    openDiffTab(initialPath, fname, r.diff || '')
+  }
 
   async function handleClick(entry: FileEntry) {
     const full = `${path}/${entry.name}`
@@ -388,10 +406,14 @@ export function FilePanel({ initialPath, onClose }: Props) {
     >
       <div className="fp-header">
         <div className="fp-folder" title={path}>📁 {folder}{uploading > 0 ? ` · 업로드 중 ${uploading}` : ''}</div>
-        <button className="fv-btn file-newfolder-btn" onClick={() => doMkdir(initialPath, bump)} title="New folder">
+        <button className="fv-btn" onClick={showDiff} title="변경사항 (git diff)">⇄</button>
+        <button className="fv-btn" onClick={newFile} title="새 파일">
+          <svg width="14" height="14" viewBox="0 0 20 20" fill="none"><path d="M5 2H12L16 6V18H5C4 18 3 17 3 16V4C3 3 4 2 5 2Z" stroke="currentColor" strokeWidth="1.5"/><path d="M10 9V14M7.5 11.5H12.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
+        </button>
+        <button className="fv-btn file-newfolder-btn" onClick={() => doMkdir(initialPath, bump)} title="새 폴더">
           <svg width="14" height="14" viewBox="0 0 20 20" fill="none"><path d="M2 5C2 4 3 3 4 3H8L10 5H16C17 5 18 6 18 7V15C18 16 17 17 16 17H4C3 17 2 16 2 15V5Z" stroke="currentColor" strokeWidth="1.5"/><path d="M10 9V13M8 11H12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
         </button>
-        <button className="fv-btn file-upload-btn" onClick={() => fileInputRef.current?.click()} title="Upload">
+        <button className="fv-btn file-upload-btn" onClick={() => fileInputRef.current?.click()} title="업로드">
           <svg width="14" height="14" viewBox="0 0 20 20" fill="none"><path d="M10 14V4M10 4L6 8M10 4L14 8M4 16H16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
         </button>
         <button className="fv-btn" onClick={onClose} title="Close">

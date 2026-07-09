@@ -8,8 +8,9 @@ export interface ViewerTab {
   name: string
   path: string
   content: string
-  type: 'code' | 'markdown' | 'latex' | 'pdf' | 'image'
+  type: 'code' | 'markdown' | 'latex' | 'pdf' | 'image' | 'diff'
   lang: string
+  dirty?: boolean
 }
 
 interface AppState {
@@ -70,6 +71,8 @@ interface AppState {
   openTab: (tab: ViewerTab) => void
   closeTab: (id: string) => void
   updateTab: (tabId: string, content: string) => void
+  markTabSaved: (tabId: string) => void
+  openDiffTab: (path: string, name: string, diff: string) => void
   setActiveTab: (id: string) => void
   handleMessage: (msg: WsMessage) => void
   effectiveState: (id: string) => string | null
@@ -158,6 +161,8 @@ export const useStore = create<AppState>((set, get) => ({
     const { activeId, _viewerState } = get()
     if (!activeId) return
     const cur = _viewerState[activeId] || { tabs: [], activeTabId: null }
+    const tab = cur.tabs.find(t => t.id === id)
+    if (tab?.dirty && !window.confirm(`저장하지 않은 변경이 있습니다: ${tab.name}\n닫을까요?`)) return
     const idx = cur.tabs.findIndex(t => t.id === id)
     const next = cur.tabs.filter(t => t.id !== id)
     let nextActive = cur.activeTabId
@@ -171,8 +176,27 @@ export const useStore = create<AppState>((set, get) => ({
     const { activeId, _viewerState } = get()
     if (!activeId) return
     const cur = _viewerState[activeId] || { tabs: [], activeTabId: null }
-    const tabs = cur.tabs.map(t => t.id === tabId ? { ...t, content } : t)
+    const tabs = cur.tabs.map(t => t.id === tabId ? { ...t, content, dirty: true } : t)
     set({ _viewerState: { ..._viewerState, [activeId]: { ...cur, tabs } } })
+  },
+
+  markTabSaved: (tabId) => {
+    const { activeId, _viewerState } = get()
+    if (!activeId) return
+    const cur = _viewerState[activeId] || { tabs: [], activeTabId: null }
+    const tabs = cur.tabs.map(t => t.id === tabId ? { ...t, dirty: false } : t)
+    set({ _viewerState: { ..._viewerState, [activeId]: { ...cur, tabs } } })
+  },
+
+  openDiffTab: (path, name, diff) => {
+    const { activeId, _viewerState } = get()
+    if (!activeId) return
+    const id = `diff:${path}`
+    const cur = _viewerState[activeId] || { tabs: [], activeTabId: null }
+    const existing = cur.tabs.find(t => t.id === id)
+    const tab: ViewerTab = { id, name: `⇄ ${name}`, path, content: diff, type: 'diff', lang: 'diff' }
+    const tabs = existing ? cur.tabs.map(t => t.id === id ? tab : t) : [...cur.tabs, tab]
+    set({ _viewerState: { ..._viewerState, [activeId]: { tabs, activeTabId: id } } })
   },
 
   setActiveTab: (id) => {

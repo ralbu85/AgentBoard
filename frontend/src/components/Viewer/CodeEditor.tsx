@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import { EditorView, keymap, lineNumbers, highlightActiveLine, Decoration, type DecorationSet } from '@codemirror/view'
 import { EditorState, type Extension, StateField, StateEffect } from '@codemirror/state'
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands'
+import { search, searchKeymap, highlightSelectionMatches } from '@codemirror/search'
 import { oneDark } from '@codemirror/theme-one-dark'
 import type { Memo, SelectionInfo } from './FileContent'
 
@@ -89,7 +90,10 @@ export function CodeEditor({ content, lang, memos, onChange, onSave, onContextMe
       lineNumbers(),
       highlightActiveLine(),
       history(),
+      search({ top: true }),
+      highlightSelectionMatches(),
       keymap.of([
+        ...searchKeymap,   // Ctrl+F find, Ctrl+H replace, F3 next
         ...defaultKeymap,
         ...historyKeymap,
         { key: 'Mod-s', run: () => { cbRef.current.onSave(); return true } },

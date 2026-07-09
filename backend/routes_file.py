@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 import json
 import mimetypes
@@ -107,6 +108,45 @@ async def read_file_raw(path: str = Query(...), _=Depends(verify)):
     return StreamingResponse(iterfile(), media_type=mime)
 
 
+_DIFF_MAX = 800_000  # cap diff payload so a huge change set doesn't flood the client
+
+
+async def _git(args: list[str], cwd: str) -> tuple[int, str]:
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "git", "-C", cwd, *args,
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
+        )
+        out, _ = await asyncio.wait_for(proc.communicate(), timeout=10)
+        return proc.returncode, out.decode("utf-8", errors="replace")
+    except Exception as e:
+        log.debug("git %s failed: %s", args, e)
+        return 1, ""
+
+
+@router.get("/git/diff")
+async def git_diff(path: str = Query(...), _=Depends(verify)):
+    """Uncommitted changes (working tree vs HEAD) for a folder or a single file
+    — shows what an agent has changed. Returns empty if the path isn't in a repo."""
+    p = _safe_path(path)
+    if p is None:
+        return _forbidden()
+    d = str(p if p.is_dir() else p.parent)
+    rc, top = await _git(["rev-parse", "--show-toplevel"], d)
+    if rc != 0:
+        return {"ok": True, "isRepo": False, "diff": "", "files": []}
+    if p.is_dir():
+        _, diff = await _git(["diff", "HEAD"], d)
+        _, status = await _git(["status", "--porcelain"], d)
+        files = [ln[3:] for ln in status.splitlines() if ln.strip()]
+    else:
+        _, diff = await _git(["diff", "HEAD", "--", str(p)], d)
+        files = []
+    truncated = len(diff) > _DIFF_MAX
+    return {"ok": True, "isRepo": True, "diff": diff[:_DIFF_MAX], "truncated": truncated,
+            "files": files, "root": top.strip()}
+
+
 @router.post("/file")
 async def write_file(req: FileWriteRequest, _=Depends(verify)):
     p = _safe_path(req.path)
@@ -114,8 +154,16 @@ async def write_file(req: FileWriteRequest, _=Depends(verify)):
         return _forbidden()
     try:
         p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(req.content)
+        # Atomic write: a crash/concurrent write mid-way would otherwise leave a
+        # truncated/corrupt file. Write to a sibling temp, then os.replace().
+        tmp = p.with_name(f".{p.name}.tmp-{os.getpid()}")
+        tmp.write_text(req.content)
+        os.replace(tmp, p)
     except Exception as e:
+        try:
+            tmp.unlink(missing_ok=True)
+        except Exception:
+            pass
         return {"ok": False, "error": str(e)}
     return {"ok": True, "path": str(p)}
 

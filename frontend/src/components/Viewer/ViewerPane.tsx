@@ -220,13 +220,14 @@ function LeafPane({ node, tabs, onDragStart, onDrop, onClose, onSelect }: {
   const [dropZone, setDropZone] = useState<DropZone | null>(null)
   const ref = useRef<HTMLDivElement>(null)
   const updateTab = useStore(s => s.updateTab)
+  const markTabSaved = useStore(s => s.markTabSaved)
   const activeSessionId = useStore(s => s.activeId)
   const activeTab = tabs.find(t => t.id === node.activeTabId) || tabs.find(t => node.tabIds.includes(t.id))
 
   const isTextTab = activeTab && (activeTab.type === 'code' || activeTab.type === 'markdown' || activeTab.type === 'latex')
   const isMd = activeTab?.type === 'markdown'
   const isRendered = isMd
-  const [dirty, setDirty] = useState(false)
+  const dirty = !!activeTab?.dirty
   const [saving, setSaving] = useState(false)
   const [mdEditMode, setMdEditMode] = useState(false)
 
@@ -240,9 +241,17 @@ function LeafPane({ node, tabs, onDragStart, onDrop, onClose, onSelect }: {
     if (!activeTab || activeTab.type === 'pdf' || activeTab.type === 'image') { setMemos([]); return }
     api.loadNotes(activeTab.path).then(res => setMemos(res.notes || [])).catch(() => {})
     setSelInfo(null)
-    setDirty(false)
     setMdEditMode(false)
   }, [activeTab?.id])
+
+  // Warn before leaving the page with unsaved edits.
+  useEffect(() => {
+    const anyDirty = tabs.some(t => t.dirty)
+    if (!anyDirty) return
+    const h = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = '' }
+    window.addEventListener('beforeunload', h)
+    return () => window.removeEventListener('beforeunload', h)
+  }, [tabs])
 
 
   // ── Right-click on selected text → context menu (used by CodeEditor) ──
@@ -261,14 +270,13 @@ function LeafPane({ node, tabs, onDragStart, onDrop, onClose, onSelect }: {
   const onContentChange = useCallback((value: string) => {
     if (!activeTab) return
     updateTab(activeTab.id, value)
-    setDirty(true)
   }, [activeTab?.id])
 
   const saveFile = useCallback(async () => {
     if (!activeTab) return
     setSaving(true)
-    await api.writeFile(activeTab.path, activeTab.content)
-    setDirty(false)
+    const res = await api.writeFile(activeTab.path, activeTab.content)
+    if (res?.ok !== false) markTabSaved(activeTab.id)
     setSaving(false)
   }, [activeTab])
 
@@ -315,7 +323,7 @@ function LeafPane({ node, tabs, onDragStart, onDrop, onClose, onSelect }: {
         let content = res.content || ''
         if (activeTab.path.endsWith('.json')) try { content = JSON.stringify(JSON.parse(content), null, 2) } catch {}
         updateTab(activeTab.id, content)
-        setDirty(false)
+        markTabSaved(activeTab.id)  // reloaded from disk → clean
       } catch {}
     }
   }
@@ -384,6 +392,7 @@ function LeafPane({ node, tabs, onDragStart, onDrop, onClose, onSelect }: {
       </div>
       <div className="viewer-content" onClick={() => setCtxMenu(null)}>
         {!activeTab ? <div className="viewer-empty">Drop here</div>
+          : activeTab.type === 'diff' ? <DiffView diff={activeTab.content} />
           : activeTab.type === 'pdf' ? <FileContent content={activeTab.content} type="pdf" lang="" />
           : activeTab.type === 'image' ? <FileContent content={activeTab.content} type="image" lang="" />
           : (isMd && !mdEditMode) ? <MarkdownView content={activeTab.content} filePath={activeTab.path} onContextMenu={handleCtxMenu} />
@@ -420,6 +429,23 @@ function LeafPane({ node, tabs, onDragStart, onDrop, onClose, onSelect }: {
       )}
       {dropZone && <div className={`drop-indicator drop-${dropZone}`} />}
     </div>
+  )
+}
+
+/** Unified-diff viewer (git changes) — colored, read-only. */
+function DiffView({ diff }: { diff: string }) {
+  if (!diff.trim()) return <div className="viewer-empty">변경 사항이 없습니다 (git HEAD 대비)</div>
+  return (
+    <pre className="diff-view">
+      {diff.split('\n').map((l, i) => {
+        let cls = 'dl'
+        if (l.startsWith('+') && !l.startsWith('+++')) cls = 'dl dl-add'
+        else if (l.startsWith('-') && !l.startsWith('---')) cls = 'dl dl-del'
+        else if (l.startsWith('@@')) cls = 'dl dl-hunk'
+        else if (l.startsWith('diff ') || l.startsWith('index ') || l.startsWith('+++') || l.startsWith('---')) cls = 'dl dl-meta'
+        return <div key={i} className={cls}>{l || ' '}</div>
+      })}
+    </pre>
   )
 }
 

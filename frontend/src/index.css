@@ -514,6 +514,18 @@ body {
 }
 .ws-empty-main b { color: var(--accent); }
 
+/* Diff viewer (git changes) */
+.diff-view {
+  margin: 0; padding: 8px 0; height: 100%; overflow: auto;
+  font-family: "D2Coding", "Cascadia Code", Consolas, monospace; font-size: 12.5px; line-height: 1.5;
+  background: var(--bg-primary); color: var(--text-secondary);
+}
+.diff-view .dl { padding: 0 12px; white-space: pre-wrap; word-break: break-all; }
+.diff-view .dl-add { background: rgba(69, 212, 131, 0.14); color: #9be6b8; }
+.diff-view .dl-del { background: rgba(239, 107, 107, 0.14); color: #f0a0a0; }
+.diff-view .dl-hunk { color: var(--accent); background: rgba(124, 108, 240, 0.10); }
+.diff-view .dl-meta { color: var(--text-muted); }
+
 .spawn-agent-head { display: flex; align-items: center; justify-content: space-between; margin-top: 8px; }
 .spawn-editprofiles {
   font-size: var(--fs-xs); color: var(--text-muted); background: transparent;
