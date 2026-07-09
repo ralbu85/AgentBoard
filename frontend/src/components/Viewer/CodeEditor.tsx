@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { EditorView, keymap, lineNumbers, highlightActiveLine, Decoration, type DecorationSet } from '@codemirror/view'
-import { EditorState, type Extension, StateField, StateEffect } from '@codemirror/state'
+import { EditorState, type Extension, StateField, StateEffect, Compartment } from '@codemirror/state'
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands'
 import { search, searchKeymap, highlightSelectionMatches } from '@codemirror/search'
 import { oneDark } from '@codemirror/theme-one-dark'
@@ -86,17 +86,32 @@ export function CodeEditor({ content, lang, memos, onChange, onSave, onContextMe
   useEffect(() => {
     if (!containerRef.current) return
 
+    // Font size: Ctrl+= / Ctrl+- / Ctrl+0, persisted. Reconfigured via compartment.
+    const fontComp = new Compartment()
+    const readFs = () => { const n = parseInt(localStorage.getItem('agentboard.cmFont') || '13', 10); return isNaN(n) ? 13 : Math.min(24, Math.max(9, n)) }
+    const fontTheme = (fs: number) => EditorView.theme({ '&': { fontSize: `${fs}px` } })
+    const setFs = (n: number) => {
+      const fs = Math.min(24, Math.max(9, n))
+      localStorage.setItem('agentboard.cmFont', String(fs))
+      viewRef.current?.dispatch({ effects: fontComp.reconfigure(fontTheme(fs)) })
+    }
+
     const extensions: Extension[] = [
       lineNumbers(),
       highlightActiveLine(),
       history(),
       search({ top: true }),
       highlightSelectionMatches(),
+      fontComp.of(fontTheme(readFs())),
       keymap.of([
         ...searchKeymap,   // Ctrl+F find, Ctrl+H replace, F3 next
         ...defaultKeymap,
         ...historyKeymap,
         { key: 'Mod-s', run: () => { cbRef.current.onSave(); return true } },
+        { key: 'Mod-=', run: () => { setFs(readFs() + 1); return true } },
+        { key: 'Mod-Shift-=', run: () => { setFs(readFs() + 1); return true } },
+        { key: 'Mod--', run: () => { setFs(readFs() - 1); return true } },
+        { key: 'Mod-0', run: () => { setFs(13); return true } },
       ]),
       EditorView.updateListener.of(update => {
         if (update.docChanged) cbRef.current.onChange(update.state.doc.toString())

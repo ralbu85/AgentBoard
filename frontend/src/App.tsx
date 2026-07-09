@@ -17,6 +17,10 @@ export function App() {
   const [loadingMsg, setLoadingMsg] = useState('Connecting...')
   const [sidebarOpen, setSidebarOpen] = useState(window.innerWidth > 768)
   const [sidebarWidth, setSidebarWidth] = useState(220)
+  const activeId = useStore((s) => s.activeId)
+
+  // Re-open the files that were open in this session (read fresh from disk).
+  useEffect(() => { if (activeId) useStore.getState().restoreViewerTabs(activeId) }, [activeId])
 
   useEffect(() => {
     setLoadingMsg('Loading sessions...')

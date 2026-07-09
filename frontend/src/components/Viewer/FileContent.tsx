@@ -162,7 +162,7 @@ export const FileContent = memo(function FileContent({ content, type, lang, memo
   }, [onCtxMenu])
 
   if (type === 'pdf') return <PdfViewer url={content} />
-  if (type === 'image') return <div className="fv-image"><img src={content} alt="" /></div>
+  if (type === 'image') return <ImageView src={content} />
   if (type === 'markdown') return <div className="fv-markdown" dangerouslySetInnerHTML={{ __html: mdHtml }} />
 
   // Simple mode (overlay behind textarea): no line numbers, no table
@@ -206,3 +206,28 @@ export const FileContent = memo(function FileContent({ content, type, lang, memo
     </pre>
   )
 })
+
+// Zoomable / pannable image viewer (wheel to zoom, drag to pan).
+function ImageView({ src }: { src: string }) {
+  const [zoom, setZoom] = useState(1)
+  const [off, setOff] = useState({ x: 0, y: 0 })
+  const drag = useRef<{ x: number; y: number } | null>(null)
+  const onWheel = (e: React.WheelEvent) => {
+    setZoom((z) => Math.min(8, Math.max(0.1, z * (e.deltaY < 0 ? 1.1 : 0.9))))
+  }
+  const onDown = (e: React.MouseEvent) => { drag.current = { x: e.clientX - off.x, y: e.clientY - off.y } }
+  const onMove = (e: React.MouseEvent) => { if (drag.current) setOff({ x: e.clientX - drag.current.x, y: e.clientY - drag.current.y }) }
+  const onUp = () => { drag.current = null }
+  const reset = () => { setZoom(1); setOff({ x: 0, y: 0 }) }
+  return (
+    <div className="fv-image" onWheel={onWheel} onMouseDown={onDown} onMouseMove={onMove} onMouseUp={onUp} onMouseLeave={onUp}>
+      <div className="fv-image-tools" onMouseDown={(e) => e.stopPropagation()}>
+        <button onClick={() => setZoom((z) => Math.max(0.1, z * 0.8))}>−</button>
+        <button onClick={reset}>{Math.round(zoom * 100)}%</button>
+        <button onClick={() => setZoom((z) => Math.min(8, z * 1.25))}>＋</button>
+      </div>
+      <img src={src} alt="" draggable={false}
+        style={{ transform: `translate(${off.x}px, ${off.y}px) scale(${zoom})`, cursor: drag.current ? 'grabbing' : 'grab' }} />
+    </div>
+  )
+}

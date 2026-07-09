@@ -73,10 +73,26 @@ interface AppState {
   updateTab: (tabId: string, content: string) => void
   markTabSaved: (tabId: string) => void
   openDiffTab: (path: string, name: string, diff: string) => void
+  restoreViewerTabs: (sessionId: string) => Promise<void>
   setActiveTab: (id: string) => void
   handleMessage: (msg: WsMessage) => void
   effectiveState: (id: string) => string | null
   setSessions: (sessions: Session[]) => void
+}
+
+// Persist open-tab structure (not live content) per session, so a reload can
+// re-open the same files — read fresh from disk on restore.
+function persistViewer(sessionId: string, vs: { tabs: ViewerTab[]; activeTabId: string | null }) {
+  try {
+    const meta = vs.tabs
+      .filter((t) => t.type !== 'diff')  // diffs are derived, re-run on demand
+      .map((t) => ({
+        id: t.id, path: t.path, name: t.name, type: t.type, lang: t.lang,
+        content: (t.type === 'pdf' || t.type === 'image') ? t.content : undefined,
+      }))
+    if (meta.length) localStorage.setItem(`agentboard.viewer.${sessionId}`, JSON.stringify({ tabs: meta, activeTabId: vs.activeTabId }))
+    else localStorage.removeItem(`agentboard.viewer.${sessionId}`)
+  } catch { /* quota / disabled — ignore */ }
 }
 
 export const useStore = create<AppState>((set, get) => ({
@@ -150,11 +166,11 @@ export const useStore = create<AppState>((set, get) => ({
     if (!activeId) return
     const cur = _viewerState[activeId] || { tabs: [], activeTabId: null }
     const existing = cur.tabs.find(t => t.path === tab.path)
-    if (existing) {
-      set({ _viewerState: { ..._viewerState, [activeId]: { ...cur, activeTabId: existing.id } } })
-    } else {
-      set({ _viewerState: { ..._viewerState, [activeId]: { tabs: [...cur.tabs, tab], activeTabId: tab.id } } })
-    }
+    const nextVs = existing
+      ? { ...cur, activeTabId: existing.id }
+      : { tabs: [...cur.tabs, tab], activeTabId: tab.id }
+    set({ _viewerState: { ..._viewerState, [activeId]: nextVs } })
+    persistViewer(activeId, nextVs)
   },
 
   closeTab: (id) => {
@@ -169,7 +185,9 @@ export const useStore = create<AppState>((set, get) => ({
     if (cur.activeTabId === id) {
       nextActive = next.length > 0 ? next[Math.min(idx, next.length - 1)].id : null
     }
-    set({ _viewerState: { ..._viewerState, [activeId]: { tabs: next, activeTabId: nextActive } } })
+    const nextVs = { tabs: next, activeTabId: nextActive }
+    set({ _viewerState: { ..._viewerState, [activeId]: nextVs } })
+    persistViewer(activeId, nextVs)
   },
 
   updateTab: (tabId, content) => {
@@ -199,11 +217,39 @@ export const useStore = create<AppState>((set, get) => ({
     set({ _viewerState: { ..._viewerState, [activeId]: { tabs, activeTabId: id } } })
   },
 
+  restoreViewerTabs: async (sessionId) => {
+    const { _viewerState } = get()
+    if (_viewerState[sessionId]?.tabs?.length) return  // already populated
+    let saved: any
+    try { saved = JSON.parse(localStorage.getItem(`agentboard.viewer.${sessionId}`) || 'null') } catch { return }
+    if (!saved?.tabs?.length) return
+    const tabs: ViewerTab[] = []
+    for (const m of saved.tabs) {
+      if (m.type === 'pdf' || m.type === 'image') {
+        tabs.push({ id: m.id, path: m.path, name: m.name, type: m.type, lang: m.lang, content: m.content || '' })
+        continue
+      }
+      try {
+        const res = await api.readFile(m.path)  // fresh from disk
+        let content = res.content || ''
+        if (m.path.endsWith('.json')) { try { content = JSON.stringify(JSON.parse(content), null, 2) } catch {} }
+        tabs.push({ id: m.id, path: m.path, name: m.name, type: m.type, lang: m.lang, content })
+      } catch { /* file gone — drop it */ }
+    }
+    if (!tabs.length) return
+    const activeTabId = tabs.find(t => t.id === saved.activeTabId)?.id || tabs[0].id
+    set((s) => (s._viewerState[sessionId]?.tabs?.length ? {} : {
+      _viewerState: { ...s._viewerState, [sessionId]: { tabs, activeTabId } },
+    }))
+  },
+
   setActiveTab: (id) => {
     const { activeId, _viewerState } = get()
     if (!activeId) return
     const cur = _viewerState[activeId] || { tabs: [], activeTabId: null }
-    set({ _viewerState: { ..._viewerState, [activeId]: { ...cur, activeTabId: id } } })
+    const nextVs = { ...cur, activeTabId: id }
+    set({ _viewerState: { ..._viewerState, [activeId]: nextVs } })
+    persistViewer(activeId, nextVs)
   },
 
   removeSession: (id) => {
