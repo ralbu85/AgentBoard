@@ -63,7 +63,7 @@ The hub is a pure relay for remote hosts: it never runs streamer/tmux for a remo
   - `TerminalPane.tsx` — terminal container + scroll-to-bottom button
   - `InputCard.tsx` — input textarea + quick keys
 - `components/Sidebar/` — session list with filter, mobile overlay
-- `components/Viewer/` — split layout, code editor, file content, PDF, resizer
+- `components/Viewer/` — split layout, code editor, file content, PDF, Jupyter notebook (read-only render, ✎ → raw JSON), resizer
 - `components/SpawnModal/` — new-session dialog
 - `components/FilePanel.tsx` — file browser
 - `components/PdfViewer.tsx` — PDF rendering (pdfjs-dist, lazy-loaded)
@@ -138,14 +138,23 @@ cd frontend && npm run dev
 ### Terminal / rendering
 - **Don't apply snapshots incrementally.** Stacks the scrollback every switch. Build the full payload, write once.
 - **Don't pipe raw `pipe-pane` output to xterm.** Escape sequences shred the scrollback. We poll `capture-pane` instead.
-- **Don't `screen`-broadcast (visible-only) when scrollback grew between polls.** `capture-pane -S 0` only sees the post-burst viewport, so anything that scrolled off during a fast burst (`cat largefile`) vanishes from the client. `_poll_active` watches `#{history_size}` and re-snapshots when it grows. Stream-style append doesn't work here either — it duplicates already-visible lines and leaves cursor in the wrong row. Atomic snapshot is the only correct option.
+- **Don't `screen`-broadcast (visible-only) when scrollback grew between polls.** `capture-pane -S 0` only sees the post-burst viewport, so anything that scrolled off during a fast burst (`cat largefile`) vanishes from the client. `_poll_active` re-snapshots when scrollback grows. Stream-style append doesn't work here either — it duplicates already-visible lines and leaves cursor in the wrong row. Atomic snapshot is the only correct option.
+- **Don't trust `#{history_size}` as the scrollback-growth signal.** At the history-limit cap tmux trims the oldest lines in *batches*, so the size oscillates and even **shrinks** while new lines keep scrolling in (measured: 1964→1865 right after 500 new lines) — size-only detection silently drops the last burst. `_poll_active` compares the last 5 scrollback lines (`capture-pane -S -5 -E -1`) as the primary signal; trims eat the top, so the bottom only changes on real growth.
+- **Don't re-broadcast growth snapshots unthrottled.** While a session streams, history grows on nearly every 80 ms poll — unthrottled that's a full 2000-line ANSI snapshot per poll. `SNAPSHOT_MIN_INTERVAL` (0.5 s) gates them; cheap `screen` frames keep the visible area fresh in between. Keep the growth baseline unchanged while throttled so the growth is retried, not lost.
+- **Don't apply a snapshot while the user is scrolled up.** `writeSnapshot` erases the whole buffer (`\x1b[3J`) and pins to bottom — during streaming that yanks the reader to the bottom every snapshot ("scroll is broken"). `TerminalManager` defers the *latest* snapshot while `isScrolledUp` and flushes it when the viewport returns to the bottom (writeScreen / scrollToBottom / TerminalPane's 300 ms poll).
+- **`alternate-screen off` blocks the alt-screen *exit* sequence too — a pane already inside gets STUCK.** Restarting the app does NOT help: the old app's leave-alt sequence is ignored, `#{alternate_on}` stays 1, and the relaunched app renders into the alt grid where scrollback never accumulates ("exit하고 재시작해도 스크롤 안 됨"). Fix: while a pane reports alt-screen, the streamer grants a window-*local* `alternate-screen on` so the app's eventual exit is honored, then removes the override once it leaves (re-blocking entry) — see `_update_info` / `tmux.allow_alt_screen_exit`. Every stuck pane converges at its app's next exit.
+- **A user's `.bashrc` `cd` overrides the spawn cwd for `bash` sessions.** `tmux new-session -c <folder> bash` starts bash in the folder, then `.bashrc` runs and can `cd` elsewhere — the `-c` flag is fine, don't debug tmux. On this box `/root/.bashrc` had an unconditional `cd /workspace`; it's now guarded with `[ "$PWD" = "$HOME" ]` (machine config, not in this repo). `claude`-profile spawns are unaffected (`sh -c` doesn't read `.bashrc`).
 - **Don't fight xterm's touch handlers — disable them.** `pointer-events: none` on `.xterm*` and ride your own.
 - **Don't trust Playwright/CDP touch direction.** It's inverted vs real devices. Verify on a phone.
 - **Don't tune polling globally.** Adaptive only — active fast, background slow.
+- **`capture-pane` carries NO cursor position — send it separately or typing lands wrong.** A frame rendered from capture alone leaves the client cursor at the end of the content, not where tmux's pane cursor is (desktop direct-typing then edits at the wrong column). `tmux.capture_with_cursor` chains `display-message #{cursor_x};#{cursor_y};#{cursor_flag}` onto the SAME capture invocation (no extra subprocess) and `streamer._cursor_suffix` appends a RELATIVE move (`\r`, CUU/CUD, CUF) after the frame — relative so the one suffix is correct for both `screen` frames and snapshots regardless of client row count. A cursor move with no content change still counts as a change (arrowing a prompt).
+- **Load `@xterm/addon-unicode11` — it's installed but inert without `unicode.activeVersion='11'`.** xterm's default width table disagrees with tmux on some emoji; every box-drawing border after a mismeasured glyph shifts right (Claude Code UI is emoji-heavy). Two lines in `TerminalManager.create`.
+- **Batch liveness checks — one `list-sessions`, not N `has-session`.** `_poll_background` forked `tmux has-session` per session every 2 s (17 sessions = 17 forks/cycle). `list_sessions()` returns all live names in one call; empty set == server down == all dead. (The per-session `display_info`+tail capture for state detection still forks 2×/session/cycle — that's the dominant background cost, a later optimization.)
 
 ### Mobile / UI
 - **Don't auto-reload from the client.** Slow mobile + reload script = infinite loop. Cache-bust on the server side instead.
 - **Don't asymmetrically resize fonts on keyboard show/hide.** Viewport jitters; users lose their place.
+- **Don't apply every `visualViewport` resize to `--vvh` (app height).** The keyboard slide fires a burst of resizes (per-frame app reflow = "화면이 보였다 안 보였다" flicker), and the Korean IME suggestion bar toggles ~50px on nearly every keystroke. `main.tsx` debounces to settle-once (120 ms) and ignores <100px wobbles while an input is focused (re-synced on `focusout`).
 - **Don't forget to re-fit the terminal on session switch and font change.** Saved scrollTop must be restored after fit.
 
 ### Concurrency
@@ -229,6 +238,7 @@ cd frontend && npm run dev
 
 - `.env` at `/root/TermHub/.env` (legacy path; configurable in `backend/config.py`): `DASHBOARD_PASSWORD`, `AGENTBOARD_PORT` (or legacy `V3_PORT`)
   - Multi-machine / security knobs: `AGENT_TOKEN` (remote-agent secret; defaults to `AUTH_TOKEN`), `AGENTBOARD_HOST` (bind addr, default `127.0.0.1`), `AGENTBOARD_COOKIE_SECURE=1` (HTTPS-only cookie), `AGENTBOARD_ALLOW_DEFAULT_PW=1` (allow the `changeme` default — dev only; the server otherwise refuses to start)
+  - Terminal knobs: `AGENTBOARD_NO_ALT_SCREEN` (default `1`) — sets tmux `alternate-screen off` globally (on spawn + recover), so full-screen apps (Claude Code, vim, less) render into the normal buffer and xterm gets real scrollback; set to `0` to restore native alt-screen behavior. Panes already inside an alt-screen are auto-unstuck by the streamer at their app's next exit (window-local override — see Pitfalls). `AGENTBOARD_HISTORY_LIMIT` (default `50000`) — tmux scrollback depth for new panes (tmux's own default 2000 fills in minutes). `AGENTBOARD_SNAPSHOT_MIN_INTERVAL` (default `0.5`) — min seconds between history-growth re-snapshots.
 - nginx config: `/etc/nginx/gateway.d/port_12019.conf` → proxy to `:3002` (backend binds loopback only; nginx is the sole ingress)
 - Python venv: `backend/.venv` (Python 3.12 via conda)
 - Node: system node with npm
