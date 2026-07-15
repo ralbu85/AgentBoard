@@ -2,6 +2,7 @@ import { useRef, useState, useEffect, type KeyboardEvent, type DragEvent } from 
 import { api } from '../../api'
 import { useStore } from '../../store'
 import { FilePanel } from '../FilePanel'
+import * as TM from './TerminalManager'
 
 interface Props {
   sessionId: string
@@ -11,6 +12,8 @@ const QUICK_KEYS = [
   { label: 'Esc', key: 'Escape' },
   { label: '\u2191', key: 'Up' },
   { label: '\u2193', key: 'Down' },
+  { label: 'PgUp', key: 'PageUp' },
+  { label: 'PgDn', key: 'PageDown' },
   { label: '\u23CE', key: 'Enter' },
   { label: 'Tab', key: 'Tab' },
   { label: 'C-c', key: 'C-c' },
@@ -79,6 +82,11 @@ export function InputCard({ sessionId }: Props) {
   }
 
   const onQuickKey = (key: string) => {
+    // PgUp/PgDn: normal sessions scroll the local xterm scrollback (the app
+    // never sees page keys there); alt-screen apps get the key forwarded.
+    if (key === 'PageUp' || key === 'PageDown') {
+      if (TM.pageView(sessionId, key === 'PageUp')) return
+    }
     api.key(sessionId, key)
   }
 

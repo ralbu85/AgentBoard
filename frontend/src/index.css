@@ -776,7 +776,9 @@ body {
 }
 .input-textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
 
-.quick-keys { display: flex; gap: 4px; margin-top: 6px; }
+.quick-keys { display: flex; gap: 4px; margin-top: 6px; overflow-x: auto; scrollbar-width: none; }
+.quick-keys::-webkit-scrollbar { display: none; }
+.quick-keys .quick-key { flex-shrink: 0; white-space: nowrap; }
 
 /* ── Buttons ── */
 
