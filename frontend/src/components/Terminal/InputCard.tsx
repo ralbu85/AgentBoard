@@ -12,6 +12,7 @@ const QUICK_KEYS = [
   { label: 'Esc', key: 'Escape' },
   { label: '\u2191', key: 'Up' },
   { label: '\u2193', key: 'Down' },
+  { label: '\u232b', key: 'BSpace' },
   { label: 'PgUp', key: 'PageUp' },
   { label: 'PgDn', key: 'PageDown' },
   { label: '\u23CE', key: 'Enter' },
