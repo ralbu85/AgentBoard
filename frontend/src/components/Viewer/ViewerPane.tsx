@@ -3,7 +3,8 @@ import { useStore, type ViewerTab } from '../../store'
 import { api } from '../../api'
 import { FileContent, type Memo, type SelectionInfo } from './FileContent'
 import { CodeEditor } from './CodeEditor'
-import { renderMarkdown } from '../../markdown'
+import { renderMarkdown, findTaskLines, toggleTaskLine } from '../../markdown'
+import { NotebookView } from './NotebookView'
 
 type SplitDir = 'horizontal' | 'vertical'
 type DropZone = 'left' | 'right' | 'top' | 'bottom' | 'center'
@@ -224,9 +225,10 @@ function LeafPane({ node, tabs, onDragStart, onDrop, onClose, onSelect }: {
   const activeSessionId = useStore(s => s.activeId)
   const activeTab = tabs.find(t => t.id === node.activeTabId) || tabs.find(t => node.tabIds.includes(t.id))
 
-  const isTextTab = activeTab && (activeTab.type === 'code' || activeTab.type === 'markdown' || activeTab.type === 'latex')
+  const isTextTab = activeTab && (activeTab.type === 'code' || activeTab.type === 'markdown' || activeTab.type === 'latex' || activeTab.type === 'notebook')
   const isMd = activeTab?.type === 'markdown'
-  const isRendered = isMd
+  const isNb = activeTab?.type === 'notebook'
+  const isRendered = isMd || isNb
   const dirty = !!activeTab?.dirty
   const [saving, setSaving] = useState(false)
   const [mdEditMode, setMdEditMode] = useState(false)
@@ -278,6 +280,15 @@ function LeafPane({ node, tabs, onDragStart, onDrop, onClose, onSelect }: {
     const res = await api.writeFile(activeTab.path, activeTab.content)
     if (res?.ok !== false) markTabSaved(activeTab.id)
     setSaving(false)
+  }, [activeTab])
+
+  // Checkbox toggled in the rendered markdown view → update the buffer and
+  // persist immediately (the whole buffer, so any unsaved edits go with it).
+  const saveMdEdit = useCallback(async (newContent: string) => {
+    if (!activeTab) return
+    updateTab(activeTab.id, newContent)
+    const res = await api.writeFile(activeTab.path, newContent)
+    if (res?.ok !== false) markTabSaved(activeTab.id)
   }, [activeTab])
 
   // ── Memo CRUD ──
@@ -395,7 +406,8 @@ function LeafPane({ node, tabs, onDragStart, onDrop, onClose, onSelect }: {
           : activeTab.type === 'diff' ? <DiffView diff={activeTab.content} />
           : activeTab.type === 'pdf' ? <FileContent content={activeTab.content} type="pdf" lang="" />
           : activeTab.type === 'image' ? <FileContent content={activeTab.content} type="image" lang="" />
-          : (isMd && !mdEditMode) ? <MarkdownView content={activeTab.content} filePath={activeTab.path} onContextMenu={handleCtxMenu} />
+          : (isNb && !mdEditMode) ? <NotebookView content={activeTab.content} />
+          : (isMd && !mdEditMode) ? <MarkdownView content={activeTab.content} filePath={activeTab.path} onContextMenu={handleCtxMenu} onEdit={saveMdEdit} />
           : (
             <CodeEditor
               content={activeTab.content}
@@ -493,8 +505,9 @@ function MemoInputPanel({ selInfo, onSave, onCancel }: {
 
 /** Rendered markdown view (Notion-style) */
 const MD_ZOOM_LEVELS = [0.5, 0.75, 0.9, 1, 1.15, 1.3, 1.5, 1.75, 2, 2.5]
-function MarkdownView({ content, filePath, onContextMenu }: { content: string; filePath?: string; onContextMenu?: (info: SelectionInfo) => void }) {
+function MarkdownView({ content, filePath, onContextMenu, onEdit }: { content: string; filePath?: string; onContextMenu?: (info: SelectionInfo) => void; onEdit?: (newContent: string) => void }) {
   const [html, setHtml] = useState('')
+  const bodyRef = useRef<HTMLDivElement>(null)
   const [zoom, setZoom] = useState<number>(() => {
     const saved = parseFloat(localStorage.getItem('md-zoom') || '1')
     return MD_ZOOM_LEVELS.includes(saved) ? saved : 1
@@ -503,6 +516,26 @@ function MarkdownView({ content, filePath, onContextMenu }: { content: string; f
     setHtml(renderMarkdown(content, filePath))
   }, [content, filePath])
   useEffect(() => { localStorage.setItem('md-zoom', String(zoom)) }, [zoom])
+
+  // Make task checkboxes clickable (marked emits them `disabled`) — but only
+  // when the DOM count matches the source scan; on a mismatch the Nth-checkbox
+  // → Nth-task-line mapping would toggle the wrong line, so stay read-only.
+  useEffect(() => {
+    if (!onEdit || !bodyRef.current) return
+    const boxes = bodyRef.current.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')
+    if (boxes.length === 0 || findTaskLines(content).length !== boxes.length) return
+    boxes.forEach(b => { b.disabled = false })
+  }, [html, content, onEdit])
+
+  const handleClick = useCallback((e: React.MouseEvent) => {
+    const el = e.target
+    if (!onEdit || !(el instanceof HTMLInputElement) || el.type !== 'checkbox' || el.disabled) return
+    const boxes = Array.from(bodyRef.current?.querySelectorAll('input[type="checkbox"]') || [])
+    const taskLines = findTaskLines(content)
+    const idx = boxes.indexOf(el)
+    if (idx < 0 || idx >= taskLines.length) return
+    onEdit(toggleTaskLine(content, taskLines[idx]))
+  }, [onEdit, content])
 
   const zoomIn = () => setZoom(z => {
     const i = MD_ZOOM_LEVELS.indexOf(z)
@@ -542,7 +575,7 @@ function MarkdownView({ content, filePath, onContextMenu }: { content: string; f
         <span className="md-zoom-label" onClick={zoomReset} title="Reset">{Math.round(zoom * 100)}%</span>
         <button className="md-zoom-btn" onClick={zoomIn} title="Zoom in">+</button>
       </div>
-      <div className="md-rendered" style={{ zoom }} dangerouslySetInnerHTML={{ __html: html }} onContextMenu={handleContextMenu} />
+      <div ref={bodyRef} className="md-rendered" style={{ zoom }} dangerouslySetInnerHTML={{ __html: html }} onContextMenu={handleContextMenu} onClick={handleClick} />
     </div>
   )
 }

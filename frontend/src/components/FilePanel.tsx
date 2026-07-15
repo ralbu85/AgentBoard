@@ -5,6 +5,9 @@ import type { FileEntry } from '../types'
 import { renderMarkdown } from '../markdown'
 import { sanitize } from '../sanitize'
 import { PdfViewer } from './PdfViewer'
+import { NotebookView } from './Viewer/NotebookView'
+
+type PreviewType = 'code' | 'markdown' | 'latex' | 'pdf' | 'image' | 'notebook'
 
 // ── Tree Node component (VS Code style) ──
 function TreeDir({ dirPath, name, depth, onFileClick, refresh, bump }: {
@@ -201,7 +204,7 @@ export function FilePanel({ initialPath, onClose }: Props) {
   const [path, setPath] = useState(initialPath)
   const [pathInput, setPathInput] = useState(initialPath)
   const [entries, setEntries] = useState<FileEntry[]>([])
-  const [preview, setPreview] = useState<{name: string; content: string; type: 'code'|'markdown'|'latex'|'pdf'|'image'; lang: string; path?: string} | null>(null)
+  const [preview, setPreview] = useState<{name: string; content: string; type: PreviewType; lang: string; path?: string} | null>(null)
   const [loading, setLoading] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -255,11 +258,18 @@ export function FilePanel({ initialPath, onClose }: Props) {
     if (entry.type === 'dir') { setPath(full); setPreview(null); return }
     const e = getExt(entry.name)
 
-    const makeTab = (name: string, content: string, type: 'code'|'markdown'|'latex'|'pdf'|'image', lang: string) => ({
+    const makeTab = (name: string, content: string, type: PreviewType, lang: string) => ({
       id: full, name, path: full, content, type, lang,
     })
 
-    if (PDF_EXTS.has(e)) {
+    if (e === 'ipynb' && entry.size < 20_000_000) {
+      try {
+        const res = await api.readFile(full)
+        const content = res.content || ''
+        if (isDesktop) { openTab(makeTab(entry.name, content, 'notebook', 'json')); return }
+        setPreview({ name: entry.name, content, type: 'notebook', lang: 'json', path: full })
+      } catch { /* */ }
+    } else if (PDF_EXTS.has(e)) {
       const url = `/api/file-raw?path=${encodeURIComponent(full)}`
       if (isDesktop) { openTab(makeTab(entry.name, url, 'pdf', '')); return }
       setPreview({ name: entry.name, content: url, type: 'pdf', lang: '' })
@@ -391,6 +401,9 @@ export function FilePanel({ initialPath, onClose }: Props) {
               <img src={preview.content} alt={preview.name} />
             </div>
           )}
+          {preview.type === 'notebook' && (
+            <NotebookView content={preview.content} />
+          )}
         </div>
       </div>
     )
@@ -426,10 +439,16 @@ export function FilePanel({ initialPath, onClose }: Props) {
         <TreeDir dirPath={initialPath} name={folder} depth={0} refresh={refresh} bump={bump} onFileClick={(fullPath, entry) => {
           // Reuse existing handleClick logic but with full path
           const e = getExt(entry.name)
-          const makeTab = (name: string, content: string, type: 'code'|'markdown'|'latex'|'pdf'|'image', lang: string) => ({
+          const makeTab = (name: string, content: string, type: PreviewType, lang: string) => ({
             id: fullPath, name, path: fullPath, content, type, lang,
           })
-          if (PDF_EXTS.has(e)) {
+          if (e === 'ipynb' && entry.size < 20_000_000) {
+            api.readFile(fullPath).then(res => {
+              const content = res.content || ''
+              if (isDesktop) { openTab(makeTab(entry.name, content, 'notebook', 'json')); return }
+              setPreview({ name: entry.name, content, type: 'notebook', lang: 'json', path: fullPath })
+            }).catch(() => {})
+          } else if (PDF_EXTS.has(e)) {
             const url = `/api/file-raw?path=${encodeURIComponent(fullPath)}`
             if (isDesktop) { openTab(makeTab(entry.name, url, 'pdf', '')); return }
             setPreview({ name: entry.name, content: url, type: 'pdf', lang: '' })

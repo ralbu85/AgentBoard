@@ -19,7 +19,7 @@ const LANG_MAP: Record<string, string> = {
   latex: 'latex', r: 'r',
 }
 
-async function getHljs() {
+export async function getHljs() {
   if (_hljs) return _hljs
   if (!_hljsLoading) {
     _hljsLoading = (async () => {

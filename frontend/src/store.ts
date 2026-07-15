@@ -8,7 +8,7 @@ export interface ViewerTab {
   name: string
   path: string
   content: string
-  type: 'code' | 'markdown' | 'latex' | 'pdf' | 'image' | 'diff'
+  type: 'code' | 'markdown' | 'latex' | 'pdf' | 'image' | 'diff' | 'notebook'
   lang: string
   dirty?: boolean
 }

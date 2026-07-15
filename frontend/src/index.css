@@ -1189,6 +1189,57 @@ tr.ln-memo:hover .fv-line-content::after { opacity: 1; }
 .md-rendered ul, .md-rendered ol { padding-left: 24px; margin: 8px 0; }
 .md-rendered li { margin: 6px 0; }
 .md-rendered li::marker { color: var(--text-muted); }
+/* GFM task list: hide the bullet, style the checkbox (clickable when the
+   viewer enables it — see MarkdownView; stays disabled on mapping mismatch) */
+.md-rendered li:has(> input[type="checkbox"]) { list-style: none; }
+.md-rendered input[type="checkbox"] {
+  width: 16px; height: 16px; margin: 0 8px 0 -22px; vertical-align: -3px;
+  accent-color: var(--green);
+}
+.md-rendered input[type="checkbox"]:not(:disabled) { cursor: pointer; }
+.md-rendered li:has(> input[type="checkbox"]:checked) { color: var(--text-muted); text-decoration: line-through; }
+
+/* ── Jupyter notebook viewer ── */
+.nb-wrap { max-width: 980px; margin: 0 auto; padding: 16px 20px 48px; overflow-x: hidden; }
+.nb-cell { display: flex; gap: 10px; margin: 12px 0; min-width: 0; }
+.nb-gutter {
+  flex: 0 0 56px; text-align: right; padding-top: 9px;
+  font-family: monospace; font-size: 11px; color: var(--text-muted);
+  user-select: none; white-space: nowrap; overflow: hidden;
+}
+.nb-gutter.nb-in { color: var(--accent); }
+.nb-main { flex: 1; min-width: 0; }
+.nb-code {
+  margin: 0; padding: 10px 12px; font-size: 12.5px; line-height: 1.55;
+  background: var(--bg-tertiary); border: 1px solid var(--border); border-radius: 8px;
+  overflow-x: auto; tab-size: 4;
+}
+.nb-raw {
+  margin: 0; padding: 10px 12px; font-size: 12.5px; line-height: 1.55;
+  color: var(--text-secondary); border: 1px dashed var(--border); border-radius: 8px;
+  overflow-x: auto; white-space: pre-wrap;
+}
+.nb-stream {
+  margin: 4px 0 0; padding: 6px 12px; font-size: 12px; line-height: 1.5;
+  overflow-x: auto; white-space: pre-wrap; word-break: break-word;
+}
+.nb-stderr { background: rgba(210, 153, 34, 0.08); border-radius: 6px; }
+.nb-error {
+  margin: 4px 0 0; padding: 8px 12px; font-size: 12px; line-height: 1.5;
+  color: #ff7b72; background: rgba(248, 81, 73, 0.08); border-radius: 6px;
+  overflow-x: auto; white-space: pre-wrap; word-break: break-word;
+}
+/* white backing: matplotlib PNGs/SVGs with transparent background are unreadable on dark */
+.nb-img { display: block; max-width: 100%; margin: 8px 0 0; background: #fff; border-radius: 6px; }
+.nb-html { margin-top: 4px; overflow-x: auto; font-size: 12.5px; }
+.nb-html table { border-collapse: collapse; margin: 6px 0; }
+.nb-html th, .nb-html td { border: 1px solid var(--border); padding: 3px 10px; font-size: 12px; text-align: right; }
+.nb-html th { background: var(--bg-tertiary); font-weight: 600; }
+.nb-cell .md-rendered { min-width: 0; overflow-x: auto; }
+@media (max-width: 768px) {
+  .nb-wrap { padding: 10px 8px 32px; }
+  .nb-gutter { flex-basis: 40px; font-size: 10px; }
+}
 .md-rendered blockquote {
   border-left: 3px solid var(--accent); padding: 8px 16px; margin: 12px 0;
   color: var(--text-secondary); background: rgba(88,166,255,0.05); border-radius: 0 8px 8px 0;
