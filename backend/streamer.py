@@ -28,6 +28,10 @@ _last_broadcast_time: dict[str, float] = {}  # id → last broadcast monotonic t
 _last_change_at: dict[str, float] = {}       # id → monotonic time of last output change
 _last_state_check: dict[str, float] = {}     # id → monotonic time of last state check
 _last_history_size: dict[str, int] = {}      # id → tmux #{history_size} at last poll
+_last_hist_edge: dict[str, str] = {}         # id → last scrollback line (growth signal at the cap)
+_last_cursor: dict[str, tuple | None] = {}   # id → last pane cursor (x, y, visible)
+_last_snapshot_at: dict[str, float] = {}     # id → last history-growth snapshot time
+_alt_override: set[str] = set()              # ids with a window-local alternate-screen override
 
 import re as _re
 import time as _time
@@ -38,6 +42,11 @@ RING_SIZE = 8192
 ACTIVE_POLL_MS = 80
 BG_POLL_MS = 2000
 MIN_BROADCAST_INTERVAL = 0.08  # 80ms min between broadcasts per session
+# Min seconds between history-growth re-snapshots. While a session streams,
+# history grows on nearly every poll; unthrottled that is a full multi-thousand-
+# line ANSI snapshot every 80 ms. Between snapshots the cheap `screen` frames
+# keep the visible area fresh, so scrollback catch-up can lag safely.
+SNAPSHOT_MIN_INTERVAL = float(os.getenv("AGENTBOARD_SNAPSHOT_MIN_INTERVAL", "0.5"))
 
 # Active poll dynamically slows when the primary session has been quiet.
 # Saves CPU on idle dashboards while staying responsive when output is flowing.
@@ -136,6 +145,10 @@ async def stop_stream(id: str, session_name: str):
     _last_change_at.pop(id, None)
     _last_state_check.pop(id, None)
     _last_history_size.pop(id, None)
+    _last_hist_edge.pop(id, None)
+    _last_cursor.pop(id, None)
+    _last_snapshot_at.pop(id, None)
+    _alt_override.discard(id)
 
 
 async def _read_fifo(id: str, session_name: str, fifo: str):
@@ -189,6 +202,35 @@ async def _read_fifo(id: str, session_name: str, fifo: str):
                 pass
 
 
+def _cursor_suffix(current_body: str, cur: tuple[int, int, bool] | None) -> str:
+    """ANSI tail that parks the client cursor where tmux's pane cursor is.
+
+    Appended AFTER the frame content, when the client cursor rests at the end
+    of the content's last line — so it positions RELATIVELY (CR, then up/down,
+    then forward). Relative moves need no knowledge of the client's row count,
+    which makes the same suffix correct for both `screen` frames (written from
+    the viewport top) and snapshots (current screen written last).
+
+    current_body: the frame's current-screen portion, trailing newlines
+    stripped — the same string whose last line the client cursor ends on.
+    """
+    if cur is None:
+        return ""
+    x, y, visible = cur
+    lines = current_body.count("\n") + 1 if current_body else 1
+    seq = "\r"
+    dy = (lines - 1) - y
+    if dy > 0:
+        seq += f"\x1b[{dy}A"
+    elif dy < 0:
+        # Cursor sits below the last content line (blank rows were stripped).
+        # CUD clamps at the viewport bottom — close enough for that rare case.
+        seq += f"\x1b[{-dy}B"
+    if x > 0:
+        seq += f"\x1b[{x}C"
+    return seq + ("\x1b[?25h" if visible else "\x1b[?25l")
+
+
 # ── Snapshots ──
 
 # Max scrollback lines carried in a snapshot. Caps snapshot weight while still
@@ -218,7 +260,7 @@ async def get_snapshot(id: str, session_name: str) -> str:
 
     info_str = await tmux.display_info(session_name)
     alt = info_str.get("alt_screen", False)
-    current = await tmux.capture_pane(session_name, lines=0, ansi=True)
+    current, cur = await tmux.capture_with_cursor(session_name)
     if alt:
         # Full-screen app (alt-screen): its scrollback lives INSIDE the app, not
         # in tmux. tmux's normal-buffer scrollback is frozen/stale, so stitching
@@ -230,18 +272,24 @@ async def get_snapshot(id: str, session_name: str) -> str:
         # screen — contiguous and in order. See _combine_snapshot.
         history = await tmux.capture_pane(session_name, lines=SNAPSHOT_HISTORY, ansi=True, end=-1)
         combined = _combine_snapshot(history, current)
+    combined += _cursor_suffix(current.rstrip("\n"), cur)
 
     _update_info(id, s, info_str)
     _detect_state(id, s, current)
     # Cache the visible capture so the next poll doesn't see a diff and re-broadcast.
     _last_screen[id] = _strip_cursor(current)
+    _last_cursor[id] = cur
 
     # Sync history baseline so the next active poll doesn't re-broadcast
     # scrollback already included in this snapshot
     try:
-        _last_history_size[id] = await tmux.history_size(session_name)
+        size, _ = await tmux.history_info(session_name)
+        _last_history_size[id] = size
+        _last_hist_edge[id] = (
+            await tmux.capture_pane(session_name, lines=5, ansi=False, end=-1)
+        ) if size > 0 else ""
     except Exception as e:
-        log.debug("history_size sync failed for %s: %s", session_name, e)
+        log.debug("history baseline sync failed for %s: %s", session_name, e)
 
     return combined
 
@@ -252,10 +300,14 @@ async def poll_now(id: str):
     if not s or s.status in ("stopped", "completed"):
         return
     try:
-        output = await tmux.capture_pane(s.session_name, lines=0, ansi=True)
-        if output != _last_screen.get(id):
-            _last_screen[id] = output
-            broadcast({"type": "screen", "id": id, "data": output.rstrip("\n").replace("\n", "\r\n")})
+        output, cur = await tmux.capture_with_cursor(s.session_name)
+        stripped = _strip_cursor(output)
+        if stripped != _last_screen.get(id) or cur != _last_cursor.get(id):
+            _last_screen[id] = stripped
+            _last_cursor[id] = cur
+            body = output.rstrip("\n")
+            broadcast({"type": "screen", "id": id,
+                       "data": body.replace("\n", "\r\n") + _cursor_suffix(body, cur)})
     except Exception as e:
         log.debug("poll_now capture failed for %s: %s", s.session_name, e)
 
@@ -296,40 +348,70 @@ async def _poll_active():
                 # rebuilds scrollback + visible in one write and preserves the
                 # ordering, sidestepping the cursor games that an append-style stream
                 # would require.
-                current_hist = await tmux.history_size(s.session_name)
+                current_hist, _ = await tmux.history_info(s.session_name)
+                # #{history_size} alone is NOT a reliable growth signal: at the
+                # history-limit cap tmux trims the oldest lines in batches, so
+                # the size oscillates (and even shrinks) while new lines keep
+                # scrolling in. The bottom of the scrollback, however, only
+                # changes when new lines scroll off the visible screen (trims
+                # eat the top) — so compare the last few history lines as the
+                # primary signal, size growth as a cheap secondary.
+                edge = ""
+                if current_hist > 0:
+                    edge = await tmux.capture_pane(s.session_name, lines=5, ansi=False, end=-1)
                 last_hist = _last_history_size.get(sid)
-                if last_hist is not None and current_hist > last_hist:
-                    # Scrollback grew — re-snapshot. Alt-screen: current only (its
+                last_edge = _last_hist_edge.get(sid)
+                grew = (last_edge is not None and edge != last_edge) or \
+                       (last_hist is not None and current_hist > last_hist)
+
+                if grew and now - _last_snapshot_at.get(sid, 0.0) >= SNAPSHOT_MIN_INTERVAL:
+                    # Scrollback grew — re-snapshot (throttled, see
+                    # SNAPSHOT_MIN_INTERVAL). Alt-screen: current only (its
                     # scrollback isn't in tmux); normal: history + current screen.
-                    visible = await tmux.capture_pane(s.session_name, lines=0, ansi=True)
+                    visible, cur = await tmux.capture_with_cursor(s.session_name)
                     if s.alt_screen:
                         snapshot_data = visible.rstrip("\n").replace("\n", "\r\n")
                     else:
                         history = await tmux.capture_pane(s.session_name, lines=SNAPSHOT_HISTORY, ansi=True, end=-1)
                         snapshot_data = _combine_snapshot(history, visible)
                     if snapshot_data:
+                        snapshot_data += _cursor_suffix(visible.rstrip("\n"), cur)
                         broadcast({"type": "snapshot", "id": sid, "data": snapshot_data})
                         _last_broadcast_time[sid] = now
+                    _last_snapshot_at[sid] = now
                     _last_screen[sid] = _strip_cursor(visible)
+                    _last_cursor[sid] = cur
                     _last_history_size[sid] = current_hist
+                    _last_hist_edge[sid] = edge
                     _last_change_at[sid] = now
                     _last_state_check[sid] = now
                     _detect_state(sid, s, visible, 0.0)
                     continue
 
-                _last_history_size[sid] = current_hist
+                if not grew:
+                    # No growth pending — advance the baselines. (While a growth
+                    # snapshot is throttled, keep the old baseline so the growth
+                    # is retried on the next poll; the screen frame below keeps
+                    # the visible area fresh in the meantime.)
+                    _last_history_size[sid] = current_hist
+                    _last_hist_edge[sid] = edge
 
-                output = await tmux.capture_pane(s.session_name, lines=0, ansi=True)
+                output, cursor = await tmux.capture_with_cursor(s.session_name)
                 stripped = _strip_cursor(output)
-                changed = stripped != _last_screen.get(sid)
+                # Cursor moves count as changes too — e.g. arrowing through a
+                # prompt moves the cursor without altering any content.
+                changed = stripped != _last_screen.get(sid) or cursor != _last_cursor.get(sid)
 
                 if changed:
                     _last_screen[sid] = stripped
+                    _last_cursor[sid] = cursor
                     _last_change_at[sid] = now
                     # Throttle: skip if last broadcast was too recent
                     if now - _last_broadcast_time.get(sid, 0) >= MIN_BROADCAST_INTERVAL:
                         _last_broadcast_time[sid] = now
-                        broadcast({"type": "screen", "id": sid, "data": output.rstrip("\n").replace("\n", "\r\n")})
+                        body = output.rstrip("\n")
+                        broadcast({"type": "screen", "id": sid,
+                                   "data": body.replace("\n", "\r\n") + _cursor_suffix(body, cursor)})
 
                 # Check state periodically (not just on change)
                 if changed or (now - _last_state_check.get(sid, 0) > STATE_CHECK_INTERVAL):
@@ -344,12 +426,15 @@ async def _poll_background():
     while True:
         await asyncio.sleep(BG_POLL_MS / 1000)
         from .sessions import store
+        # ONE list-sessions subprocess instead of a per-session `has-session`
+        # fork (N sessions = N forks every cycle). Empty result == server down
+        # == every session dead, matching is_alive's semantics.
+        alive_names = {ts["sessionName"] for ts in await tmux.list_sessions()}
         for id, s in list(store.sessions.items()):
             if s.status == "stopped":
                 continue
 
-            alive = await tmux.is_alive(s.session_name)
-            if not alive:
+            if s.session_name not in alive_names:
                 if s.status != "completed":
                     s.status = "completed"
                     s.ai_state = None
@@ -400,6 +485,20 @@ def _update_info(id: str, s, info: dict):
     # spawn/recover time so a session stays grouped under the folder it was
     # created in — otherwise a shell `cd` (or a bashrc that cd's) would move the
     # session to another folder group and its tab would vanish mid-use.
+    # NO_ALT_SCREEN blocks the alt-screen LEAVE sequence too, so a pane that
+    # entered before the option was set would stay stuck in the alt grid
+    # forever (no scrollback ever accumulates — exit+relaunch doesn't help).
+    # While a pane is in the alt-screen, grant a window-local override so the
+    # app's eventual exit is honored; re-block once it leaves. Converges every
+    # stuck pane at its app's next exit.
+    if config.NO_ALT_SCREEN:
+        if alt_screen and id not in _alt_override:
+            _alt_override.add(id)
+            asyncio.create_task(tmux.allow_alt_screen_exit(s.session_name))
+        elif not alt_screen and id in _alt_override:
+            _alt_override.discard(id)
+            asyncio.create_task(tmux.clear_alt_screen_override(s.session_name))
+
     # Re-broadcast info when process/uptime OR alt-screen state changes (the
     # latter drives the "full-screen — no scrollback" badge).
     if process != s.process or created_at != s.created_at or alt_screen != s.alt_screen:

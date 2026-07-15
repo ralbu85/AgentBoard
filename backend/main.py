@@ -98,6 +98,10 @@ def run():
         host=config.HOST,
         port=config.PORT,
         log_level="warning",
+        # permessage-deflate: ANSI snapshots compress ~15x (measured 186KB→12KB).
+        # It's the uvicorn/websockets default, but pin it so a future dependency
+        # bump can't silently drop it — matters most on mobile data.
+        ws_per_message_deflate=True,
     )
 
 

@@ -1,6 +1,7 @@
 import { Terminal } from '@xterm/xterm'
 import { SearchAddon } from '@xterm/addon-search'
 import { WebLinksAddon } from '@xterm/addon-web-links'
+import { Unicode11Addon } from '@xterm/addon-unicode11'
 import { send } from '../../ws'
 import { useStore } from '../../store'
 
@@ -32,6 +33,8 @@ interface TermInstance {
 const terminals = new Map<string, TermInstance>()
 const _pendingSnapshots = new Map<string, string>()
 const _pendingScreens = new Map<string, string>()
+// Latest snapshot held back while the user is scrolled up (see writeSnapshot).
+const _deferredSnapshots = new Map<string, string>()
 
 export function create(id: string): TermInstance {
   const existing = terminals.get(id)
@@ -62,6 +65,11 @@ export function create(id: string): TermInstance {
   const searchAddon = new SearchAddon()
   term.loadAddon(searchAddon)
   term.loadAddon(new WebLinksAddon())
+  // Match tmux's character-width tables for emoji/CJK — without this, xterm
+  // measures some emoji as narrow that tmux counted as wide, shifting every
+  // box-drawing border to the right of them (Claude Code UI is emoji-heavy).
+  term.loadAddon(new Unicode11Addon())
+  term.unicode.activeVersion = '11'
 
   if (!isMobile) {
     term.onData((data: string) => {
@@ -235,9 +243,28 @@ function _setupMobileScroll(id: string, t: TermInstance) {
   }, { capture: true, passive: true })
 }
 
+// Page the terminal VIEW up/down. Normal sessions keep history in xterm's
+// scrollback → scroll locally (sending PageUp to the app would be a no-op).
+// Alt-screen apps own their history → caller should send the key instead.
+export function pageView(id: string, up: boolean): boolean {
+  if (_isAltScreen(id)) return false
+  const t = terminals.get(id)
+  if (!t?.opened) return false
+  t.term.scrollPages(up ? -1 : 1)
+  return true
+}
+
 export function scrollToBottom(id: string) {
   const t = terminals.get(id)
   if (!t?.opened) return
+  const deferred = _deferredSnapshots.get(id)
+  if (deferred !== undefined) {
+    // Apply the held-back snapshot instead of just jumping: it rebuilds the
+    // scrollback that grew while the user was reading, then pins to bottom.
+    _deferredSnapshots.delete(id)
+    _applySnapshot(t, deferred)
+    return
+  }
   t.term.scrollToBottom()
 }
 
@@ -249,21 +276,47 @@ export function isScrolledUp(id?: string) {
   return buf.viewportY < buf.baseY
 }
 
+// \x1b[3J trims xterm's scrollback, \x1b[2J clears the visible rows,
+// \x1b[H homes the cursor. Embedding all three in the data string puts
+// them in the same write-queue entry as the snapshot — atomic relative
+// to other queued writes. (term.clear() runs synchronously but write()
+// is async, so a fast resync that triggers two snapshots in flight
+// could otherwise stack their contents.)
+function _applySnapshot(t: TermInstance, data: string) {
+  t.term.write('\x1b[3J\x1b[2J\x1b[H' + data, () => {
+    t.term.scrollToBottom()
+  })
+}
+
 export function writeSnapshot(id: string, data: string) {
   const t = terminals.get(id) || create(id)
   if (!t.opened) {
     _pendingSnapshots.set(id, data)
     return
   }
-  // \x1b[3J trims xterm's scrollback, \x1b[2J clears the visible rows,
-  // \x1b[H homes the cursor. Embedding all three in the data string puts
-  // them in the same write-queue entry as the snapshot — atomic relative
-  // to other queued writes. (term.clear() runs synchronously but write()
-  // is async, so a fast resync that triggers two snapshots in flight
-  // could otherwise stack their contents.)
-  t.term.write('\x1b[3J\x1b[2J\x1b[H' + data, () => {
-    t.term.scrollToBottom()
-  })
+  // While the user is scrolled up reading, a rebuild would erase the buffer
+  // under them and yank the viewport to the bottom — and snapshots arrive
+  // continuously while a session streams (history keeps growing). Hold only
+  // the LATEST snapshot and apply it once the viewport returns to the bottom
+  // (flushDeferred / scrollToBottom / next writeScreen at bottom).
+  if (isScrolledUp(id)) {
+    _deferredSnapshots.set(id, data)
+    return
+  }
+  _deferredSnapshots.delete(id)
+  _applySnapshot(t, data)
+}
+
+// Apply a held-back snapshot once the user has scrolled back to the bottom.
+// Called from TerminalPane's scroll-state poll so an idle session (no further
+// frames) still catches up after a manual scroll-down.
+export function flushDeferred(id?: string) {
+  if (!id) return
+  const t = terminals.get(id)
+  const deferred = _deferredSnapshots.get(id)
+  if (!t?.opened || deferred === undefined || isScrolledUp(id)) return
+  _deferredSnapshots.delete(id)
+  _applySnapshot(t, deferred)
 }
 
 // writeScreen: clear the visible area, home the cursor, dump the fresh frame.
@@ -276,6 +329,13 @@ export function writeScreen(id: string, data: string) {
     return
   }
   if (t.el.style.display === 'none') return
+  const deferred = _deferredSnapshots.get(id)
+  if (deferred !== undefined && !isScrolledUp(id)) {
+    // Back at the bottom: restore the scrollback that grew while scrolled up,
+    // then let the fresh frame below overwrite the visible area.
+    _deferredSnapshots.delete(id)
+    _applySnapshot(t, deferred)
+  }
   t.term.write('\x1b[2J\x1b[H' + data)
 }
 
@@ -320,5 +380,6 @@ export function destroy(id: string) {
   terminals.delete(id)
   _pendingSnapshots.delete(id)
   _pendingScreens.delete(id)
+  _deferredSnapshots.delete(id)
   _lastSentRows.delete(id)
 }

@@ -40,6 +40,14 @@ ALLOW_DEFAULT_PW = os.getenv("AGENTBOARD_ALLOW_DEFAULT_PW", "") == "1"
 # Send the auth cookie only over HTTPS. Default off so plain-HTTP access (e.g.
 # a LAN dev setup) still works; turn on once you serve over TLS.
 COOKIE_SECURE = os.getenv("AGENTBOARD_COOKIE_SECURE", "") == "1"
+# Disable tmux alternate-screen so full-screen apps (Claude Code, vim, less)
+# render into the normal buffer → xterm gets real scrollback → smooth scroll.
+# Default on; set AGENTBOARD_NO_ALT_SCREEN=0 to restore native full-screen apps.
+NO_ALT_SCREEN = os.getenv("AGENTBOARD_NO_ALT_SCREEN", "1") == "1"
+# tmux scrollback depth per pane. tmux's default (2000) fills up within minutes
+# of Claude output; at the cap #{history_size} freezes and older lines are
+# silently trimmed. Applies to panes created after this option is set.
+HISTORY_LIMIT = int(os.getenv("AGENTBOARD_HISTORY_LIMIT", "50000"))
 DISCORD_WEBHOOK = os.getenv("DISCORD_WEBHOOK", "")
 AUTH_TOKEN = hmac.new(b"termhub", PASSWORD.encode(), hashlib.sha256).hexdigest()
 

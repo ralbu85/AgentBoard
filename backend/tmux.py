@@ -5,6 +5,8 @@ import os
 import shlex
 from pathlib import Path
 
+from . import config
+
 TMUX_TIMEOUT = 5.0
 
 
@@ -45,10 +47,45 @@ async def capture_pane(session_name: str, lines: int = 50, ansi: bool = True,
     return await tmux_run(args)
 
 
-async def history_size(session_name: str) -> int:
-    """Number of lines currently in the pane's scrollback (above visible area)."""
-    raw = (await tmux_run(["display-message", "-t", session_name, "-p", "#{history_size}"])).strip()
-    return int(raw) if raw.isdigit() else 0
+# Separates capture text from the cursor line in capture_with_cursor's chained
+# output. Pane content never contains C0 controls (tmux stores printable cells).
+_CURSOR_SENTINEL = "\x01"
+
+
+async def capture_with_cursor(session_name: str, ansi: bool = True) -> tuple[str, tuple[int, int, bool] | None]:
+    """Visible-screen capture + cursor position in ONE tmux invocation.
+
+    capture-pane output carries no cursor location, so frames rendered from it
+    leave the client cursor at the end of the content — wrong place for typing.
+    Chaining display-message onto the same call keeps the per-poll subprocess
+    count unchanged. Returns (text, (x, y, visible)) with 0-based viewport
+    coords, or (text, None) if the cursor line is missing (e.g. tmux error).
+    """
+    args = ["capture-pane", "-t", session_name, "-p", "-S", "-0"]
+    if ansi:
+        args.append("-e")
+    args += [";", "display-message", "-t", session_name, "-p",
+             _CURSOR_SENTINEL + "#{cursor_x};#{cursor_y};#{cursor_flag}"]
+    raw = await tmux_run(args)
+    body, sep, tail = raw.rpartition(_CURSOR_SENTINEL)
+    if not sep:
+        return raw, None
+    parts = tail.strip().split(";")
+    try:
+        return body, (int(parts[0]), int(parts[1]), parts[2] == "1")
+    except (IndexError, ValueError):
+        return body, None
+
+
+async def history_info(session_name: str) -> tuple[int, int]:
+    """(lines currently in the pane's scrollback, pane's scrollback capacity)."""
+    raw = (await tmux_run([
+        "display-message", "-t", session_name, "-p", "#{history_size}|#{history_limit}"
+    ])).strip()
+    parts = raw.split("|")
+    size = int(parts[0]) if parts and parts[0].isdigit() else 0
+    limit = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 0
+    return size, limit
 
 
 async def send_keys(session_name: str, keys: str, literal: bool = False) -> None:
@@ -104,8 +141,48 @@ async def pipe_pane_stop(session_name: str) -> None:
     await tmux_run(["pipe-pane", "-t", session_name])
 
 
+def _global_option_cmds() -> list[list[str]]:
+    # history-limit is copied into a pane at creation time and alternate-screen
+    # is checked when an app tries to enter it — both must be set BEFORE the
+    # window/command exists to take effect.
+    cmds = [["set-option", "-g", "history-limit", str(config.HISTORY_LIMIT)]]
+    if config.NO_ALT_SCREEN:
+        # Full-screen apps (Claude Code, vim, less) render into the normal
+        # buffer instead → real tmux scrollback → client can scroll natively.
+        cmds.append(["set-option", "-g", "-w", "alternate-screen", "off"])
+    return cmds
+
+
+async def apply_global_options() -> None:
+    """Apply server-wide defaults (no-op if the tmux server isn't running)."""
+    for cmd in _global_option_cmds():
+        await tmux_run(cmd)
+
+
+async def allow_alt_screen_exit(session_name: str) -> None:
+    # `alternate-screen off` blocks the LEAVE sequence too, so a pane that
+    # entered the alt-screen while the option was on gets stuck in it forever
+    # (no scrollback accumulates). While a pane is in the alt-screen, a
+    # window-LOCAL `on` lets the app's eventual exit be honored; the streamer
+    # removes it again once the pane leaves (clear_alt_screen_override).
+    await tmux_run(["set-option", "-w", "-t", session_name, "alternate-screen", "on"])
+
+
+async def clear_alt_screen_override(session_name: str) -> None:
+    """Drop the window-local override → back to the global `off` (blocks re-entry)."""
+    await tmux_run(["set-option", "-w", "-t", session_name, "-u", "alternate-screen"])
+
+
 async def new_session(session_name: str, cwd: str, cmd: str) -> None:
-    await tmux_run(["new-session", "-d", "-s", session_name, "-c", cwd, cmd])
+    # One chained tmux invocation: start-server ; set options ; new-session.
+    # Chaining (";" argv tokens) matters on a cold tmux server — separate
+    # set-option calls would fail with "no server running" and the very first
+    # session would miss the options.
+    args: list[str] = ["start-server"]
+    for c in _global_option_cmds():
+        args += [";", *c]
+    args += [";", "new-session", "-d", "-s", session_name, "-c", cwd, cmd]
+    await tmux_run(args)
 
 
 async def kill_session(session_name: str) -> None:

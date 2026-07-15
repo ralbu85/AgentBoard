@@ -187,6 +187,11 @@ class SessionStore:
         return False
 
     async def recover(self):
+        # Apply global defaults (alternate-screen off, history-limit) — new
+        # spawns set them too, in tmux.new_session. NOTE: existing panes keep
+        # the history-limit they were created with, and a pane already inside
+        # an alt-screen stays there until its app exits.
+        await tmux.apply_global_options()
         tmux_sessions = await tmux.list_sessions()
         for ts in tmux_sessions:
             name = ts["sessionName"]

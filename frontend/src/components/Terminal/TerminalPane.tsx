@@ -56,6 +56,10 @@ export function TerminalPane() {
   useEffect(() => {
     const interval = setInterval(() => {
       const id = useStore.getState().activeId
+      // If a snapshot was held back while the user was scrolled up, apply it
+      // now that they're back at the bottom (idle sessions send no further
+      // frames, so writeScreen alone can't flush it).
+      TM.flushDeferred(id || undefined)
       setShowScrollBtn(TM.isScrolledUp(id || undefined))
     }, 300)
     return () => clearInterval(interval)
