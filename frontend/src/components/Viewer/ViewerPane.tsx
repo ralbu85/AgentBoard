@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect, Fragment } from 'react'
+import { useState, useRef, useCallback, useEffect, useMemo, Fragment } from 'react'
 import { useStore, type ViewerTab } from '../../store'
 import { api } from '../../api'
 import { FileContent, type Memo, type SelectionInfo } from './FileContent'
@@ -506,26 +506,31 @@ function MemoInputPanel({ selInfo, onSave, onCancel }: {
 /** Rendered markdown view (Notion-style) */
 const MD_ZOOM_LEVELS = [0.5, 0.75, 0.9, 1, 1.15, 1.3, 1.5, 1.75, 2, 2.5]
 function MarkdownView({ content, filePath, onContextMenu, onEdit }: { content: string; filePath?: string; onContextMenu?: (info: SelectionInfo) => void; onEdit?: (newContent: string) => void }) {
-  const [html, setHtml] = useState('')
   const bodyRef = useRef<HTMLDivElement>(null)
   const [zoom, setZoom] = useState<number>(() => {
     const saved = parseFloat(localStorage.getItem('md-zoom') || '1')
     return MD_ZOOM_LEVELS.includes(saved) ? saved : 1
   })
-  useEffect(() => {
-    setHtml(renderMarkdown(content, filePath))
-  }, [content, filePath])
   useEffect(() => { localStorage.setItem('md-zoom', String(zoom)) }, [zoom])
 
-  // Make task checkboxes clickable (marked emits them `disabled`) — but only
-  // when the DOM count matches the source scan; on a mismatch the Nth-checkbox
-  // → Nth-task-line mapping would toggle the wrong line, so stay read-only.
-  useEffect(() => {
-    if (!onEdit || !bodyRef.current) return
-    const boxes = bodyRef.current.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')
-    if (boxes.length === 0 || findTaskLines(content).length !== boxes.length) return
-    boxes.forEach(b => { b.disabled = false })
-  }, [html, content, onEdit])
+  // Make task checkboxes clickable by stripping `disabled` from the HTML
+  // STRING (marked emits them disabled) — but only when the checkbox count
+  // matches the source scan; on a mismatch the Nth-checkbox → Nth-task-line
+  // mapping would toggle the wrong line, so they stay read-only.
+  // String-level (not a post-render DOM effect): React re-applies
+  // dangerouslySetInnerHTML in ways that would recreate the inputs and undo
+  // an imperative `disabled = false` (observed in production).
+  const html = useMemo(() => {
+    let h = renderMarkdown(content, filePath)
+    if (onEdit) {
+      const boxes = h.match(/<input[^>]*>/g)?.filter(t => t.includes('type="checkbox"')) || []
+      if (boxes.length > 0 && boxes.length === findTaskLines(content).length) {
+        h = h.replace(/<input[^>]*>/g, tag =>
+          tag.includes('type="checkbox"') ? tag.replace(/ disabled(="")?/, '') : tag)
+      }
+    }
+    return h
+  }, [content, filePath, onEdit])
 
   const handleClick = useCallback((e: React.MouseEvent) => {
     const el = e.target
