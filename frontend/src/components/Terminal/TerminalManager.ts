@@ -406,6 +406,11 @@ export function search(id: string, q: string) {
   else t.searchAddon.clearDecorations()
 }
 
+// Test hook: ids of live (non-disposed) terminal instances.
+export function _liveIds(): string[] {
+  return [...terminals.keys()]
+}
+
 export function destroy(id: string) {
   const t = terminals.get(id)
   if (!t) return
