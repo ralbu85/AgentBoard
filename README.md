@@ -36,6 +36,12 @@ AgentBoard is a browser-based command center for running many AI coding agents i
   <img src="docs/screenshots/mobile-folders.png" alt="Phone view: workspace list with live per-folder state chips" width="41%">
 </p>
 
+<p align="center"><i>A real, unedited Claude Code session driven through AgentBoard — it adds
+rate limiting, verifies with a test client, and reports back:</i></p>
+<p align="center">
+  <img src="docs/screenshots/demo-real-claude.gif" alt="A real Claude Code session in AgentBoard: it edits src/server.py to add slowapi rate limiting, runs a TestClient to verify 429s, and summarizes what it changed" width="100%">
+</p>
+
 <details>
 <summary><b>More demos</b> — the file workspace and the review → agent loop</summary>
 <br>
