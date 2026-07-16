@@ -17,13 +17,14 @@
   <img src="https://img.shields.io/badge/TypeScript-5.8-3178C6?logo=typescript&logoColor=white" alt="TypeScript">
   <img src="https://img.shields.io/badge/Vite-6-646CFF?logo=vite&logoColor=white" alt="Vite">
   <img src="https://img.shields.io/badge/xterm.js-5.5-000000" alt="xterm.js">
+  <img src="https://img.shields.io/badge/License-AGPL%20v3-blue" alt="AGPL v3 License">
 </p>
 
 ---
 
-AgentBoard is a browser-based command center for running many AI coding agents in parallel. Spawn Claude Code, Codex, Aider, or any shell-based agent in its own `tmux` session, switch between them with a tap, and pick up exactly where you left off — from your laptop, your tablet, or your phone.
+AgentBoard is a browser-based command center for running many AI coding agents in parallel — across as many machines as you like. Spawn Claude Code, Codex, Aider, or any shell-based agent in its own `tmux` session, switch between them with a tap, and pick up exactly where you left off — from your laptop, your tablet, or your phone. Sessions running on several PCs (even behind NAT) aggregate into one dashboard.
 
-> Designed for the moment your agents outgrow a single terminal tab.
+> Designed for the moment your agents outgrow a single terminal tab — and then a single machine.
 
 ## Why AgentBoard
 
@@ -46,13 +47,16 @@ Modern coding agents are most useful when they run for **minutes or hours**, not
 | | |
 |---|---|
 | **Multi-session terminal** | Spawn, kill, rename, and switch between unlimited `tmux` sessions |
-| **Mobile-first UI** | Custom touch handlers — momentum scroll, scroll-to-bottom, keyboard-friendly input |
+| **Multi-machine** | Aggregate sessions from several PCs in one dashboard; remote agents dial out, so NAT/firewalls are no obstacle |
+| **Mobile-first UI** | Custom touch handlers — momentum scroll, scroll-to-bottom, on-screen keys (PgUp/PgDn, ⌫), keyboard-friendly input |
 | **Live state detection** | Per-session badges: `idle`, `working`, `waiting-for-input` |
+| **Push notifications** | Web Push fires an OS notification when a session goes `waiting` or `completed` — even on iOS (installed PWA) |
 | **Adaptive polling** | 80 ms on the active session, 2 s on background sessions |
-| **File browser & editor** | CodeMirror 6 with syntax highlighting for 13+ languages |
-| **Markdown + KaTeX** | Inline preview, sanitized, math rendered server-free |
-| **PDF viewer** | Zoom (50–300%), fit-to-width, lazy-loaded for instant boot |
-| **Cookie auth** | Single password, HMAC-SHA256 signed |
+| **File browser & editor** | CodeMirror 6 with syntax highlighting for 13+ languages, plus a git-diff view |
+| **Markdown + KaTeX** | Notion-style rendered view, clickable task-list checkboxes, sanitized HTML, math rendered server-free |
+| **Jupyter notebooks** | Read-only `.ipynb` viewer — rendered cells, syntax-highlighted code, images/tables/errors |
+| **PDF & image viewer** | PDF zoom (50–300%), fit-to-width; images pan/zoom; all lazy-loaded for instant boot |
+| **Cookie auth** | Single password, HMAC-SHA256 signed, per-IP login throttling |
 | **Optional Cloudflare tunnel** | Expose the dashboard publicly with one env var |
 | **Survives everything** | `tmux`-backed sessions persist across reloads, restarts, and disconnects |
 
@@ -173,4 +177,9 @@ A few non-obvious decisions that have already burned someone:
 
 ## License
 
-Private. Not currently licensed for redistribution.
+[GNU AGPL-3.0](LICENSE) © 2026 Jihwan (James) Lee.
+
+Free to use, modify, and self-host. The AGPL's network clause means that if you
+run a modified version as a service over a network, you must offer your users
+the modified source. For a commercial license without the AGPL obligations,
+contact the author.
