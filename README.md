@@ -27,6 +27,15 @@ AgentBoard is a browser-based command center for running many AI coding agents i
 
 > Designed for the moment your agents outgrow a single terminal tab — and then a single machine.
 
+<p align="center">
+  <img src="docs/screenshots/desktop-grid.png" alt="Grid view: three agents in one workspace — Thinking, Asking, Idle — with per-folder state chips in the sidebar" width="100%">
+</p>
+<p align="center">
+  <img src="docs/screenshots/mobile-waiting.png" alt="Phone view: an agent asking for confirmation, answered with one tap from the quick-approve bar" width="41%">
+  &nbsp;
+  <img src="docs/screenshots/mobile-folders.png" alt="Phone view: workspace list with live per-folder state chips" width="41%">
+</p>
+
 ## Why AgentBoard
 
 Modern coding agents are most useful when they run for **minutes or hours**, not seconds. Soon you're juggling three, five, ten of them — and `tmux` alone gets old fast on mobile. AgentBoard wraps `tmux` in a clean dashboard that:

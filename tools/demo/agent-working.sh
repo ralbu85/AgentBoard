@@ -1,0 +1,30 @@
+#!/bin/bash
+p(){ printf "$1\n"; }
+p '\e[1m> refactor the auth middleware to use the new session store\e[0m'; p ''
+p '\e[32m⏺\e[0m \e[1mRead\e[0m src/middleware/auth.ts \e[90m(88 lines)\e[0m'
+p '\e[32m⏺\e[0m \e[1mRead\e[0m src/store/session.ts \e[90m(140 lines)\e[0m'
+p '\e[32m⏺\e[0m \e[1mSearch\e[0m "sessionStore" \e[90m— 12 matches in 5 files\e[0m'; p ''
+p '\e[90m  The middleware still reads the legacy cookie store. I will swap it to\e[0m'
+p '\e[90m  the new SessionStore, keep the old cookie as a fallback for one\e[0m'
+p '\e[90m  release, and update the three call sites that reach into req.session\e[0m'
+p '\e[90m  directly.\e[0m'; p ''
+p '\e[32m⏺\e[0m \e[1mUpdate\e[0m src/middleware/auth.ts \e[90m+34 -12\e[0m'
+p '\e[32m⏺\e[0m \e[1mUpdate\e[0m src/routes/login.ts \e[90m+9 -3\e[0m'
+p '\e[32m⏺\e[0m \e[1mUpdate\e[0m src/routes/logout.ts \e[90m+4 -1\e[0m'
+p '\e[32m⏺\e[0m \e[1mUpdate\e[0m src/types/express.d.ts \e[90m+6 -0\e[0m'; p ''
+p '\e[32m⏺\e[0m \e[1mBash\e[0m npm test -- --run auth'; p ''
+p '   PASS  test/middleware/auth.spec.ts \e[90m(21 tests)\e[0m'
+p '   PASS  test/routes/login.spec.ts \e[90m(14 tests)\e[0m'
+p '   PASS  test/routes/logout.spec.ts \e[90m(5 tests)\e[0m'; p ''
+p '  Tests: \e[32m40 passed\e[0m, 40 total'
+p '  Time:  6.41s'; p ''
+p '\e[32m⏺\e[0m \e[1mBash\e[0m npm run typecheck'; p ''
+p '  \e[32m✓\e[0m tsc --noEmit — no errors'; p ''
+p '\e[90m  Tests and types are green. Now checking the two places that still\e[0m'
+p '\e[90m  import the legacy cookie helper so nothing references it after the\e[0m'
+p '\e[90m  fallback window ends…\e[0m'; p ''
+p '\e[32m⏺\e[0m \e[1mSearch\e[0m "legacyCookie" \e[90m— 2 matches\e[0m'
+p '\e[32m⏺\e[0m \e[1mRead\e[0m src/utils/cookies.ts \e[90m(52 lines)\e[0m'; p ''
+while true; do for s in '✻' '✹' '✸' '✶'; do
+  printf '\r\e[35m%s\e[0m \e[1mPolishing…\e[0m \e[90m(2m 22s · ↑ 12.4k tokens · esc to interrupt)\e[0m ' "$s"; sleep 0.4
+done; done

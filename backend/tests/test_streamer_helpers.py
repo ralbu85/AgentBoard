@@ -1,4 +1,63 @@
+import asyncio
+from types import SimpleNamespace
+
+from backend import streamer
 from backend.streamer import _combine_snapshot, _cursor_suffix, _strip_cursor
+
+
+# ── get_snapshot must NOT capture history when the pane has none ──
+# `capture-pane -E -1` on an empty history clamps to the first SCREEN line, so
+# an unguarded history capture duplicates line 1 of every fresh session.
+
+class _FakeTmux:
+    def __init__(self, hist_size):
+        self.hist_size = hist_size
+        self.history_capture_calls = 0
+
+    async def display_info(self, name):
+        return {"process": "bash", "created_at": 1, "alt_screen": False}
+
+    async def capture_with_cursor(self, name, ansi=True):
+        return "line-1\nline-2\n", (0, 1, True)
+
+    async def history_info(self, name):
+        return self.hist_size, 50000
+
+    async def capture_pane(self, name, lines=0, ansi=True, end=None):
+        if end == -1:
+            self.history_capture_calls += 1
+            # what real tmux returns for empty history: the clamped screen line
+            return "old-hist\n" if self.hist_size > 0 else "line-1\n"
+        return "line-1\nline-2\n"
+
+    async def allow_alt_screen_exit(self, name): pass
+    async def clear_alt_screen_override(self, name): pass
+
+
+def _snapshot_with(monkeypatch, hist_size):
+    from backend.sessions import store
+    fake = _FakeTmux(hist_size)
+    monkeypatch.setattr(streamer, "tmux", fake)
+    s = SimpleNamespace(id="t-hist", session_name="term-t-hist", status="running",
+                        process="bash", created_at=1, alt_screen=False,
+                        ai_state=None, mem_kb=0)
+    store.sessions["t-hist"] = s
+    try:
+        return asyncio.run(streamer.get_snapshot("t-hist", s.session_name)), fake
+    finally:
+        store.sessions.pop("t-hist", None)
+
+
+def test_fresh_session_snapshot_skips_history_capture(monkeypatch):
+    combined, fake = _snapshot_with(monkeypatch, hist_size=0)
+    assert fake.history_capture_calls == 0        # never asks tmux for empty history
+    assert combined.count("line-1") == 1          # no duplicated first line
+
+
+def test_snapshot_with_history_stitches_it_above(monkeypatch):
+    combined, fake = _snapshot_with(monkeypatch, hist_size=5)
+    assert fake.history_capture_calls >= 1
+    assert combined.index("old-hist") < combined.index("line-1")
 
 
 # ── _combine_snapshot: history above, exact current screen at the bottom ──

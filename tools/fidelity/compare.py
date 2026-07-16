@@ -59,18 +59,23 @@ else:
     fails.append("cursor")
     print(f"FAIL cursor: xterm=({r['cursorX']},{r['cursorY']}) tmux=({cx},{cy})")
 
-# ── 5. Deep-history tail: what tmux still holds vs what the client got ──
+# ── 5. FULL buffer identity: everything the client holds must equal tmux's
+# history+screen, top to bottom. A tail-only check once missed a duplicated
+# first line (empty-history capture clamping to screen line 1) — compare all.
 tmux_deep = norm_block(truth["deep"].split("\n"))
 xterm_all = norm_block(r["lines"])
-tail_n = min(len(tmux_deep), len(xterm_all), 300)
-if xterm_all[-tail_n:] == tmux_deep[-tail_n:]:
-    print(f"PASS deep-history tail: last {tail_n} lines identical to tmux history")
+if xterm_all == tmux_deep:
+    print(f"PASS full buffer: all {len(xterm_all)} lines identical to tmux history+screen")
 else:
-    fails.append("deep")
-    a, b = xterm_all[-tail_n:], tmux_deep[-tail_n:]
-    idx = next(i for i, (x, y) in enumerate(zip(a, b)) if x != y)
-    print(f"FAIL deep-history tail diverges at -{tail_n - idx}:")
-    print(f"    xterm: {a[idx]!r}\n    tmux : {b[idx]!r}")
+    fails.append("full-buffer")
+    print(f"FAIL full buffer: xterm={len(xterm_all)} tmux={len(tmux_deep)} lines")
+    for i, (x, y) in enumerate(zip(xterm_all, tmux_deep)):
+        if x != y:
+            print(f"  first diff at line {i}:\n    xterm: {x!r}\n    tmux : {y!r}")
+            break
+    else:
+        longer, name = (xterm_all, "xterm") if len(xterm_all) > len(tmux_deep) else (tmux_deep, "tmux")
+        print(f"  {name} has extra lines, e.g. {longer[min(len(xterm_all), len(tmux_deep))][:80]!r}")
 
 print()
 print(f"tmux history_size at capture: {hist}")

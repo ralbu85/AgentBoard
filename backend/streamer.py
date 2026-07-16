@@ -268,6 +268,11 @@ async def get_snapshot(id: str, session_name: str) -> str:
     info_str = await tmux.display_info(session_name)
     alt = info_str.get("alt_screen", False)
     current, cur = await tmux.capture_with_cursor(session_name)
+    hist_size = 0
+    try:
+        hist_size, _ = await tmux.history_info(session_name)
+    except Exception as e:
+        log.debug("history size fetch failed for %s: %s", session_name, e)
     if alt:
         # Full-screen app (alt-screen): its scrollback lives INSIDE the app, not
         # in tmux. tmux's normal-buffer scrollback is frozen/stale, so stitching
@@ -277,7 +282,12 @@ async def get_snapshot(id: str, session_name: str) -> str:
     else:
         # Normal pane: history (above the visible screen) + the exact current
         # screen — contiguous and in order. See _combine_snapshot.
-        history = await tmux.capture_pane(session_name, lines=SNAPSHOT_HISTORY, ansi=True, end=-1)
+        # NEVER capture history when it's empty: `-E -1` clamps to the first
+        # SCREEN line then, so the stitched snapshot duplicates line 1 (bit
+        # every freshly-spawned session).
+        history = ""
+        if hist_size > 0:
+            history = await tmux.capture_pane(session_name, lines=SNAPSHOT_HISTORY, ansi=True, end=-1)
         combined = _combine_snapshot(history, current)
     combined += _cursor_suffix(current.rstrip("\n"), cur)
 
@@ -290,11 +300,10 @@ async def get_snapshot(id: str, session_name: str) -> str:
     # Sync history baseline so the next active poll doesn't re-broadcast
     # scrollback already included in this snapshot
     try:
-        size, _ = await tmux.history_info(session_name)
-        _last_history_size[id] = size
+        _last_history_size[id] = hist_size
         _last_hist_edge[id] = (
             await tmux.capture_pane(session_name, lines=5, ansi=False, end=-1)
-        ) if size > 0 else ""
+        ) if hist_size > 0 else ""
     except Exception as e:
         log.debug("history baseline sync failed for %s: %s", session_name, e)
 
@@ -379,7 +388,11 @@ async def _poll_active():
                     if s.alt_screen:
                         snapshot_data = visible.rstrip("\n").replace("\n", "\r\n")
                     else:
-                        history = await tmux.capture_pane(s.session_name, lines=SNAPSHOT_HISTORY, ansi=True, end=-1)
+                        # Same empty-history guard as get_snapshot: `-E -1`
+                        # clamps to the first screen line when history is empty.
+                        history = ""
+                        if current_hist > 0:
+                            history = await tmux.capture_pane(s.session_name, lines=SNAPSHOT_HISTORY, ansi=True, end=-1)
                         snapshot_data = _combine_snapshot(history, visible)
                     if snapshot_data:
                         snapshot_data += _cursor_suffix(visible.rstrip("\n"), cur)

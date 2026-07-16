@@ -1,0 +1,22 @@
+#!/bin/bash
+p(){ printf "$1\n"; }
+p '\e[1m> migrate the styles to Tailwind v4\e[0m'; p ''
+p '\e[32m⏺\e[0m \e[1mRead\e[0m tailwind.config.js \e[90m(61 lines)\e[0m'
+p '\e[32m⏺\e[0m \e[1mRead\e[0m src/index.css \e[90m(210 lines)\e[0m'
+p '\e[32m⏺\e[0m \e[1mBash\e[0m npx @tailwindcss/upgrade --dry-run'; p ''
+p '  \e[33m⚠\e[0m 3 utilities renamed in v4, 1 plugin no longer needed'; p ''
+p '\e[90m  The upgrade tool handles the config migration; the remaining work is\e[0m'
+p '\e[90m  the deprecated utility classes in 14 components. I will migrate them\e[0m'
+p '\e[90m  one file at a time so each diff stays reviewable.\e[0m'; p ''
+p '\e[32m⏺\e[0m \e[1mUpdate\e[0m tailwind.config.js \e[90m+8 -23\e[0m'
+p '\e[32m⏺\e[0m \e[1mUpdate\e[0m src/index.css \e[90m+18 -42\e[0m'
+p '\e[32m⏺\e[0m \e[1mUpdate\e[0m src/components/Nav.tsx \e[90m+7 -7\e[0m'
+p '\e[32m⏺\e[0m \e[1mUpdate\e[0m src/components/Card.tsx \e[90m+5 -5\e[0m'; p ''
+p '\e[1mEdit file\e[0m src/components/Button.tsx'; p ''
+p '  \e[31m- className="btn btn-primary px-4"\e[0m'
+p '  \e[32m+ className="rounded-lg bg-indigo-500 px-4 py-2"\e[0m'; p ''
+p 'Do you want to make this edit?'
+p '\e[36m❯ 1. Yes\e[0m'
+p '  2. Yes, allow all edits during this session'
+p '  3. No, and tell Claude what to do differently (esc)'
+sleep 100000

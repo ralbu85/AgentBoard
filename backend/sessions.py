@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import time
@@ -146,6 +147,13 @@ class SessionStore:
 
         try:
             await tmux.new_session(session_name, cwd, cmd)
+            # tmux_run swallows failures into "" — verify the session actually
+            # exists (with one short grace retry: a timed-out client call can
+            # still complete server-side a moment later).
+            if not await tmux.is_alive(session_name):
+                await asyncio.sleep(1.0)
+                if not await tmux.is_alive(session_name):
+                    raise RuntimeError(f"tmux session {session_name} failed to start")
             await tmux.resize_window(session_name, CANONICAL_COLS, CANONICAL_ROWS)
         except Exception:
             log.exception("spawn failed for %s", session_name)

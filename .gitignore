@@ -8,8 +8,9 @@ __pycache__/
 .env
 server.log
 *.png
-# PWA icons are required assets, not debug screenshots
+# PWA icons and README screenshots are required assets, not debug screenshots
 !frontend/public/icons/*.png
+!docs/screenshots/*.png
 yarn.lock
 .session-titles.json
 

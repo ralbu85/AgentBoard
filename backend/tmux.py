@@ -10,17 +10,20 @@ from . import config
 TMUX_TIMEOUT = 5.0
 
 
-async def tmux_run(args: list[str]) -> str:
+async def tmux_run(args: list[str], timeout: float = TMUX_TIMEOUT) -> str:
     proc = await asyncio.create_subprocess_exec(
         "tmux", *args,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
     try:
-        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=TMUX_TIMEOUT)
+        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=timeout)
         return stdout.decode("utf-8", errors="replace") if proc.returncode == 0 else ""
     except asyncio.TimeoutError:
-        proc.kill()
+        try:
+            proc.kill()
+        except ProcessLookupError:
+            pass  # exited between the timeout and the kill — nothing to reap
         return ""
 
 
@@ -182,7 +185,10 @@ async def new_session(session_name: str, cwd: str, cmd: str) -> None:
     for c in _global_option_cmds():
         args += [";", *c]
     args += [";", "new-session", "-d", "-s", session_name, "-c", cwd, cmd]
-    await tmux_run(args)
+    # A cold tmux server (first session ever, or right after the last session
+    # died) can take well over the default timeout to fork on a loaded box —
+    # the first spawn after "kill all" used to fail spuriously.
+    await tmux_run(args, timeout=15.0)
 
 
 async def kill_session(session_name: str) -> None:

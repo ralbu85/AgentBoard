@@ -1,0 +1,20 @@
+#!/bin/bash
+p(){ printf "$1\n"; }
+p '\e[1m> fix the flaky e2e login tests\e[0m'; p ''
+p '\e[32m⏺\e[0m \e[1mBash\e[0m npx playwright test e2e/login.spec.ts --repeat-each 10'; p ''
+p '  7 passed, \e[31m3 flaky\e[0m (timeout waiting for /dashboard)'; p ''
+p '\e[90m  The failures all race the post-login navigation: the test clicks\e[0m'
+p '\e[90m  submit and immediately asserts the URL. I will replace the sleeps\e[0m'
+p '\e[90m  with proper waitFor conditions and de-flake the session fixture.\e[0m'; p ''
+p '\e[32m⏺\e[0m \e[1mRead\e[0m e2e/login.spec.ts \e[90m(133 lines)\e[0m'
+p '\e[32m⏺\e[0m \e[1mUpdate\e[0m e2e/login.spec.ts \e[90m+11 -6\e[0m'
+p '\e[32m⏺\e[0m \e[1mUpdate\e[0m e2e/fixtures/session.ts \e[90m+4 -2\e[0m'; p ''
+p '\e[32m⏺\e[0m \e[1mBash\e[0m npx playwright test e2e/login.spec.ts --repeat-each 20'; p ''
+p '  Running 40 tests using 4 workers'
+p '  ····································'
+p '  \e[32m40 passed\e[0m (2.1m), 0 flaky'; p ''
+p '\e[32m⏺\e[0m \e[1mBash\e[0m npx playwright test \e[90m(full suite)\e[0m'; p ''
+p '  \e[32m118 passed\e[0m (6.8m)'; p ''
+p '\e[32m✓\e[0m All green over 20 repeats — the flake was an unawaited navigation.'; p ''
+p '\e[90m? for shortcuts · shift+tab to cycle\e[0m'
+sleep 100000

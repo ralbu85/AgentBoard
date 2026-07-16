@@ -1,0 +1,22 @@
+#!/bin/bash
+p(){ printf "$1\n"; }
+p '\e[1m> tune the training hyperparameters and rerun\e[0m'; p ''
+p '\e[32m⏺\e[0m \e[1mRead\e[0m configs/train.yaml \e[90m(38 lines)\e[0m'
+p '\e[32m⏺\e[0m \e[1mRead\e[0m results/run-014/metrics.json \e[90m(last run: val_acc 0.938)\e[0m'; p ''
+p '\e[90m  Run 014 plateaued after epoch 30 — the LR schedule decays too early.\e[0m'
+p '\e[90m  I will switch to cosine decay with a longer warmup, bump batch size\e[0m'
+p '\e[90m  to 256, and add light label smoothing.\e[0m'; p ''
+p '\e[32m⏺\e[0m \e[1mUpdate\e[0m configs/train.yaml \e[90m+6 -6\e[0m'
+p '\e[32m⏺\e[0m \e[1mBash\e[0m python train.py --config configs/train.yaml'; p ''
+p '  epoch 10/50  loss 0.412  val_acc 0.861  lr 2.4e-4'
+p '  epoch 20/50  loss 0.188  val_acc 0.913  lr 1.9e-4'
+p '  epoch 30/50  loss 0.081  val_acc 0.936  lr 1.1e-4'
+p '  epoch 40/50  loss 0.042  val_acc 0.945  lr 4.2e-5'
+p '  epoch 48/50  loss 0.034  val_acc 0.947  lr 1.1e-5'
+p '  epoch 49/50  loss 0.034  val_acc 0.948  lr 8.0e-6'
+p '  epoch 50/50  loss 0.033  val_acc 0.951  lr 6.1e-6'; p ''
+p '\e[32m⏺\e[0m \e[1mBash\e[0m python eval.py --ckpt ckpt/best.pt'; p ''
+p '  test_acc 0.949  ·  macro-F1 0.941  ·  8.2ms/sample'; p ''
+p '\e[32m✓\e[0m Training finished — \e[1mval_acc 0.938 → 0.951\e[0m, checkpoint at \e[1mckpt/best.pt\e[0m'; p ''
+p '\e[90m? for shortcuts · shift+tab to cycle\e[0m'
+sleep 100000
