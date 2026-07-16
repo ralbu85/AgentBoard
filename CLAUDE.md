@@ -87,6 +87,11 @@ cd frontend && npm install
 
 # Frontend dev with HMR (proxies API to :3002)
 cd frontend && npm run dev
+
+# E2E screen-fidelity test (needs the server running): spawns a real session,
+# collects real WS frames, replays them through headless xterm.js, and
+# byte-compares against tmux (visible area, burst scrollback, CJK/emoji, cursor)
+./tools/fidelity/run.sh
 ```
 
 ## Key Design Decisions

@@ -1,0 +1,6 @@
+{
+  "name": "agentboard-fidelity-test",
+  "private": true,
+  "description": "E2E screen-fidelity harness: real WS frames -> headless xterm -> byte-compare vs tmux",
+  "dependencies": { "@xterm/headless": "^5.5.0", "@xterm/addon-unicode11": "^0.8.0" }
+}
