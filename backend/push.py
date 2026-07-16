@@ -24,8 +24,8 @@ from . import config
 from .logger import log
 from .namespace import split_id
 
-_VAPID_PEM = config.PROJECT_ROOT / ".vapid_private.pem"
-_SUBS_FILE = config.PROJECT_ROOT / ".push-subs.json"
+_VAPID_PEM = config.STATE_DIR / ".vapid_private.pem"
+_SUBS_FILE = config.STATE_DIR / ".push-subs.json"
 
 _private_key = None            # cryptography EC private key
 _app_server_key: str = ""      # base64url raw public point (applicationServerKey)

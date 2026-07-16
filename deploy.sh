@@ -1,14 +1,14 @@
 #!/bin/bash
 set -e
-ROOT=/workspace/BALAB_Prof/agentboard
+ROOT="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
 V=$(date +%s)
 PORT=${AGENTBOARD_PORT:-3002}
 
 echo "Building frontend..."
-cd $ROOT/frontend && npx vite build --logLevel error
+cd "$ROOT/frontend" && npx vite build --logLevel error
 
 # Cache bust
-sed -i "s|\.js\"|.js?v=$V\"|g; s|\.css\"|.css?v=$V\"|g" $ROOT/frontend/dist/index.html
+sed -i "s|\.js\"|.js?v=$V\"|g; s|\.css\"|.css?v=$V\"|g" "$ROOT/frontend/dist/index.html"
 
 echo "Restarting server..."
 if supervisorctl status agentboard >/dev/null 2>&1; then
@@ -16,7 +16,7 @@ if supervisorctl status agentboard >/dev/null 2>&1; then
 else
   kill $(lsof -ti:$PORT) 2>/dev/null || true
   sleep 1
-  nohup $ROOT/start.sh > $ROOT/server.log 2>&1 &
+  nohup "$ROOT/start.sh" > "$ROOT/server.log" 2>&1 &
 fi
 
 for i in $(seq 1 10); do

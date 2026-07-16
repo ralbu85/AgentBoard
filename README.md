@@ -18,6 +18,7 @@
   <img src="https://img.shields.io/badge/Vite-6-646CFF?logo=vite&logoColor=white" alt="Vite">
   <img src="https://img.shields.io/badge/xterm.js-5.5-000000" alt="xterm.js">
   <img src="https://img.shields.io/badge/License-AGPL%20v3-blue" alt="AGPL v3 License">
+  <img src="https://github.com/ralbu85/AgentBoard/actions/workflows/ci.yml/badge.svg" alt="CI">
 </p>
 
 ---
@@ -62,29 +63,39 @@ Modern coding agents are most useful when they run for **minutes or hours**, not
 
 ## Quick start
 
+### Docker (fastest)
+
+```bash
+git clone https://github.com/ralbu85/AgentBoard.git
+cd AgentBoard
+DASHBOARD_PASSWORD=pick-a-password docker compose up -d --build
+```
+
+Open `http://localhost:3002` and log in. Sessions run `bash` by default — the
+image ships no AI CLIs, so install what you need (e.g.
+`docker compose exec agentboard npm install -g @anthropic-ai/claude-code`) or
+extend the image. Mount your projects by setting `AGENTBOARD_WORKSPACE=/path/to/projects`.
+
+### Manual (bare metal)
+
+Prerequisites: `tmux`, Python 3.12, Node 20+.
+
 ```bash
 git clone https://github.com/ralbu85/AgentBoard.git
 cd AgentBoard
 
-# Backend (Python 3.12 + FastAPI)
 python3.12 -m venv backend/.venv
 backend/.venv/bin/pip install -r backend/requirements.txt
+(cd frontend && npm install)
 
-# Frontend (React + Vite)
-cd frontend && npm install && cd ..
+echo "DASHBOARD_PASSWORD=pick-a-password" > .env
 
-# Configuration — path is set in backend/config.py
-mkdir -p /root/TermHub
-cat > /root/TermHub/.env <<EOF
-DASHBOARD_PASSWORD=changeme
-AGENTBOARD_PORT=3002
-EOF
-
-# Build the frontend and start the server
-./deploy.sh
+./deploy.sh        # builds the frontend, starts the server, waits for /api/health
 ```
 
 Open `http://localhost:3002`, log in, hit **+ New** — and you're spawning agents.
+The server binds to loopback by default; set `AGENTBOARD_HOST=0.0.0.0` in `.env`
+for LAN access, or put a reverse proxy (nginx/Caddy) in front for HTTPS.
 
 ## Architecture
 

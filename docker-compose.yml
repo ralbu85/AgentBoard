@@ -1,0 +1,20 @@
+services:
+  agentboard:
+    build: .
+    ports:
+      - "3002:3002"
+    environment:
+      # Required — the server refuses to start with the default password.
+      DASHBOARD_PASSWORD: ${DASHBOARD_PASSWORD:?set DASHBOARD_PASSWORD in .env or the shell}
+      # New sessions run this command (the image ships no AI CLIs — extend the
+      # image or `docker exec ... npm i -g @anthropic-ai/claude-code` to add one).
+      AGENTBOARD_DEFAULT_CMD: ${AGENTBOARD_DEFAULT_CMD:-bash}
+    volumes:
+      # Your projects — what agents and the file browser can see.
+      - ${AGENTBOARD_WORKSPACE:-./workspace}:/workspace
+      # Mutable state: session titles, push subscriptions, VAPID keypair.
+      - agentboard-state:/data
+    restart: unless-stopped
+
+volumes:
+  agentboard-state:

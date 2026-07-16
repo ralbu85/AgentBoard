@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run: { working-directory: frontend }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm, cache-dependency-path: frontend/package-lock.json }
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npx vite build --logLevel error
+
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12", cache: pip }
+      - run: pip install -r backend/requirements.txt
+      - run: python -m compileall -q backend agent
+      # Boot smoke test: server must come up and pass its own health probe on a
+      # clean machine (catches missing deps, import errors, bad .env handling).
+      - name: boot smoke test
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq tmux
+          mkdir -p frontend/dist && echo '<!doctype html>ci' > frontend/dist/index.html
+          DASHBOARD_PASSWORD=ci-smoke-test python -m backend.main &
+          for i in $(seq 1 20); do
+            curl -sf http://127.0.0.1:3002/api/health && exit 0
+            sleep 0.5
+          done
+          echo "server failed to start" && exit 1
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t agentboard:ci .
+      - name: container smoke test
+        run: |
+          docker run -d --name ab -p 3002:3002 -e DASHBOARD_PASSWORD=ci-smoke-test agentboard:ci
+          for i in $(seq 1 20); do
+            curl -sf http://127.0.0.1:3002/api/health && exit 0
+            sleep 0.5
+          done
+          echo "container failed to start" && docker logs ab && exit 1

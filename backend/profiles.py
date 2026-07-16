@@ -13,7 +13,7 @@ import os
 from . import config
 from .logger import log
 
-_FILE = config.PROJECT_ROOT / ".spawn-profiles.json"
+_FILE = config.STATE_DIR / ".spawn-profiles.json"
 
 DEFAULT_PROFILES = [
     {"id": "claude", "label": "Claude", "icon": "🤖", "command": "claude", "default": True},

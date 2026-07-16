@@ -24,8 +24,12 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-load_dotenv(PROJECT_ROOT.parent.parent / ".env")  # /workspace/.env when nested under /workspace
-load_dotenv(Path("/root/TermHub/.env"))            # legacy fallback location
+# First-found wins (load_dotenv never overrides an already-set variable):
+# the repo-local .env is the documented location; the other two keep legacy
+# dev-box setups working.
+load_dotenv(PROJECT_ROOT / ".env")                 # standard: <repo>/.env
+load_dotenv(PROJECT_ROOT.parent.parent / ".env")   # legacy: /workspace/.env when nested
+load_dotenv(Path("/root/TermHub/.env"))            # legacy dev-box location
 
 PORT = int(os.getenv("AGENTBOARD_PORT", os.getenv("V3_PORT", "3002")))
 # Bind to loopback by default: nginx (same host) proxies :12019 → here, and
@@ -67,14 +71,22 @@ if _cfg_path.exists():
 
 BASE_PATH: str = _cfg.get("basePath", "")
 FAVORITES: list = _cfg.get("favorites", [])
-DEFAULT_COMMAND: str = _cfg.get("defaultCommand", "claude")
+# Env override first (containers set this to `bash` — `claude` isn't in the
+# image), then the committed config.json preference.
+DEFAULT_COMMAND: str = os.getenv("AGENTBOARD_DEFAULT_CMD", _cfg.get("defaultCommand", "claude"))
 
 # VAPID "sub" claim for Web Push — a mailto:/https: contact the push service can
 # reach if a subscription misbehaves. The value is not user-facing.
 VAPID_SUBJECT = os.getenv("AGENTBOARD_VAPID_SUBJECT", "mailto:agentboard@localhost")
 
 FIFO_DIR = Path("/tmp")
-TITLES_FILE = PROJECT_ROOT / ".session-titles.json"
+
+# Where mutable state lives (session titles, push subscriptions, VAPID keypair,
+# spawn profiles). Defaults to the repo root — containers point this at a
+# volume so state survives image rebuilds.
+STATE_DIR = Path(os.getenv("AGENTBOARD_STATE_DIR", str(PROJECT_ROOT))).resolve()
+STATE_DIR.mkdir(parents=True, exist_ok=True)
+TITLES_FILE = STATE_DIR / ".session-titles.json"
 
 _default_roots = [str(Path.home()), "/workspace"]
 ALLOWED_ROOTS: list[Path] = [
