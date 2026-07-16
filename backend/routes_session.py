@@ -156,6 +156,25 @@ async def send_key(req: KeyRequest, _=Depends(verify)):
     return {"ok": True}
 
 
+@router.get("/capture")
+async def capture(id: str, _=Depends(verify)):
+    """Full scrollback of a session as plain text — for the client's "open full
+    log" view, which sidesteps the ~2000-line snapshot cap the terminal streams.
+    Local sessions only (a remote capture would need an agent round-trip)."""
+    if len(id) > 128:
+        raise HTTPException(status_code=422, detail="id too long")
+    host, local_id = split_id(id)
+    if host != LOCAL:
+        return {"ok": False, "error": "원격 세션은 전체 로그를 아직 지원하지 않습니다"}
+    s = store.get(local_id)
+    if not s:
+        return {"ok": False, "error": "세션을 찾을 수 없습니다"}
+    # -S -<limit> with no -E → entire scrollback + the current screen, in order.
+    # ansi=False: readable plain text for the viewer/search (no escape codes).
+    text = await tmux.capture_pane(s.session_name, lines=config.HISTORY_LIMIT, ansi=False)
+    return {"ok": True, "text": text}
+
+
 @router.get("/config")
 async def get_config(_=Depends(verify)):
     return {"basePath": config.BASE_PATH, "favorites": config.FAVORITES,

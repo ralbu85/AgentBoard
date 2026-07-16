@@ -31,6 +31,37 @@ interface TermInstance {
 }
 
 const terminals = new Map<string, TermInstance>()
+
+// ── LRU eviction ──
+// Each xterm instance holds a ~10k-line scrollback buffer (~6-10 MB). Visiting
+// many sessions otherwise leaves them all resident — on a phone that grows the
+// heap until the tab is force-reloaded. Keep the N most-recently-used; dispose
+// the rest. A disposed session is rebuilt from the next snapshot on re-open, so
+// nothing is lost. Never evict the active session or a currently-mounted tile
+// (grid shows several at once).
+const MAX_LIVE_TERMINALS = isMobile ? 4 : 12
+const _lru: string[] = [] // least-recently-used first, most-recent last
+
+function _touch(id: string) {
+  const i = _lru.indexOf(id)
+  if (i >= 0) _lru.splice(i, 1)
+  _lru.push(id)
+}
+
+function _evict() {
+  if (terminals.size <= MAX_LIVE_TERMINALS) return
+  const activeId = useStore.getState().activeId
+  for (const id of [..._lru]) {
+    if (terminals.size <= MAX_LIVE_TERMINALS) break
+    if (id === activeId) continue
+    const t = terminals.get(id)
+    if (!t) { const j = _lru.indexOf(id); if (j >= 0) _lru.splice(j, 1); continue }
+    // Protect anything on screen: the current single view or a grid tile.
+    if (t.opened && t.el.isConnected && t.el.style.display !== 'none') continue
+    destroy(id) // removes from terminals + pending maps + _lru
+  }
+}
+
 const _pendingSnapshots = new Map<string, string>()
 const _pendingScreens = new Map<string, string>()
 // Latest snapshot held back while the user is scrolled up (see writeSnapshot).
@@ -83,11 +114,14 @@ export function create(id: string): TermInstance {
 
   const inst: TermInstance = { term, searchAddon, el, opened: false }
   terminals.set(id, inst)
+  _touch(id)
+  _evict()
   return inst
 }
 
 export function open(id: string, container: HTMLElement) {
   const t = terminals.get(id) || create(id)
+  _touch(id)
   if (!t.opened) {
     t.el.style.display = ''
     container.appendChild(t.el)
@@ -382,4 +416,6 @@ export function destroy(id: string) {
   _pendingScreens.delete(id)
   _deferredSnapshots.delete(id)
   _lastSentRows.delete(id)
+  const i = _lru.indexOf(id)
+  if (i >= 0) _lru.splice(i, 1)
 }

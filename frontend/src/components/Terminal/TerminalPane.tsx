@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useStore } from '../../store'
 import { api } from '../../api'
+import { useToasts } from '../../toasts'
 import { notifyActive } from '../../ws'
 import * as TM from './TerminalManager'
 
@@ -86,6 +87,21 @@ export function TerminalPane() {
     }
   }, [])
 
+  // Full scrollback beyond the ~2000-line streamed snapshot. Opens in the viewer
+  // as a searchable text tab (desktop split only; the viewer isn't mounted on
+  // mobile). Local sessions only — remote would need an agent round-trip.
+  const canFullLog = !!activeId && !activeId.includes(':') && window.innerWidth > 768
+  const openFullLog = async () => {
+    if (!activeId) return
+    const res = await api.capture(activeId)
+    if (!res || res.ok === false || typeof res.text !== 'string') {
+      useToasts.getState().push(res?.error || '로그를 불러오지 못했습니다')
+      return
+    }
+    const title = useStore.getState().titles[activeId] || `#${activeId}`
+    useStore.getState().openLogTab(activeId, `${title} 로그`, res.text)
+  }
+
   const handleScrollBottom = () => {
     if (!activeId) return
     TM.scrollToBottom(activeId)
@@ -104,6 +120,11 @@ export function TerminalPane() {
           <span className="state-icon">{stateInfo.icon}</span>
           {stateInfo.label}
         </div>
+      )}
+      {canFullLog && (
+        <button className="full-log-btn" onClick={openFullLog} title="전체 스크롤백을 뷰어에서 열기">
+          📜 전체 로그
+        </button>
       )}
       {btnVisible && (
         <button

@@ -73,6 +73,7 @@ interface AppState {
   updateTab: (tabId: string, content: string) => void
   markTabSaved: (tabId: string) => void
   openDiffTab: (path: string, name: string, diff: string) => void
+  openLogTab: (sessionId: string, name: string, content: string) => void
   restoreViewerTabs: (sessionId: string) => Promise<void>
   setActiveTab: (id: string) => void
   handleMessage: (msg: WsMessage) => void
@@ -85,7 +86,9 @@ interface AppState {
 function persistViewer(sessionId: string, vs: { tabs: ViewerTab[]; activeTabId: string | null }) {
   try {
     const meta = vs.tabs
-      .filter((t) => t.type !== 'diff')  // diffs are derived, re-run on demand
+      // diffs and captured logs are derived/live, not files — re-run on demand,
+      // never restored from disk (their `path` isn't a real file).
+      .filter((t) => t.type !== 'diff' && !t.id.startsWith('log:'))
       .map((t) => ({
         id: t.id, path: t.path, name: t.name, type: t.type, lang: t.lang,
         content: (t.type === 'pdf' || t.type === 'image') ? t.content : undefined,
@@ -213,6 +216,19 @@ export const useStore = create<AppState>((set, get) => ({
     const cur = _viewerState[activeId] || { tabs: [], activeTabId: null }
     const existing = cur.tabs.find(t => t.id === id)
     const tab: ViewerTab = { id, name: `⇄ ${name}`, path, content: diff, type: 'diff', lang: 'diff' }
+    const tabs = existing ? cur.tabs.map(t => t.id === id ? tab : t) : [...cur.tabs, tab]
+    set({ _viewerState: { ..._viewerState, [activeId]: { tabs, activeTabId: id } } })
+  },
+
+  openLogTab: (sessionId, name, content) => {
+    const { activeId, _viewerState } = get()
+    if (!activeId) return
+    // Ephemeral like diffs (id prefixed `log:`) — a live capture, not a file, so
+    // it's excluded from persistViewer and re-fetched on demand, never restored.
+    const id = `log:${sessionId}`
+    const cur = _viewerState[activeId] || { tabs: [], activeTabId: null }
+    const existing = cur.tabs.find(t => t.id === id)
+    const tab: ViewerTab = { id, name: `📜 ${name}`, path: id, content, type: 'code', lang: '' }
     const tabs = existing ? cur.tabs.map(t => t.id === id ? tab : t) : [...cur.tabs, tab]
     set({ _viewerState: { ..._viewerState, [activeId]: { tabs, activeTabId: id } } })
   },

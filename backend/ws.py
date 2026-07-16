@@ -21,6 +21,34 @@ _lock = asyncio.Lock()
 _ws_remote: dict[int, tuple[str, str]] = {}
 
 
+# Per-session frame types: heavy and only meaningful to a client actually
+# viewing that session. Everything else (status/aiState/info/spawned/removed/
+# title/…) is lightweight and drives the sidebar for every client, so it fans
+# out to all. Routing screen/snapshot avoids shipping one session's multi-KB
+# frames to browsers looking at a different session (or on mobile data).
+_ROUTED_TYPES = frozenset({"screen", "snapshot"})
+
+
+def _viewers_of(pid: str) -> list[WebSocket]:
+    """The connected browsers currently viewing session `pid` (browser-facing,
+    possibly host-prefixed id)."""
+    host, local_id = split_id(pid)
+    by_wsid = {id(ws): ws for ws in clients}
+    out: list[WebSocket] = []
+    if host == LOCAL:
+        for wsid in streamer.local_viewers(local_id):
+            ws = by_wsid.get(wsid)
+            if ws is not None:
+                out.append(ws)
+    else:
+        for wsid, rem in _ws_remote.items():
+            if rem == (host, local_id):
+                ws = by_wsid.get(wsid)
+                if ws is not None:
+                    out.append(ws)
+    return out
+
+
 def broadcast(msg: dict):
     # Fire an OS push on attention transitions (waiting/completed) for both local
     # and remote sessions — every state change funnels through here.
@@ -29,8 +57,9 @@ def broadcast(msg: dict):
     except Exception as e:
         log.debug("push hook failed: %s", e)
     data = json.dumps(msg)
+    targets = _viewers_of(msg.get("id", "")) if msg.get("type") in _ROUTED_TYPES else clients
     dead = []
-    for ws in clients:
+    for ws in list(targets):
         try:
             if ws.client_state.name == "CONNECTED":
                 asyncio.create_task(_safe_send(ws, data))

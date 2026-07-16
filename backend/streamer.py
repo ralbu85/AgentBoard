@@ -98,6 +98,13 @@ def get_active_session_ids() -> set[str]:
     """Return all session IDs that any client is actively viewing."""
     return set(_active_ids.values())
 
+
+def local_viewers(local_id: str) -> list[int]:
+    """ws_ids currently viewing this LOCAL session — targets for its per-session
+    frames (screen/snapshot), so we don't fan them out to browsers looking
+    elsewhere. Remote sessions are keyed separately in ws._ws_remote."""
+    return [wsid for wsid, sid in _active_ids.items() if sid == local_id]
+
 def broadcast(msg: dict):
     if _broadcast:
         _broadcast(msg)
