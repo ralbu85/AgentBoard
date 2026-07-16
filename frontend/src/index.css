@@ -575,12 +575,23 @@ body {
 .folder-item.active { background: var(--accent-soft); color: var(--text-primary); border-left-color: var(--accent); }
 .folder-item.active .folder-ico { color: var(--accent); }
 .folder-ico { flex-shrink: 0; color: var(--text-muted); }
-.folder-attn { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; background: transparent; }
-.folder-attn.on { background: var(--amber); box-shadow: 0 0 6px var(--amber); }
 .folder-name { flex: 1; font-size: var(--fs-base); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .folder-host { font-size: var(--fs-micro); color: var(--text-muted); padding: 1px 5px; background: rgba(255,255,255,0.05); border-radius: 8px; flex-shrink: 0; }
-.folder-count { font-size: var(--fs-micro); min-width: 16px; text-align: center; color: var(--text-muted); flex-shrink: 0; }
-.folder-item.active .folder-count { color: var(--accent); }
+
+/* Per-folder state summary: one small dot+count chip per active state
+   (working / waiting / idle). Tells you at a glance what a folder is doing
+   without opening it. */
+.folder-states { display: flex; align-items: center; gap: 5px; flex-shrink: 0; }
+.fstate {
+  display: inline-flex; align-items: center; gap: 3px;
+  font-size: var(--fs-micro); font-variant-numeric: tabular-nums; color: var(--text-muted);
+}
+.fstate .fs-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+.fs-working { color: var(--purple); }
+.fs-working .fs-dot { background: var(--purple); animation: pulse-icon 1.5s ease-in-out infinite; }
+.fs-waiting { color: var(--amber); }
+.fs-waiting .fs-dot { background: var(--amber); box-shadow: 0 0 6px var(--amber); animation: blink-dot 1.2s ease-in-out infinite; }
+.fs-idle .fs-dot { background: var(--text-muted); }
 .folder-empty { padding: 30px 16px; text-align: center; color: var(--text-muted); font-size: var(--fs-sm); display: flex; flex-direction: column; gap: 12px; align-items: center; }
 
 .session-grid {

@@ -7,7 +7,21 @@ interface Props {
   onSelect?: () => void
 }
 
-const ATTENTION = new Set(['waiting'])
+// State buckets shown per folder, in display order. `running` (alive but no
+// detected AI state) folds into idle. completed/stopped aren't shown — they're
+// transient/inactive and would just add noise to the folder summary.
+const STATE_BUCKETS = [
+  { key: 'working', label: '작업 중' },
+  { key: 'waiting', label: '입력 대기' },
+  { key: 'idle', label: '대기' },
+] as const
+
+function bucketOf(state: string | null): 'working' | 'waiting' | 'idle' | null {
+  if (state === 'working') return 'working'
+  if (state === 'waiting') return 'waiting'
+  if (state === 'idle' || state === 'running') return 'idle'
+  return null // completed / stopped / unknown
+}
 
 export function FolderList({ onSelect }: Props) {
   const sessions = useStore((s) => s.sessions)
@@ -65,8 +79,11 @@ export function FolderList({ onSelect }: Props) {
         const ids = folders.get(cwd)!
         const name = cwd === '~' ? '~' : (cwd.split('/').filter(Boolean).pop() || cwd)
         const isActive = effWorkspace === cwd
-        const running = ids.filter((id) => sessions[id].status === 'running').length
-        const attention = ids.some((id) => ATTENTION.has(effectiveState(id) || ''))
+        const counts = { working: 0, waiting: 0, idle: 0 }
+        for (const id of ids) {
+          const b = bucketOf(effectiveState(id))
+          if (b) counts[b]++
+        }
         const s0 = ids.length ? sessions[ids[0]] : null
         const remote = s0 && s0.host && s0.host !== 'local' ? (s0.hostLabel || s0.host) : ''
         return (
@@ -79,8 +96,14 @@ export function FolderList({ onSelect }: Props) {
             </svg>
             <span className="folder-name">{name}</span>
             {remote && <span className="folder-host">{remote}</span>}
-            {attention && <span className="folder-attn on" title="입력 대기 중" />}
-            {running > 0 && <span className="folder-count">{running}</span>}
+            <span className="folder-states">
+              {STATE_BUCKETS.map(({ key, label }) => counts[key] > 0 && (
+                <span key={key} className={`fstate fs-${key} ${key === 'waiting' ? 'attn' : ''}`}
+                  title={`${label} ${counts[key]}개`}>
+                  <i className="fs-dot" />{counts[key]}
+                </span>
+              ))}
+            </span>
           </div>
         )
       })}
