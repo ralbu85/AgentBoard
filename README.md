@@ -36,6 +36,17 @@ AgentBoard is a browser-based command center for running many AI coding agents i
   <img src="docs/screenshots/mobile-folders.png" alt="Phone view: workspace list with live per-folder state chips" width="41%">
 </p>
 
+<details>
+<summary><b>More demos</b> — the file workspace and the review → agent loop</summary>
+<br>
+<p align="center">
+  <img src="docs/screenshots/demo-files.gif" alt="File workspace: upload a file, read rendered markdown, tick a task checkbox (saved to the file), then edit code and save" width="100%">
+</p>
+<p align="center">
+  <img src="docs/screenshots/demo-review.gif" alt="Review loop: select code in the viewer, attach a note, send it — the note lands directly in the agent's prompt" width="100%">
+</p>
+</details>
+
 ## Why AgentBoard
 
 Modern coding agents are most useful when they run for **minutes or hours**, not seconds. Soon you're juggling three, five, ten of them — and `tmux` alone gets old fast on mobile. AgentBoard wraps `tmux` in a clean dashboard that:

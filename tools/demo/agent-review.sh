@@ -1,0 +1,22 @@
+#!/bin/bash
+p(){ printf "$1\n"; }
+p '\e[1m> review the auth changes and apply my notes\e[0m'; p ''
+p '\e[32m⏺\e[0m \e[1mRead\e[0m src/auth.ts \e[90m(16 lines)\e[0m'
+p '\e[32m⏺\e[0m \e[1mRead\e[0m src/store/session.ts \e[90m(140 lines)\e[0m'
+p '\e[32m⏺\e[0m \e[1mSearch\e[0m "unauthorized" \e[90m— 4 matches in 2 files\e[0m'; p ''
+p '\e[90m  The middleware refactor is in place: token lookup goes through the\e[0m'
+p '\e[90m  new SessionStore and both failure paths return a plain 401. Tests\e[0m'
+p '\e[90m  cover the happy path and the missing-token case.\e[0m'; p ''
+p '\e[32m⏺\e[0m \e[1mBash\e[0m npm test -- --run auth'; p ''
+p '   PASS  test/middleware/auth.spec.ts \e[90m(21 tests)\e[0m'
+p '   PASS  test/routes/login.spec.ts \e[90m(14 tests)\e[0m'
+p '   PASS  test/routes/logout.spec.ts \e[90m(5 tests)\e[0m'; p ''
+p '  Tests: \e[32m40 passed\e[0m, 40 total'
+p '  Time:  6.41s'; p ''
+p '\e[32m⏺\e[0m \e[1mBash\e[0m npm run typecheck'; p ''
+p '  \e[32m✓\e[0m tsc --noEmit — no errors'; p ''
+p '\e[90m  Everything is green. Open the file in the viewer, highlight anything\e[0m'
+p '\e[90m  you want changed, and send me your notes — I will apply them.\e[0m'; p ''
+p '\e[90m  Waiting for review notes…\e[0m'; p ''
+printf '\e[36m❯\e[0m '
+exec cat > /dev/null

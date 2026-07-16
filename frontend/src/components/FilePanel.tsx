@@ -39,7 +39,7 @@ function TreeDir({ dirPath, name, depth, onFileClick, refresh, bump }: {
     <>
       {depth > 0 && (
         <div className="tree-row tree-dir" style={{ paddingLeft: depth * 12 + 4 }} onClick={toggle}>
-          <span className={`tree-arrow ${open ? 'open' : ''}`}>{'\u25B6'}</span>
+          <span className={`tree-arrow ${open ? 'open' : ''}`}>{'▶'}</span>
           <svg className="tree-icon" width="14" height="14" viewBox="0 0 20 20" fill="none">
             <path d="M2 5C2 4 3 3 4 3H8L10 5H16C17 5 18 6 18 7V15C18 16 17 17 16 17H4C3 17 2 16 2 15V5Z"
               fill={open ? 'var(--accent)' : 'none'} opacity={open ? '0.2' : '1'}
@@ -47,9 +47,9 @@ function TreeDir({ dirPath, name, depth, onFileClick, refresh, bump }: {
           </svg>
           <span className="tree-name tree-dirname">{name}</span>
           <RowActions>
-            <button title="\uC0C8 \uD3F4\uB354" onClick={() => doMkdir(dirPath, bump)}>\uFF0B</button>
-            <button title="\uC774\uB984 \uBCC0\uACBD" onClick={() => doRename(dirPath, name, bump)}>\u270E</button>
-            <button title="\uC0AD\uC81C" onClick={() => doDelete(dirPath, name, bump)}>\uD83D\uDDD1</button>
+            <button title="새 폴더" onClick={() => doMkdir(dirPath, bump)}>＋</button>
+            <button title="이름 변경" onClick={() => doRename(dirPath, name, bump)}>✎</button>
+            <button title="삭제" onClick={() => doDelete(dirPath, name, bump)}>🗑</button>
           </RowActions>
         </div>
       )}
@@ -69,9 +69,9 @@ function TreeDir({ dirPath, name, depth, onFileClick, refresh, bump }: {
             <span className="tree-name">{entry.name}</span>
             <span className="tree-size">{fmtSize(entry.size)}</span>
             <RowActions>
-              <button title="\uB2E4\uC6B4\uB85C\uB4DC" onClick={() => doDownload(full, entry.name)}>\u2B07</button>
-              <button title="\uC774\uB984 \uBCC0\uACBD" onClick={() => doRename(full, entry.name, bump)}>\u270E</button>
-              <button title="\uC0AD\uC81C" onClick={() => doDelete(full, entry.name, bump)}>\uD83D\uDDD1</button>
+              <button title="다운로드" onClick={() => doDownload(full, entry.name)}>⬇</button>
+              <button title="이름 변경" onClick={() => doRename(full, entry.name, bump)}>✎</button>
+              <button title="삭제" onClick={() => doDelete(full, entry.name, bump)}>🗑</button>
             </RowActions>
           </div>
         )
