@@ -245,14 +245,24 @@ def _cursor_suffix(current_body: str, cur: tuple[int, int, bool] | None) -> str:
 SNAPSHOT_HISTORY = int(os.getenv("AGENTBOARD_SNAPSHOT_HISTORY", "2000"))
 
 
-def _combine_snapshot(history: str, current: str) -> str:
-    """Scroll-back history above, the EXACT current screen at the bottom.
+async def _normal_snapshot_body(session_name: str) -> str:
+    """History + current screen for a normal pane, in ONE atomic capture.
 
-    Composing them explicitly (instead of one `-S -N` capture) guarantees the
-    live screen sits accurately at the viewport bottom while the history stays
-    scroll-up only — works for normal panes and full-screen (alt-screen) apps
-    alike, whose current screen and scrollback live in different tmux buffers.
+    Must be a single `capture-pane -S -N` (no `-E`): capturing the visible
+    screen and the history in two separate tmux calls RACES while the pane
+    streams — any line that scrolls from the visible area into history between
+    the two captures lands in BOTH, and shows up duplicated when the user
+    scrolls up. One capture sees a single consistent buffer, so the seam can't
+    duplicate (and empty history just yields the visible screen — no clamping).
     """
+    full = await tmux.capture_pane(session_name, lines=SNAPSHOT_HISTORY, ansi=True)
+    return full.rstrip("\n").replace("\n", "\r\n")
+
+
+def _combine_snapshot(history: str, current: str) -> str:
+    """Join pre-captured history + current with CRLF. Kept for callers that
+    already hold a consistent pair; live snapshots use _normal_snapshot_body
+    (one atomic capture) to avoid the two-call race."""
     h = history.rstrip("\n")
     c = current.rstrip("\n")
     body = (h + "\n" + c) if h else c
@@ -280,15 +290,9 @@ async def get_snapshot(id: str, session_name: str) -> str:
         # content (out of order). Show only the faithful current screen.
         combined = current.rstrip("\n").replace("\n", "\r\n")
     else:
-        # Normal pane: history (above the visible screen) + the exact current
-        # screen — contiguous and in order. See _combine_snapshot.
-        # NEVER capture history when it's empty: `-E -1` clamps to the first
-        # SCREEN line then, so the stitched snapshot duplicates line 1 (bit
-        # every freshly-spawned session).
-        history = ""
-        if hist_size > 0:
-            history = await tmux.capture_pane(session_name, lines=SNAPSHOT_HISTORY, ansi=True, end=-1)
-        combined = _combine_snapshot(history, current)
+        # Normal pane: history + current screen in ONE atomic capture
+        # (see _normal_snapshot_body — a two-call stitch races and duplicates).
+        combined = await _normal_snapshot_body(session_name)
     combined += _cursor_suffix(current.rstrip("\n"), cur)
 
     _update_info(id, s, info_str)
@@ -388,12 +392,10 @@ async def _poll_active():
                     if s.alt_screen:
                         snapshot_data = visible.rstrip("\n").replace("\n", "\r\n")
                     else:
-                        # Same empty-history guard as get_snapshot: `-E -1`
-                        # clamps to the first screen line when history is empty.
-                        history = ""
-                        if current_hist > 0:
-                            history = await tmux.capture_pane(s.session_name, lines=SNAPSHOT_HISTORY, ansi=True, end=-1)
-                        snapshot_data = _combine_snapshot(history, visible)
+                        # ONE atomic capture — a two-call history+visible stitch
+                        # races while streaming and duplicates the scrolled-off
+                        # lines (see _normal_snapshot_body).
+                        snapshot_data = await _normal_snapshot_body(s.session_name)
                     if snapshot_data:
                         snapshot_data += _cursor_suffix(visible.rstrip("\n"), cur)
                         broadcast({"type": "snapshot", "id": sid, "data": snapshot_data})

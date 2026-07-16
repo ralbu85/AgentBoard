@@ -5,38 +5,46 @@ from backend import streamer
 from backend.streamer import _combine_snapshot, _cursor_suffix, _strip_cursor
 
 
-# ── get_snapshot must NOT capture history when the pane has none ──
-# `capture-pane -E -1` on an empty history clamps to the first SCREEN line, so
-# an unguarded history capture duplicates line 1 of every fresh session.
+# ── get_snapshot must build the body from ONE atomic capture ──
+# A separate history (`-E -1`) + visible stitch races while streaming: a line
+# scrolling from the visible area into history between the two calls lands in
+# both, duplicated on scroll-up. The single `-S -N` capture (no -E) can't dup;
+# it also naturally covers empty history (just the visible screen).
 
 class _FakeTmux:
-    def __init__(self, hist_size):
-        self.hist_size = hist_size
-        self.history_capture_calls = 0
+    """Models the streaming race: the visible screen (capture_with_cursor) is a
+    T1 view; a later `-E -1` history capture is a T2 view where a visible line
+    has already scrolled into history. The atomic `-S -N` capture is one
+    consistent view with no overlap."""
+    def __init__(self):
+        self.end_dash1_calls = 0     # the old racing history call
+        self.atomic_calls = 0        # the new single history+visible call
 
     async def display_info(self, name):
         return {"process": "bash", "created_at": 1, "alt_screen": False}
 
     async def capture_with_cursor(self, name, ansi=True):
-        return "line-1\nline-2\n", (0, 1, True)
+        return "vis-1\nvis-2\n", (0, 1, True)          # T1 visible
 
     async def history_info(self, name):
-        return self.hist_size, 50000
+        return 5, 50000
 
     async def capture_pane(self, name, lines=0, ansi=True, end=None):
+        if end == -1 and lines <= 5:
+            return "vis-2\n"                            # tiny edge probe (growth baseline)
         if end == -1:
-            self.history_capture_calls += 1
-            # what real tmux returns for empty history: the clamped screen line
-            return "old-hist\n" if self.hist_size > 0 else "line-1\n"
-        return "line-1\nline-2\n"
+            self.end_dash1_calls += 1                   # the old racing history stitch
+            return "hist-1\nvis-1\n"                    # T2: vis-1 leaked in → would dup
+        self.atomic_calls += 1
+        return "hist-1\nvis-1\nvis-2\n"                 # atomic: consistent, no dup
 
     async def allow_alt_screen_exit(self, name): pass
     async def clear_alt_screen_override(self, name): pass
 
 
-def _snapshot_with(monkeypatch, hist_size):
+def _snapshot(monkeypatch):
     from backend.sessions import store
-    fake = _FakeTmux(hist_size)
+    fake = _FakeTmux()
     monkeypatch.setattr(streamer, "tmux", fake)
     s = SimpleNamespace(id="t-hist", session_name="term-t-hist", status="running",
                         process="bash", created_at=1, alt_screen=False,
@@ -48,16 +56,17 @@ def _snapshot_with(monkeypatch, hist_size):
         store.sessions.pop("t-hist", None)
 
 
-def test_fresh_session_snapshot_skips_history_capture(monkeypatch):
-    combined, fake = _snapshot_with(monkeypatch, hist_size=0)
-    assert fake.history_capture_calls == 0        # never asks tmux for empty history
-    assert combined.count("line-1") == 1          # no duplicated first line
+def test_snapshot_body_is_one_atomic_capture(monkeypatch):
+    combined, fake = _snapshot(monkeypatch)
+    assert fake.atomic_calls == 1        # single history+visible capture
+    assert fake.end_dash1_calls == 0     # never the racing two-call stitch
 
 
-def test_snapshot_with_history_stitches_it_above(monkeypatch):
-    combined, fake = _snapshot_with(monkeypatch, hist_size=5)
-    assert fake.history_capture_calls >= 1
-    assert combined.index("old-hist") < combined.index("line-1")
+def test_snapshot_has_no_duplicated_line(monkeypatch):
+    combined, _ = _snapshot(monkeypatch)
+    # vis-1 would appear twice with the old racing stitch; atomic capture = once
+    assert combined.count("vis-1") == 1
+    assert combined.index("hist-1") < combined.index("vis-2")
 
 
 # ── _combine_snapshot: history above, exact current screen at the bottom ──
