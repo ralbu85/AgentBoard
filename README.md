@@ -28,10 +28,10 @@ AgentBoard is a browser-based command center for running many AI coding agents i
 > Designed for the moment your agents outgrow a single terminal tab — and then a single machine.
 
 <p align="center">
-  <img src="docs/screenshots/desktop-grid.png" alt="Grid view: three agents in one workspace — Thinking, Asking, Idle — with per-folder state chips in the sidebar" width="100%">
+  <img src="docs/screenshots/demo-desktop.gif" alt="Grid view: three agents working in parallel — one asks for confirmation, approved with a single ⏎, and it carries on to Done" width="100%">
 </p>
 <p align="center">
-  <img src="docs/screenshots/mobile-waiting.png" alt="Phone view: an agent asking for confirmation, answered with one tap from the quick-approve bar" width="41%">
+  <img src="docs/screenshots/demo-mobile.gif" alt="Phone: open the waiting agent, tap Yes on the quick-approve bar, watch it finish" width="41%">
   &nbsp;
   <img src="docs/screenshots/mobile-folders.png" alt="Phone view: workspace list with live per-folder state chips" width="41%">
 </p>
