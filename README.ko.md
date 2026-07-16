@@ -97,6 +97,27 @@ echo "DASHBOARD_PASSWORD=비밀번호설정" > .env
 서버는 기본으로 루프백에만 바인드됩니다 — LAN에서 접속하려면 `.env`에
 `AGENTBOARD_HOST=0.0.0.0`을 넣거나, HTTPS가 필요하면 앞단에 리버스 프록시(nginx/Caddy)를 두세요.
 
+### 머신 추가하기 (선택)
+
+추가하는 PC마다 경량 에이전트가 허브로 **아웃바운드** 접속합니다 — NAT·방화벽
+뒤의 머신도 SSH·포트포워딩 없이 그냥 붙습니다. 각 원격 PC에서:
+
+```bash
+git clone https://github.com/ralbu85/AgentBoard.git && cd AgentBoard
+python3.12 -m venv backend/.venv
+backend/.venv/bin/pip install -r backend/requirements.txt   # tmux도 설치 필요
+
+export AGENT_HUB_URL=wss://허브주소/agent-ws     # ws://는 AGENT_INSECURE=1 필요
+export AGENT_TOKEN=<허브의 AGENT_TOKEN>          # 기본값은 허브 인증 토큰
+export AGENT_HOST_LABEL="연구실 PC"              # 대시보드 표시 이름 (선택)
+agent/start-agent.sh
+```
+
+몇 초 안에 대시보드에 머신이 나타나고, 세션은 `office:1`, `office:2`처럼
+표시되며 spawn·kill·입력·푸시 알림까지 로컬 세션과 동일하게 동작합니다.
+운영 환경에서는 반드시 `wss://`를 쓰세요 — 토큰이 셸 접근 권한이므로
+평문으로 보내면 안 됩니다.
+
 ## 아키텍처
 
 ```

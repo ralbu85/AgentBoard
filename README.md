@@ -97,6 +97,28 @@ Open `http://localhost:3002`, log in, hit **+ New** — and you're spawning agen
 The server binds to loopback by default; set `AGENTBOARD_HOST=0.0.0.0` in `.env`
 for LAN access, or put a reverse proxy (nginx/Caddy) in front for HTTPS.
 
+### Add more machines (optional)
+
+Every extra PC runs a lightweight agent that dials **outbound** to your hub —
+so machines behind NAT or a firewall just work, no SSH or port-forwarding.
+On each remote PC:
+
+```bash
+git clone https://github.com/ralbu85/AgentBoard.git && cd AgentBoard
+python3.12 -m venv backend/.venv
+backend/.venv/bin/pip install -r backend/requirements.txt   # tmux required too
+
+export AGENT_HUB_URL=wss://your-hub-host/agent-ws   # ws:// needs AGENT_INSECURE=1
+export AGENT_TOKEN=<the hub's AGENT_TOKEN>           # defaults to its auth token
+export AGENT_HOST_LABEL="Office PC"                  # display name (optional)
+agent/start-agent.sh
+```
+
+The machine appears in the dashboard within seconds; its sessions show up as
+`office:1`, `office:2`, … and everything (spawn, kill, input, push
+notifications) works exactly like local sessions. Use `wss://` in production —
+the token grants shell access, so don't send it in plaintext.
+
 ## Architecture
 
 ```
