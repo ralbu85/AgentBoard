@@ -12,24 +12,43 @@ export function PdfViewer({ url }: Props) {
   const [error, setError] = useState('')
   const [pages, setPages] = useState(0)
   const [zoom, setZoom] = useState(1) // 1 = fit width
+  const [reloadKey, setReloadKey] = useState(0)
   const pdfRef = useRef<any>(null)
   const pdfjsRef = useRef<any>(null)
+  const prevUrlRef = useRef(url)
+  const pendingScrollRef = useRef<number | null>(null)
+
+  // Reload the SAME document in place (e.g. an agent just regenerated the PDF),
+  // preserving zoom + scroll position. Cache-busts the fetch without changing
+  // the url prop so a genuine file switch (which resets the view) stays distinct.
+  const refresh = useCallback(() => {
+    pendingScrollRef.current = containerRef.current?.scrollTop ?? 0
+    setReloadKey(k => k + 1)
+  }, [])
 
   // Download + parse PDF
   useEffect(() => {
     let cancelled = false
     pdfRef.current = null
 
+    const isReload = url === prevUrlRef.current   // same file → keep zoom/scroll
+    prevUrlRef.current = url
+
     setStatus('Downloading...')
     setError('')
-    setPages(0)
-    setZoom(1)
+    if (!isReload) {
+      setPages(0)
+      setZoom(1)
+      pendingScrollRef.current = null
+    }
 
     async function load() {
       try {
         const ctrl = new AbortController()
         const timer = setTimeout(() => ctrl.abort(), 60000)
-        const resp = await fetch(url, { credentials: 'include', signal: ctrl.signal })
+        // reloadKey busts any caching between the browser and the file endpoint.
+        const fetchUrl = reloadKey > 0 ? url + (url.includes('?') ? '&' : '?') + '_r=' + reloadKey : url
+        const resp = await fetch(fetchUrl, { credentials: 'include', signal: ctrl.signal })
         clearTimeout(timer)
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
 
@@ -79,7 +98,7 @@ export function PdfViewer({ url }: Props) {
     }
     load()
     return () => { cancelled = true }
-  }, [url])
+  }, [url, reloadKey])
 
   // Render pages at current zoom
   const renderPages = useCallback(async () => {
@@ -108,6 +127,11 @@ export function PdfViewer({ url }: Props) {
       container.appendChild(canvas)
       await page.render({ canvasContext: canvas.getContext('2d')!, viewport: vp }).promise
     }
+    // Restore scroll position after an in-place reload (see refresh()).
+    if (pendingScrollRef.current != null) {
+      container.scrollTop = pendingScrollRef.current
+      pendingScrollRef.current = null
+    }
   }, [zoom])
 
   // Re-render when zoom changes or pdf loads
@@ -128,6 +152,7 @@ export function PdfViewer({ url }: Props) {
           <button className="pdf-zoom-btn" onClick={zoomOut} title="Zoom out">-</button>
           <span className="pdf-zoom-label" onClick={zoomFit} title="Fit width">{Math.round(zoom * 100)}%</span>
           <button className="pdf-zoom-btn" onClick={zoomIn} title="Zoom in">+</button>
+          <button className="pdf-zoom-btn" onClick={refresh} title="새로고침 (위치 유지)">↻</button>
           <span className="pdf-page-info">{pages}p</span>
         </div>
       )}
