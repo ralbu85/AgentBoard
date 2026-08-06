@@ -126,6 +126,11 @@ export function TerminalPane() {
           📜 전체 로그
         </button>
       )}
+      {activeId && window.innerWidth <= 768 && (
+        <button className="copy-screen-btn" onClick={() => TM.copyScreen(activeId)} title="화면 복사 (한 줄은 길게 눌러 복사)">
+          ⧉ 복사
+        </button>
+      )}
       {btnVisible && (
         <button
           className="scroll-bottom-btn"

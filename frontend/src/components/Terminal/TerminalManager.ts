@@ -4,6 +4,43 @@ import { WebLinksAddon } from '@xterm/addon-web-links'
 import { Unicode11Addon } from '@xterm/addon-unicode11'
 import { send } from '../../ws'
 import { useStore } from '../../store'
+import { useToasts } from '../../toasts'
+
+// Clipboard write that also works off HTTPS (navigator.clipboard is undefined on
+// plain-HTTP LAN setups) — falls back to a hidden textarea + execCommand.
+async function copyText(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text)
+      return true
+    }
+  } catch { /* fall through to the legacy path */ }
+  try {
+    const ta = document.createElement('textarea')
+    ta.value = text
+    ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0'
+    document.body.appendChild(ta)
+    ta.focus(); ta.select()
+    const ok = document.execCommand('copy')
+    document.body.removeChild(ta)
+    return ok
+  } catch {
+    return false
+  }
+}
+
+// The full logical line at a buffer row — joins xterm's wrapped continuation
+// rows so a wrapped URL/path/command copies whole, not as the touched fragment.
+function _logicalLineAt(term: Terminal, row: number): string {
+  const buf = term.buffer.active
+  let start = row
+  while (start > 0 && buf.getLine(start)?.isWrapped) start--
+  let text = buf.getLine(start)?.translateToString(true) ?? ''
+  for (let r = start + 1; buf.getLine(r)?.isWrapped; r++) {
+    text += buf.getLine(r)!.translateToString(true)
+  }
+  return text.trim()
+}
 
 // Full-screen (alt-screen) apps keep their history inside the app, reachable
 // with PageUp/PageDown — not in the terminal's scrollback. So translate scroll
@@ -230,6 +267,31 @@ function _setupMobileScroll(id: string, t: TermInstance) {
   let pageAccum = 0
   let lastPage = 0
 
+  // ── Long-press to copy the line under the finger ──
+  // Native selection is off (pointer-events:none), so this is the copy path on
+  // mobile. A held, stationary touch → copy that logical line; any real move
+  // cancels it (it's a scroll instead).
+  let lpTimer: number | undefined
+  let lpStartX = 0, lpStartY = 0
+  const cancelLongPress = () => { if (lpTimer) { clearTimeout(lpTimer); lpTimer = undefined } }
+
+  const copyLineAt = (clientY: number) => {
+    const screen = wrap.querySelector('.xterm-screen') as HTMLElement | null
+    const core = (t.term as any)._core
+    const cellH = core?._renderService?.dimensions?.css?.cell?.height
+    if (!screen || !cellH) return
+    const top = screen.getBoundingClientRect().top
+    const buf = t.term.buffer.active
+    const row = buf.viewportY + Math.floor((clientY - top) / cellH)
+    if (row < 0 || row >= buf.length) return
+    const text = _logicalLineAt(t.term, row)
+    if (!text) { useToasts.getState().push('빈 줄', 'info'); return }
+    copyText(text).then(ok => {
+      useToasts.getState().push(ok ? `복사됨: ${text.slice(0, 40)}${text.length > 40 ? '…' : ''}` : '복사 실패', ok ? 'info' : 'error')
+    })
+    try { navigator.vibrate?.(15) } catch { /* unsupported */ }
+  }
+
   wrap.addEventListener('touchstart', (e) => {
     e.stopPropagation()
     cancelAnimationFrame(raf)
@@ -237,11 +299,17 @@ function _setupMobileScroll(id: string, t: TermInstance) {
     velocity = 0
     pageAccum = 0
     ts = Date.now()
+    lpStartX = e.touches[0].clientX
+    lpStartY = e.touches[0].clientY
+    cancelLongPress()
+    lpTimer = window.setTimeout(() => { lpTimer = undefined; copyLineAt(lpStartY) }, 500)
   }, { capture: true, passive: true })
 
   wrap.addEventListener('touchmove', (e) => {
     e.stopPropagation()
     const y = e.touches[0].clientY
+    // A real move means this is a scroll, not a long-press.
+    if (lpTimer && (Math.abs(y - lpStartY) > 10 || Math.abs(e.touches[0].clientX - lpStartX) > 10)) cancelLongPress()
     const dy = lastY - y
     const now = Date.now()
     const dt = now - ts
@@ -264,6 +332,7 @@ function _setupMobileScroll(id: string, t: TermInstance) {
 
   wrap.addEventListener('touchend', (e) => {
     e.stopPropagation()
+    cancelLongPress()
     if (_isAltScreen(id)) return  // page-key scroll has no momentum
     if (Math.abs(velocity) < 0.05) return
     let v = velocity
@@ -286,6 +355,22 @@ export function pageView(id: string, up: boolean): boolean {
   if (!t?.opened) return false
   t.term.scrollPages(up ? -1 : 1)
   return true
+}
+
+// Copy the whole visible screen — the mobile "copy everything I can see" path
+// (long-press copies a single line). Reads the viewport straight from xterm.
+export function copyScreen(id: string): void {
+  const t = terminals.get(id)
+  if (!t?.opened) return
+  const buf = t.term.buffer.active
+  const lines: string[] = []
+  for (let i = buf.viewportY; i < buf.viewportY + t.term.rows; i++) {
+    lines.push(buf.getLine(i)?.translateToString(true) ?? '')
+  }
+  const text = lines.join('\n').replace(/\s+$/, '')
+  if (!text) { useToasts.getState().push('빈 화면', 'info'); return }
+  copyText(text).then(ok =>
+    useToasts.getState().push(ok ? '화면 복사됨' : '복사 실패', ok ? 'info' : 'error'))
 }
 
 export function scrollToBottom(id: string) {
