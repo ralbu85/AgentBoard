@@ -783,7 +783,9 @@ body {
 }
 
 @media (max-width: 768px) {
-  .xterm-wrap { touch-action: pan-x; }
+  /* Suppress iOS's long-press callout / selection magnifier so our own
+     long-press-to-copy handler isn't fought by the system popup. */
+  .xterm-wrap { touch-action: pan-x; -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
 }
 
 /* ── Input Card ── */

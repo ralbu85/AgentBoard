@@ -269,27 +269,28 @@ function _setupMobileScroll(id: string, t: TermInstance) {
 
   // ── Long-press to copy the line under the finger ──
   // Native selection is off (pointer-events:none), so this is the copy path on
-  // mobile. A held, stationary touch → copy that logical line; any real move
-  // cancels it (it's a scroll instead).
+  // mobile. Hold stationary 500 ms to ARM (which line was under the finger),
+  // then the copy fires on touchEND — iOS Safari only treats the clipboard
+  // write as allowed inside a real user gesture, and a setTimeout callback is
+  // NOT one, so we must not copy from the timer. Any real move cancels it.
   let lpTimer: number | undefined
   let lpStartX = 0, lpStartY = 0
-  const cancelLongPress = () => { if (lpTimer) { clearTimeout(lpTimer); lpTimer = undefined } }
+  let lpText: string | null = null   // armed line text, copied on touchend
+  const cancelLongPress = () => {
+    if (lpTimer) { clearTimeout(lpTimer); lpTimer = undefined }
+    lpText = null
+  }
 
-  const copyLineAt = (clientY: number) => {
+  const lineAt = (clientY: number): string | null => {
     const screen = wrap.querySelector('.xterm-screen') as HTMLElement | null
     const core = (t.term as any)._core
     const cellH = core?._renderService?.dimensions?.css?.cell?.height
-    if (!screen || !cellH) return
+    if (!screen || !cellH) return null
     const top = screen.getBoundingClientRect().top
     const buf = t.term.buffer.active
     const row = buf.viewportY + Math.floor((clientY - top) / cellH)
-    if (row < 0 || row >= buf.length) return
-    const text = _logicalLineAt(t.term, row)
-    if (!text) { useToasts.getState().push('빈 줄', 'info'); return }
-    copyText(text).then(ok => {
-      useToasts.getState().push(ok ? `복사됨: ${text.slice(0, 40)}${text.length > 40 ? '…' : ''}` : '복사 실패', ok ? 'info' : 'error')
-    })
-    try { navigator.vibrate?.(15) } catch { /* unsupported */ }
+    if (row < 0 || row >= buf.length) return null
+    return _logicalLineAt(t.term, row) || null
   }
 
   wrap.addEventListener('touchstart', (e) => {
@@ -302,14 +303,18 @@ function _setupMobileScroll(id: string, t: TermInstance) {
     lpStartX = e.touches[0].clientX
     lpStartY = e.touches[0].clientY
     cancelLongPress()
-    lpTimer = window.setTimeout(() => { lpTimer = undefined; copyLineAt(lpStartY) }, 500)
+    lpTimer = window.setTimeout(() => {
+      lpTimer = undefined
+      lpText = lineAt(lpStartY)          // arm: remember the line; copy on release
+      if (lpText) try { navigator.vibrate?.(15) } catch { /* unsupported */ }
+    }, 500)
   }, { capture: true, passive: true })
 
   wrap.addEventListener('touchmove', (e) => {
     e.stopPropagation()
     const y = e.touches[0].clientY
-    // A real move means this is a scroll, not a long-press.
-    if (lpTimer && (Math.abs(y - lpStartY) > 10 || Math.abs(e.touches[0].clientX - lpStartX) > 10)) cancelLongPress()
+    // A real move means this is a scroll, not a long-press — disarm.
+    if ((lpTimer || lpText) && (Math.abs(y - lpStartY) > 10 || Math.abs(e.touches[0].clientX - lpStartX) > 10)) cancelLongPress()
     const dy = lastY - y
     const now = Date.now()
     const dt = now - ts
@@ -332,6 +337,17 @@ function _setupMobileScroll(id: string, t: TermInstance) {
 
   wrap.addEventListener('touchend', (e) => {
     e.stopPropagation()
+    // Armed long-press → copy NOW, inside this real touch gesture (required for
+    // the clipboard write to be allowed on iOS Safari). Then stop — no momentum.
+    if (lpText) {
+      const text = lpText
+      lpText = null
+      copyText(text).then(ok =>
+        useToasts.getState().push(
+          ok ? `복사됨: ${text.slice(0, 40)}${text.length > 40 ? '…' : ''}` : '복사 실패',
+          ok ? 'info' : 'error'))
+      return
+    }
     cancelLongPress()
     if (_isAltScreen(id)) return  // page-key scroll has no momentum
     if (Math.abs(velocity) < 0.05) return
