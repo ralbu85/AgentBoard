@@ -740,16 +740,42 @@ body {
 }
 .full-log-btn:hover { color: var(--text); border-color: var(--accent); }
 
-/* Mobile "copy visible screen" button (top-left; full-log is desktop-only so
-   they never coexist). Long-press a line copies just that line. */
-.copy-screen-btn {
+/* Mobile "select text" button (top-left; full-log is desktop-only so they
+   never coexist) → opens a native-selectable text overlay. */
+.select-text-btn {
   position: absolute; top: 8px; left: 12px; z-index: 20;
   padding: 4px 12px; border-radius: 12px;
   font-size: 12px; font-weight: 600; color: var(--text-secondary);
   background: rgba(22, 27, 34, 0.85); border: 1px solid var(--border);
   backdrop-filter: blur(4px); cursor: pointer;
 }
-.copy-screen-btn:active { color: var(--text); border-color: var(--accent); }
+.select-text-btn:active { color: var(--text); border-color: var(--accent); }
+
+/* Plain, natively-selectable snapshot of the terminal. The OS provides the
+   long-press range-select handles and the copy popup — nothing custom. */
+.term-select-overlay {
+  position: absolute; inset: 0; z-index: 40;
+  display: flex; flex-direction: column;
+  background: var(--bg-primary);
+}
+.tso-bar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 12px; border-bottom: 1px solid var(--border);
+  background: var(--bg-secondary); flex: 0 0 auto;
+}
+.tso-hint { font-size: 12px; color: var(--text-muted); }
+.tso-close {
+  font-size: 13px; font-weight: 600; color: var(--text-secondary);
+  background: var(--bg-tertiary); border: 1px solid var(--border);
+  border-radius: 8px; padding: 5px 12px; cursor: pointer;
+}
+.tso-text {
+  flex: 1; margin: 0; padding: 10px 12px; overflow: auto;
+  font-family: "D2Coding", "Cascadia Code", Consolas, monospace;
+  font-size: 12px; line-height: 1.5; color: var(--text);
+  white-space: pre-wrap; word-break: break-word;
+  -webkit-user-select: text; user-select: text; -webkit-touch-callout: default;
+}
 
 .terminal-state-badge {
   position: absolute; top: 8px; right: 12px; z-index: 20;
@@ -783,9 +809,7 @@ body {
 }
 
 @media (max-width: 768px) {
-  /* Suppress iOS's long-press callout / selection magnifier so our own
-     long-press-to-copy handler isn't fought by the system popup. */
-  .xterm-wrap { touch-action: pan-x; -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+  .xterm-wrap { touch-action: pan-x; }
 }
 
 /* ── Input Card ── */

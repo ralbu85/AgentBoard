@@ -32,6 +32,10 @@ export function TerminalPane() {
   const effectiveState = useStore((s) => s.effectiveState)
   const altScreen = useStore((s) => (s.activeId ? s.sessions[s.activeId]?.altScreen : false))
   const [showScrollBtn, setShowScrollBtn] = useState(false)
+  // Mobile "select text": snapshot the terminal into plain selectable text so
+  // the OS's own long-press range-select + copy works (native, no custom copy).
+  const [selectText, setSelectText] = useState<string | null>(null)
+  const isMobile = window.innerWidth <= 768
   const currentState = activeId ? effectiveState(activeId) : null
   const stateInfo = STATE_DISPLAY[currentState || ''] || STATE_DISPLAY.idle
   // Full-screen apps scroll via the app (PageUp forwarded), so xterm's own
@@ -126,10 +130,19 @@ export function TerminalPane() {
           📜 전체 로그
         </button>
       )}
-      {activeId && window.innerWidth <= 768 && (
-        <button className="copy-screen-btn" onClick={() => TM.copyScreen(activeId)} title="화면 복사 (한 줄은 길게 눌러 복사)">
-          ⧉ 복사
+      {activeId && isMobile && (
+        <button className="select-text-btn" onClick={() => setSelectText(TM.getBufferText(activeId))} title="텍스트 선택 (길게 눌러 범위 지정 → 복사)">
+          텍스트 선택
         </button>
+      )}
+      {selectText !== null && (
+        <div className="term-select-overlay">
+          <div className="tso-bar">
+            <span className="tso-hint">길게 눌러 범위 지정 → 복사</span>
+            <button className="tso-close" onClick={() => setSelectText(null)}>✕ 닫기</button>
+          </div>
+          <pre className="tso-text">{selectText}</pre>
+        </div>
       )}
       {btnVisible && (
         <button
