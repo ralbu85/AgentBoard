@@ -11,7 +11,7 @@ class FakeSession(SimpleNamespace):
 
 
 def make_session(id="1"):
-    return FakeSession(id=id, session_name=f"term-{id}", display_rows=40)
+    return FakeSession(id=id, session_name=f"term-{id}", display_rows=40, display_cols=80)
 
 
 class FakeStore:
@@ -159,8 +159,20 @@ def test_paste_goes_through_buffer_not_keys():
 def test_resize_valid_applies_and_snapshots():
     s = make_session("1")
     _, _, streamer, tmux = run({"type": "resize", "id": "1", "rows": 50}, {"1": s})
-    assert tmux.resizes == [(80, 50)]
+    assert tmux.resizes == [(80, 50)]  # no cols → stays 80
     assert any(m["type"] == "snapshot" for m in streamer.broadcasts)
+
+
+def test_resize_mobile_cols_narrows_pane():
+    s = make_session("1")
+    _, _, _, tmux = run({"type": "resize", "id": "1", "rows": 45, "cols": 50}, {"1": s})
+    assert tmux.resizes == [(50, 45)]  # phone width → narrower pane, content reflows
+
+
+def test_resize_cols_out_of_range_falls_back_to_80():
+    s = make_session("1")
+    _, _, _, tmux = run({"type": "resize", "id": "1", "rows": 45, "cols": 5}, {"1": s})
+    assert tmux.resizes == [(80, 45)]  # too narrow → clamp back to canonical
 
 
 def test_resize_below_canonical_ignored():

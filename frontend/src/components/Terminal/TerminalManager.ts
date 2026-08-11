@@ -90,7 +90,7 @@ export function create(id: string): TermInstance {
     cursorStyle: 'bar',
     disableStdin: isMobile,
     scrollback: 10000,
-    fontSize: isMobile ? 14 : 13,
+    fontSize: 13,
     letterSpacing: 0,
     fontFamily: '"D2Coding", "Cascadia Code", "Cascadia Mono", "Consolas", monospace',
     theme: {
@@ -159,12 +159,14 @@ export function open(id: string, container: HTMLElement) {
   }
 }
 
-// Desktop: width drives font (shrink to fit 80 cols), height drives rows.
-// Mobile: font is FIXED at a readable size and the 80-col grid overflows
-// horizontally (pan-x) — fitting 80 cols to a phone width shrank text to ~8px.
-const TARGET_FONT = isMobile ? 14 : 13
+// Desktop: fixed 80 cols; font shrinks to fit the pane width, height → rows.
+// Mobile: fixed readable font; the pane WIDTH (cols) shrinks to fit the phone
+// so content reflows — no horizontal scroll, no 8px text (fitting 80 cols to a
+// phone forced ~8px; overflowing at a big font forced horizontal panning).
+const TARGET_FONT = 13
 const MIN_FONT = 8
 const _lastSentRows = new Map<string, number>()
+const _lastSentCols = new Map<string, number>()
 
 export function refit(id: string) {
   const t = terminals.get(id)
@@ -184,27 +186,32 @@ export function refit(id: string) {
   const curFont = (t.term.options.fontSize as number) || TARGET_FONT
   const cellWPerFont = cellW / curFont
   const cellHPerFont = cellH / curFont
-  // Mobile keeps a fixed readable font (80 cols overflow → horizontal pan).
-  // Desktop shrinks the font so all 80 cols fit the pane width.
+  // Mobile keeps the readable font and NARROWS the pane (cols) to fit; desktop
+  // keeps 80 cols and shrinks the font to fit the pane width.
   const fontByWidth = Math.floor(cW / (CANONICAL_COLS * cellWPerFont))
   const newFont = isMobile ? TARGET_FONT : Math.max(MIN_FONT, Math.min(TARGET_FONT, fontByWidth))
 
   if (newFont !== curFont) {
     t.term.options.fontSize = newFont
   }
-  // Project cell height from the (font-independent) ratio so we don't read a
+  // Project cell size from the (font-independent) ratio so we don't read a
   // stale dimension before xterm has applied the new fontSize.
   const projectedCellH = cellHPerFont * newFont
+  const projectedCellW = cellWPerFont * newFont
 
+  const fitCols = isMobile
+    ? Math.max(30, Math.min(CANONICAL_COLS, Math.floor(cW / projectedCellW)))
+    : CANONICAL_COLS
   const fitRows = Math.max(CANONICAL_ROWS, Math.min(200, Math.floor(cH / projectedCellH)))
 
-  if (t.term.rows !== fitRows || t.term.cols !== CANONICAL_COLS) {
-    t.term.resize(CANONICAL_COLS, fitRows)
+  if (t.term.rows !== fitRows || t.term.cols !== fitCols) {
+    t.term.resize(fitCols, fitRows)
   }
 
-  if (_lastSentRows.get(id) !== fitRows) {
+  if (_lastSentRows.get(id) !== fitRows || _lastSentCols.get(id) !== fitCols) {
     _lastSentRows.set(id, fitRows)
-    send({ type: 'resize', id, rows: fitRows })
+    _lastSentCols.set(id, fitCols)
+    send({ type: 'resize', id, rows: fitRows, cols: fitCols })
   }
 }
 

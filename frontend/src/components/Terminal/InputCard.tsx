@@ -65,6 +65,16 @@ export function InputCard({ sessionId }: Props) {
     }
   }
 
+  // Grow the textarea to show what's typed (up to the CSS max-height, then it
+  // scrolls) — a 1-row box hid most of a long/multi-line command. Runs on any
+  // text change (typing, dropped paths, clear-on-send).
+  useEffect(() => {
+    const el = textareaRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${el.scrollHeight}px`
+  }, [text])
+
   const doSend = () => {
     if (text.includes('\n')) {
       api.paste(sessionId, text)  // Multi-line: paste as single block

@@ -74,11 +74,19 @@ async def apply_command(store, streamer, tmux, msg: dict,
 
     if mtype == "resize":
         rows = msg.get("rows")
+        # cols optional: desktop stays at 80; mobile narrows the pane so content
+        # reflows to fit a phone (readable font WITHOUT horizontal scroll).
+        # NOTE: this makes the pane width per-viewer — if a desktop and a phone
+        # view the same session at once, its width flip-flops. Fine for the
+        # common single-viewer case.
+        cols = msg.get("cols")
+        cols = cols if isinstance(cols, int) and 30 <= cols <= CANONICAL_COLS else CANONICAL_COLS
         if isinstance(rows, int) and CANONICAL_ROWS <= rows <= 200:
             s = store.get(mid)
-            if s and rows != s.display_rows:
+            if s and (rows != s.display_rows or cols != s.display_cols):
                 s.display_rows = rows
-                await tmux.resize_window(s.session_name, CANONICAL_COLS, rows)
+                s.display_cols = cols
+                await tmux.resize_window(s.session_name, cols, rows)
                 # Give the TUI time to handle SIGWINCH and redraw.
                 await asyncio.sleep(0.15)
                 output = await streamer.get_snapshot(mid, s.session_name)
@@ -91,7 +99,7 @@ async def apply_command(store, streamer, tmux, msg: dict,
         if mid:
             s = store.get(mid)
             if s:
-                await tmux.resize_window(s.session_name, CANONICAL_COLS, s.display_rows)
+                await tmux.resize_window(s.session_name, s.display_cols, s.display_rows)
                 output = await streamer.get_snapshot(mid, s.session_name)
                 if output:
                     await _reply({"type": "snapshot", "id": mid, "data": output})

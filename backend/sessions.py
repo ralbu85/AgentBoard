@@ -31,6 +31,7 @@ class Session:
     cols: int = CANONICAL_COLS
     rows: int = CANONICAL_ROWS
     display_rows: int = CANONICAL_ROWS
+    display_cols: int = CANONICAL_COLS   # the viewer's requested width (mobile narrows it)
 
     def to_dict(self) -> dict:
         return {
