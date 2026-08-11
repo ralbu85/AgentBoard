@@ -92,10 +92,11 @@ export function create(id: string): TermInstance {
     scrollback: 10000,
     fontSize: 12,
     letterSpacing: 0,
-    // Lead with ui-monospace (SF Mono on iOS) — crisp for Latin, and Korean
-    // falls to the system CJK font per-glyph instead of the ugly Courier that
-    // the bare `monospace` generic resolved to on phones.
-    fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", "D2Coding", "Cascadia Code", Menlo, Consolas, monospace',
+    // Lead with the bundled NanumGothicCoding so BOTH Latin and Hangul come
+    // from one font where Hangul = exactly 2 Latin cells — no gaps in the
+    // fixed grid. (A crisp SF Mono for Latin + system Hangul mismatched their
+    // metrics and left the wide-spacing look.) ui-monospace backs it up.
+    fontFamily: '"NanumGothicCoding", ui-monospace, SFMono-Regular, "D2Coding", Menlo, Consolas, monospace',
     theme: {
       background: '#101014', foreground: '#ececf1', cursor: '#ececf1',
       selectionBackground: 'rgba(124, 108, 240, 0.25)',
@@ -446,6 +447,26 @@ export function destroy(id: string) {
   _pendingScreens.delete(id)
   _deferredSnapshots.delete(id)
   _lastSentRows.delete(id)
+  _lastSentCols.delete(id)
   const i = _lru.indexOf(id)
   if (i >= 0) _lru.splice(i, 1)
+}
+
+// xterm measures its cell size once, on open. If a terminal opened before the
+// bundled mono font finished loading, cells carry the fallback's metrics and
+// Hangul misaligns. When the font is ready, force each open terminal to
+// re-measure the cell and re-fit (cols depend on cell width on mobile).
+if (typeof document !== 'undefined' && document.fonts?.ready) {
+  document.fonts.ready
+    .then(() => document.fonts.load('12px "NanumGothicCoding"'))
+    .catch(() => {})
+    .finally(() => {
+      terminals.forEach((t, id) => {
+        if (!t.opened) return
+        try { (t.term as any)._core?._charSizeService?.measure?.() } catch { /* internal API */ }
+        _lastSentRows.delete(id)
+        _lastSentCols.delete(id)
+        refit(id)
+      })
+    })
 }

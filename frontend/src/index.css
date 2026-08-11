@@ -34,9 +34,20 @@
 
   /* Monospace stack. Leads with ui-monospace (SF Mono on iOS / Cascadia on
      Windows) — far cleaner than the generic `monospace` (Courier) that phones
-     fell back to. Korean glyphs fall to the crisp system CJK font per-glyph. */
-  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", "D2Coding",
-    "Cascadia Code", Menlo, Consolas, "Noto Sans Mono CJK KR", monospace;
+     fell back to. NanumGothicCoding (bundled) gives Korean glyphs that are
+     exactly 2× the Latin cell, instead of the system CJK font's narrower
+     glyphs that left ugly gaps in the terminal. */
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", "NanumGothicCoding",
+    "D2Coding", "Cascadia Code", Menlo, Consolas, monospace;
+}
+
+/* Bundled Korean monospace (Hangul = exactly 2 Latin cells → no gaps). Subset
+   to Latin + Hangul + box-drawing (~230 KB), font-display:swap so it never
+   blocks first paint; the terminal re-fits once it loads (see main.tsx). */
+@font-face {
+  font-family: "NanumGothicCoding";
+  src: url("/fonts/NanumGothicCoding.woff2") format("woff2");
+  font-weight: 400; font-style: normal; font-display: swap;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -1381,7 +1392,6 @@ tr.ln-memo:hover .fv-line-content::after { opacity: 1; }
 .pdf-page-info { font-size: 10px; color: var(--text-muted); margin-left: 8px; }
 .pdf-pages { padding: 8px; overflow: auto; flex: 1; display: flex; flex-direction: column; align-items: center; }
 .pdf-pages canvas { display: block; height: auto; }
-}
 .fv-pdf-fallback { padding: 40px; text-align: center; color: var(--text-muted); }
 .fv-download {
   display: inline-block; margin-top: 12px; padding: 8px 20px;
