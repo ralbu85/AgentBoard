@@ -90,7 +90,7 @@ export function create(id: string): TermInstance {
     cursorStyle: 'bar',
     disableStdin: isMobile,
     scrollback: 10000,
-    fontSize: isMobile ? 10 : 13,
+    fontSize: isMobile ? 14 : 13,
     letterSpacing: 0,
     fontFamily: '"D2Coding", "Cascadia Code", "Cascadia Mono", "Consolas", monospace',
     theme: {
@@ -159,9 +159,10 @@ export function open(id: string, container: HTMLElement) {
   }
 }
 
-// Rows scale to fill the terminal container on both mobile and desktop —
-// width drives font, height drives row count.
-const TARGET_FONT = isMobile ? 10 : 13
+// Desktop: width drives font (shrink to fit 80 cols), height drives rows.
+// Mobile: font is FIXED at a readable size and the 80-col grid overflows
+// horizontally (pan-x) — fitting 80 cols to a phone width shrank text to ~8px.
+const TARGET_FONT = isMobile ? 14 : 13
 const MIN_FONT = 8
 const _lastSentRows = new Map<string, number>()
 
@@ -183,8 +184,10 @@ export function refit(id: string) {
   const curFont = (t.term.options.fontSize as number) || TARGET_FONT
   const cellWPerFont = cellW / curFont
   const cellHPerFont = cellH / curFont
+  // Mobile keeps a fixed readable font (80 cols overflow → horizontal pan).
+  // Desktop shrinks the font so all 80 cols fit the pane width.
   const fontByWidth = Math.floor(cW / (CANONICAL_COLS * cellWPerFont))
-  const newFont = Math.max(MIN_FONT, Math.min(TARGET_FONT, fontByWidth))
+  const newFont = isMobile ? TARGET_FONT : Math.max(MIN_FONT, Math.min(TARGET_FONT, fontByWidth))
 
   if (newFont !== curFont) {
     t.term.options.fontSize = newFont

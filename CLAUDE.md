@@ -165,6 +165,7 @@ cd frontend && npm run dev
 - **Don't asymmetrically resize fonts on keyboard show/hide.** Viewport jitters; users lose their place.
 - **Don't apply every `visualViewport` resize to `--vvh` (app height).** The keyboard slide fires a burst of resizes (per-frame app reflow = "화면이 보였다 안 보였다" flicker), and the Korean IME suggestion bar toggles ~50px on nearly every keystroke. `main.tsx` debounces to settle-once (120 ms) and ignores <100px wobbles while an input is focused (re-synced on `focusout`).
 - **Don't forget to re-fit the terminal on session switch and font change.** Saved scrollTop must be restored after fit.
+- **Don't shrink the mobile font to fit 80 cols — it goes to ~8px and is unreadable.** `CANONICAL_COLS` is fixed at 80 for cross-client consistency, so fitting 80 cols to a phone width forced a tiny font. Mobile now uses a FIXED readable font (`TARGET_FONT=14`; `refit` skips the width-shrink on mobile) and the 80-col grid overflows horizontally (`.xterm-wrap` `overflow-x:auto` + `touch-action:pan-x`). Bonus: a fixed font also stops the keyboard show/hide font jitter. Mobile `.input-textarea` is 16px (also stops iOS focus auto-zoom, which triggers under 16px).
 
 ### Concurrency
 - **Don't `await` before reserving a session id in `spawn()`.** Two parallel spawns will collide. Reserve sync, fill async.

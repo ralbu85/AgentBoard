@@ -1493,7 +1493,10 @@ tr.ln-memo:hover .fv-line-content::after { opacity: 1; }
   }
   .header-center { display: none; }
   .header-active-state { display: flex; align-items: center; gap: 4px; }
-  .input-textarea { font-size: 11px; }
+  /* 16px keeps the input readable AND stops iOS from auto-zooming the page
+     when the field is focused (it zooms any input under 16px). */
+  .input-textarea { font-size: 16px; }
+  .quick-key { font-size: 13px; padding: 5px 11px; }
   .pane-viewer { display: none; }
   .pane-resizer { display: none; }
   .pane-terminal { width: 100% !important; }
