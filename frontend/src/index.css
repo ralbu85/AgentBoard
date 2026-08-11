@@ -34,19 +34,19 @@
 
   /* Monospace stack. Leads with ui-monospace (SF Mono on iOS / Cascadia on
      Windows) — far cleaner than the generic `monospace` (Courier) that phones
-     fell back to. NanumGothicCoding (bundled) gives Korean glyphs that are
-     exactly 2× the Latin cell, instead of the system CJK font's narrower
-     glyphs that left ugly gaps in the terminal. */
-  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", "NanumGothicCoding",
-    "D2Coding", "Cascadia Code", Menlo, Consolas, monospace;
+     fell back to. D2Coding (bundled, OFL) leads: solid readable Latin AND
+     Hangul at exactly 2× the Latin cell — the system CJK fonts' narrower
+     glyphs left ugly gaps in the terminal grid. */
+  --font-mono: "D2Coding", ui-monospace, SFMono-Regular, "SF Mono",
+    "Cascadia Code", Menlo, Consolas, monospace;
 }
 
-/* Bundled Korean monospace (Hangul = exactly 2 Latin cells → no gaps). Subset
-   to Latin + Hangul + box-drawing (~230 KB), font-display:swap so it never
-   blocks first paint; the terminal re-fits once it loads (see main.tsx). */
+/* Bundled Korean coding font (Hangul = exactly 2 Latin cells → no gaps).
+   Subset to Latin + Hangul + box-drawing (~270 KB), font-display:swap so it
+   never blocks first paint; terminals re-measure once it loads. */
 @font-face {
-  font-family: "NanumGothicCoding";
-  src: url("/fonts/NanumGothicCoding.woff2") format("woff2");
+  font-family: "D2Coding";
+  src: url("/fonts/D2Coding.woff2") format("woff2");
   font-weight: 400; font-style: normal; font-display: swap;
 }
 

@@ -92,11 +92,11 @@ export function create(id: string): TermInstance {
     scrollback: 10000,
     fontSize: 12,
     letterSpacing: 0,
-    // Lead with the bundled NanumGothicCoding so BOTH Latin and Hangul come
-    // from one font where Hangul = exactly 2 Latin cells — no gaps in the
-    // fixed grid. (A crisp SF Mono for Latin + system Hangul mismatched their
-    // metrics and left the wide-spacing look.) ui-monospace backs it up.
-    fontFamily: '"NanumGothicCoding", ui-monospace, SFMono-Regular, "D2Coding", Menlo, Consolas, monospace',
+    // Lead with the bundled D2Coding so BOTH Latin and Hangul come from one
+    // font where Hangul = exactly 2 Latin cells — no gaps in the fixed grid.
+    // (A crisp SF Mono for Latin + system Hangul mismatched their metrics and
+    // left the wide-spacing look.) ui-monospace backs it up.
+    fontFamily: '"D2Coding", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
     theme: {
       background: '#101014', foreground: '#ececf1', cursor: '#ececf1',
       selectionBackground: 'rgba(124, 108, 240, 0.25)',
@@ -458,7 +458,7 @@ export function destroy(id: string) {
 // re-measure the cell and re-fit (cols depend on cell width on mobile).
 if (typeof document !== 'undefined' && document.fonts?.ready) {
   document.fonts.ready
-    .then(() => document.fonts.load('12px "NanumGothicCoding"'))
+    .then(() => document.fonts.load('12px "D2Coding"'))
     .catch(() => {})
     .finally(() => {
       terminals.forEach((t, id) => {

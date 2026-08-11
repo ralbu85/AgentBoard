@@ -1,0 +1,3 @@
+D2Coding (c) NAVER Corporation, licensed under the SIL Open Font License 1.1.
+https://github.com/naver/d2codingfont
+Bundled here as a Latin+Hangul+box-drawing subset (D2Coding.woff2).
