@@ -31,6 +31,12 @@
   /* Spacing ramp */
   --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px;
   --radius: 8px; --radius-sm: 6px;
+
+  /* Monospace stack. Leads with ui-monospace (SF Mono on iOS / Cascadia on
+     Windows) — far cleaner than the generic `monospace` (Courier) that phones
+     fell back to. Korean glyphs fall to the crisp system CJK font per-glyph. */
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", "D2Coding",
+    "Cascadia Code", Menlo, Consolas, "Noto Sans Mono CJK KR", monospace;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -127,7 +133,7 @@ body {
 }
 .spawn-path-row { display: flex; gap: 6px; }
 .spawn-input {
-  flex: 1; padding: 8px 11px; font-size: var(--fs-sm); font-family: monospace;
+  flex: 1; padding: 8px 11px; font-size: var(--fs-sm); font-family: var(--font-mono);
   background: var(--bg-primary); color: var(--text-primary);
   border: 1px solid var(--border); border-radius: var(--radius-sm); outline: none;
 }
@@ -234,7 +240,7 @@ body {
 .spawn-recent:hover { background: var(--bg-hover); color: var(--text-primary); }
 .spawn-recent.active { background: var(--accent-soft); color: var(--accent); }
 .spawn-recent-icon { font-size: 11px; color: var(--text-muted); }
-.spawn-recent-path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: monospace; }
+.spawn-recent-path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono); }
 
 .spawn-browser { display: flex; flex-direction: column; gap: 6px; }
 .spawn-dirlist { max-height: 180px; overflow-y: auto; border: 1px solid var(--border); border-radius: 6px; }
@@ -258,7 +264,7 @@ body {
 .spawn-preset-label { font-size: 11px; font-weight: 600; }
 
 .spawn-cmd {
-  width: 100%; padding: 8px 10px; font-size: 12px; font-family: monospace;
+  width: 100%; padding: 8px 10px; font-size: 12px; font-family: var(--font-mono);
   background: var(--bg-primary); color: var(--text-primary);
   border: 1px solid var(--border); border-radius: 6px; outline: none;
   resize: vertical; min-height: 60px; line-height: 1.5;
@@ -485,7 +491,7 @@ body {
 }
 .pe-row .pe-icon { width: 40px; text-align: center; }
 .pe-row .pe-label { flex: 0 0 120px; }
-.pe-row .pe-cmd { flex: 1; font-family: monospace; }
+.pe-row .pe-cmd { flex: 1; font-family: var(--font-mono); }
 .pe-row input:focus { border-color: var(--accent); }
 .pe-row .pe-default { width: 22px; flex-shrink: 0; accent-color: var(--accent); cursor: pointer; }
 .pe-row .pe-del { width: 26px; border: none; background: transparent; cursor: pointer; font-size: 13px; opacity: 0.6; }
@@ -517,7 +523,7 @@ body {
 /* Diff viewer (git changes) */
 .diff-view {
   margin: 0; padding: 8px 0; height: 100%; overflow: auto;
-  font-family: "D2Coding", "Cascadia Code", Consolas, monospace; font-size: 12.5px; line-height: 1.5;
+  font-family: var(--font-mono); font-size: 12.5px; line-height: 1.5;
   background: var(--bg-primary); color: var(--text-secondary);
 }
 .diff-view .dl { padding: 0 12px; white-space: pre-wrap; word-break: break-all; }
@@ -771,7 +777,7 @@ body {
 }
 .tso-text {
   flex: 1; margin: 0; padding: 10px 12px; overflow: auto;
-  font-family: "D2Coding", "Cascadia Code", Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 12px; line-height: 1.5; color: var(--text);
   white-space: pre-wrap; word-break: break-word;
   -webkit-user-select: text; user-select: text; -webkit-touch-callout: default;
@@ -826,7 +832,7 @@ body {
   flex: 1; resize: none; border: 1px solid var(--border);
   background: var(--bg-primary); color: var(--text-primary);
   border-radius: 8px; padding: 6px 10px;
-  font-family: "D2Coding", "Cascadia Code", monospace;
+  font-family: var(--font-mono);
   font-size: 13px; line-height: 1.4;
   max-height: 120px; outline: none;
   transition: border-color 0.15s, box-shadow 0.15s;
@@ -858,7 +864,7 @@ body {
 
 .btn-xs { padding: 2px 6px; font-size: 11px; }
 
-.quick-key { padding: 3px 8px; font-size: 11px; font-family: monospace; }
+.quick-key { padding: 3px 8px; font-size: 11px; font-family: var(--font-mono); }
 
 .send-btn { padding: 6px 16px; }
 .file-browse-btn {
@@ -916,7 +922,7 @@ body {
 .file-path-input {
   width: 100%; background: var(--bg-tertiary); color: var(--text-secondary);
   border: 1px solid var(--border); border-radius: 6px;
-  padding: 4px 8px; font-size: 11px; font-family: monospace; outline: none;
+  padding: 4px 8px; font-size: 11px; font-family: var(--font-mono); outline: none;
 }
 .file-path-input:focus { border-color: var(--accent); color: var(--text-primary); }
 
@@ -1011,7 +1017,7 @@ body {
 .fv-code {
   margin: 0; padding: 12px; font-size: 12px; line-height: 1.7;
   overflow-x: auto; white-space: pre-wrap; word-break: break-all; tab-size: 4;
-  font-family: "D2Coding", "Cascadia Code", "Fira Code", monospace;
+  font-family: var(--font-mono);
   color: var(--text-primary); background: var(--bg-primary);
   min-height: 100%;
 }
@@ -1042,7 +1048,7 @@ body {
 .cm-wrapper .cm-content,
 .cm-wrapper .cm-gutters,
 .cm-wrapper .cm-line {
-  font-family: "D2Coding", "Cascadia Code", "Fira Code", "JetBrains Mono", "Consolas", monospace;
+  font-family: var(--font-mono);
   line-height: 1.7;
 }
 /* Memo highlighted lines in CodeMirror */
@@ -1127,7 +1133,7 @@ tr.ln-memo:hover .fv-line-content::after { opacity: 1; }
   padding: 0 5px; border-radius: 3px;
 }
 .memo-item-excerpt {
-  font-size: 10px; color: var(--text-muted); font-family: monospace;
+  font-size: 10px; color: var(--text-muted); font-family: var(--font-mono);
   background: var(--bg-tertiary); padding: 0 4px; border-radius: 2px;
   max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
@@ -1152,7 +1158,7 @@ tr.ln-memo:hover .fv-line-content::after { opacity: 1; }
 .memo-panel-excerpt {
   flex: 1; font-size: 11px; color: var(--text-secondary);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  font-family: monospace; background: var(--bg-tertiary);
+  font-family: var(--font-mono); background: var(--bg-tertiary);
   padding: 1px 6px; border-radius: 3px;
 }
 
@@ -1198,13 +1204,13 @@ tr.ln-memo:hover .fv-line-content::after { opacity: 1; }
 .fv-markdown tr:nth-child(even) td { background: rgba(255,255,255,0.02); }
 .md-inline-code {
   background: var(--bg-tertiary); padding: 2px 6px; border-radius: 4px;
-  font-size: 13px; font-family: "D2Coding", monospace; color: #d2a8ff;
+  font-size: 13px; font-family: var(--font-mono); color: #d2a8ff;
 }
 .md-codeblock {
   background: var(--bg-primary) !important; border: 1px solid var(--border);
   border-radius: 8px; padding: 14px !important; margin: 10px 0;
   overflow-x: auto; font-size: 13px; line-height: 1.6;
-  font-family: "D2Coding", "Cascadia Code", monospace;
+  font-family: var(--font-mono);
 }
 .md-link { color: var(--accent); text-decoration: none; }
 .md-link:hover { text-decoration: underline; }
@@ -1261,7 +1267,7 @@ tr.ln-memo:hover .fv-line-content::after { opacity: 1; }
 .nb-cell { display: flex; gap: 10px; margin: 12px 0; min-width: 0; }
 .nb-gutter {
   flex: 0 0 56px; text-align: right; padding-top: 9px;
-  font-family: monospace; font-size: 11px; color: var(--text-muted);
+  font-family: var(--font-mono); font-size: 11px; color: var(--text-muted);
   user-select: none; white-space: nowrap; overflow: hidden;
 }
 .nb-gutter.nb-in { color: var(--accent); }
@@ -1306,7 +1312,7 @@ tr.ln-memo:hover .fv-line-content::after { opacity: 1; }
 .md-rendered a:hover { text-decoration: underline; }
 .md-rendered code {
   background: var(--bg-tertiary); padding: 2px 6px; border-radius: 4px;
-  font-size: 13px; font-family: "D2Coding", monospace; color: #d2a8ff;
+  font-size: 13px; font-family: var(--font-mono); color: #d2a8ff;
 }
 .md-rendered pre {
   background: var(--bg-tertiary); border: 1px solid var(--border);
@@ -1315,7 +1321,7 @@ tr.ln-memo:hover .fv-line-content::after { opacity: 1; }
 }
 .md-rendered pre code {
   background: none; padding: 0; color: var(--text-primary);
-  font-family: "D2Coding", "Cascadia Code", monospace;
+  font-family: var(--font-mono);
 }
 .md-rendered table {
   border-collapse: collapse;

@@ -90,9 +90,12 @@ export function create(id: string): TermInstance {
     cursorStyle: 'bar',
     disableStdin: isMobile,
     scrollback: 10000,
-    fontSize: 13,
+    fontSize: 12,
     letterSpacing: 0,
-    fontFamily: '"D2Coding", "Cascadia Code", "Cascadia Mono", "Consolas", monospace',
+    // Lead with ui-monospace (SF Mono on iOS) — crisp for Latin, and Korean
+    // falls to the system CJK font per-glyph instead of the ugly Courier that
+    // the bare `monospace` generic resolved to on phones.
+    fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", "D2Coding", "Cascadia Code", Menlo, Consolas, monospace',
     theme: {
       background: '#101014', foreground: '#ececf1', cursor: '#ececf1',
       selectionBackground: 'rgba(124, 108, 240, 0.25)',
@@ -163,7 +166,7 @@ export function open(id: string, container: HTMLElement) {
 // Mobile: fixed readable font; the pane WIDTH (cols) shrinks to fit the phone
 // so content reflows — no horizontal scroll, no 8px text (fitting 80 cols to a
 // phone forced ~8px; overflowing at a big font forced horizontal panning).
-const TARGET_FONT = 13
+const TARGET_FONT = 12
 const MIN_FONT = 8
 const _lastSentRows = new Map<string, number>()
 const _lastSentCols = new Map<string, number>()
