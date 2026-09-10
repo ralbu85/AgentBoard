@@ -114,6 +114,7 @@ export function Header({ onToggleSidebar }: Props) {
         </div>
       )}
       <div className="header-right">
+        <button className="btn" title="인앱 브라우저 탭 열기" onClick={()=>useStore.getState().openBrowser()}>◎ 웹</button>
         {canNotify && (
           <button
             className={`btn btn-icon ${notif ? 'notif-on' : ''}`}

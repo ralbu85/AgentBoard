@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { Session, WsMessage, SpawnProfile } from './types'
 import { useToasts } from './toasts'
+import { browserUrl } from './components/Viewer/browserUrl'
 import { api } from './api'
 
 export interface ViewerTab {
@@ -8,10 +9,11 @@ export interface ViewerTab {
   name: string
   path: string
   content: string
-  type: 'code' | 'markdown' | 'latex' | 'pdf' | 'image' | 'diff' | 'notebook' | 'terminal'
+  type: 'code' | 'markdown' | 'latex' | 'pdf' | 'image' | 'diff' | 'notebook' | 'terminal' | 'browser'
   lang: string
   dirty?: boolean
   version?: string
+  browser?: { history: string[]; index: number }
   sessionId?: string
   viewState?: { scrollTop?: number; scrollLeft?: number; page?: number; zoom?: number; pageOffset?: number; pdfScrollLeft?: number; cursor?: number; editorScroll?: number }
 }
@@ -82,6 +84,9 @@ interface AppState {
   saveProfiles: (profiles: SpawnProfile[]) => Promise<void>
   setActive: (id: string | null) => void
   removeSession: (id: string) => void
+  openBrowser: (url?: string, key?: string) => void
+  navigateBrowser: (id: string, url: string, key: string) => void
+  stepBrowser: (id: string, delta: number, key: string) => void
   openTab: (tab: ViewerTab, key?: string) => void
   closeTab: (id: string) => void
   updateTab: (tabId: string, content: string, key?: string) => void
@@ -104,7 +109,7 @@ function persistViewer(sessionId: string, vs: { tabs: ViewerTab[]; activeTabId: 
       // never restored from disk (their `path` isn't a real file).
       .filter((t) => t.type !== 'diff' && !t.id.startsWith('log:'))
       .map((t) => ({
-        id: t.id, path: t.path, name: t.name, type: t.type, lang: t.lang, sessionId: t.sessionId, viewState: t.viewState,
+        id: t.id, path: t.path, name: t.name, type: t.type, lang: t.lang, sessionId: t.sessionId, browser: t.browser, viewState: t.viewState,
         content: (t.type === 'pdf' || t.type === 'image') ? t.content : undefined,
       }))
     localStorage.setItem(`agentboard.viewer.${sessionId}`, JSON.stringify({ tabs: meta, activeTabId: vs.activeTabId }))
@@ -278,6 +283,42 @@ export const useStore = create<AppState>((set, get) => ({
       _viewerState: { ...state._viewerState, [key]: { tabs, activeTabId: tabId } } }
   }),
 
+  openBrowser: (input = '', owner) => {
+    const state = get(), key = owner || viewerKey(state)
+    const url = input ? browserUrl(input) : null
+    if (input && !url) { useToasts.getState().push('HTTP 또는 HTTPS 주소를 입력해 주세요.'); return }
+    const existing = state._viewerState[key]?.tabs.find(t=>t.type==='browser' && t.browser?.history[t.browser.index]===url)
+    if (existing) {
+      const current=state._viewerState[key], next={...current,activeTabId:existing.id}
+      set({_viewerState:{...state._viewerState,[key]:next}});persistViewer(key,next);return
+    }
+    const id = `browser:${crypto.randomUUID()}`
+    state.openTab({id,path:id,name:url?new URL(url).host:'새 웹 탭',type:'browser',content:'',lang:'',browser:{history:url?[url]:[],index:url?0:-1}},key)
+  },
+  navigateBrowser: (id, input, key) => set(state => {
+    const url=browserUrl(input), current=state._viewerState[key]
+    if (!url || !current) return {}
+    const tabs=current.tabs.map(tab=>{
+      if(tab.id!==id||tab.type!=='browser')return tab
+      const browser=tab.browser||{history:[],index:-1}
+      const history=[...browser.history.slice(0,browser.index+1),url].slice(-50)
+      return {...tab,name:new URL(url).host,browser:{history,index:history.length-1}}
+    })
+    const next={...current,tabs};persistViewer(key,next)
+    return {_viewerState:{...state._viewerState,[key]:next}}
+  }),
+  stepBrowser: (id, delta, key) => set(state => {
+    const current=state._viewerState[key];if(!current)return {}
+    const tabs=current.tabs.map(tab=>{
+      if(tab.id!==id||tab.type!=='browser'||!tab.browser)return tab
+      const index=Math.max(0,Math.min(tab.browser.history.length-1,tab.browser.index+delta))
+      const url=tab.browser.history[index]
+      return url?{...tab,name:new URL(url).host,browser:{...tab.browser,index}}:tab
+    })
+    const next={...current,tabs};persistViewer(key,next)
+    return {_viewerState:{...state._viewerState,[key]:next}}
+  }),
+
   openTab: (tab, key) => {
     const { _viewerState } = get()
     const activeId = key || viewerKey(get())
@@ -374,6 +415,11 @@ export const useStore = create<AppState>((set, get) => ({
     }
     const restored: ViewerTab[] = []
     for (const tab of saved.tabs || []) {
+      if (tab.type === 'browser') {
+        const history=(tab.browser?.history||[]).map(browserUrl).filter((url):url is string=>!!url).slice(-50)
+        const index=Math.max(-1,Math.min(history.length-1,tab.browser?.index??history.length-1))
+        restored.push({...tab,content:'',browser:{history,index}});continue
+      }
       if (tab.type === 'terminal') {
         const session = tab.sessionId ? get().sessions[tab.sessionId] : undefined
         if (session && workspaceId(session.cwd || '~', session.host || 'local') === key) restored.push({...tab, content: ''})

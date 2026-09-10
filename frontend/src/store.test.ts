@@ -221,3 +221,26 @@ it('keeps the live idle state separate from a completed-turn notification', () =
   s.acknowledgeCompletion('1')
   expect(s.effectiveState('1')).toBe('idle')
 })
+
+it('keeps browser navigation and tabs isolated from files and other workspaces', async () => {
+  const s=useStore.getState(), key=viewerKey(useStore.getState())
+  s.openBrowser('example.com');s.openBrowser('https://example.com/')
+  const view=useStore.getState()._viewerState[key], id=view.tabs[0].id
+  expect(view.tabs).toHaveLength(1)
+  s.navigateBrowser(id,'https://example.org/next',key)
+  s.stepBrowser(id,-1,key)
+  expect(useStore.getState()._viewerState[key].tabs[0].browser?.index).toBe(0)
+  s.setWorkspace('/another');s.openBrowser('example.com')
+  s.stepBrowser(id,1,key)
+  expect(useStore.getState()._viewerState[key].tabs[0].browser?.index).toBe(1)
+  const read=vi.spyOn(api,'readFile')
+  useStore.setState({_viewerState:{},_restoredWorkspaces:{}})
+  await s.restoreViewerTabs(key)
+  expect(read).not.toHaveBeenCalled()
+  expect(useStore.getState()._viewerState[key].tabs[0]).toMatchObject({id,type:'browser',browser:{history:['https://example.com/','https://example.org/next'],index:1}})
+  vi.restoreAllMocks()
+})
+it('never opens a browser tab for executable URLs',()=>{
+  const s=useStore.getState();s.openBrowser('javascript:alert(1)')
+  expect(useStore.getState()._viewerState[viewerKey(useStore.getState())]).toBeUndefined()
+})

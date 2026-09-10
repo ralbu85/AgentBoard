@@ -5,6 +5,7 @@ import { notifyActive } from '../../ws'
 import { api } from '../../api'
 import { FileContent, type Memo, type SelectionInfo } from './FileContent'
 import { PdfViewer } from '../PdfViewer'
+import { BrowserPane } from './BrowserPane'
 import { ScrollSlider } from './ScrollSlider'
 import { CodeEditor } from './CodeEditor'
 import { renderMarkdown, findTaskLines, toggleTaskLine } from '../../markdown'
@@ -47,7 +48,7 @@ function WorkspaceViewer({workspaceKey, tabs, activeTabId}: {workspaceKey:string
       state.acknowledgeCompletion(tab.sessionId)
       if (state.activeId!==tab.sessionId || state._viewerState[workspaceKey]?.activeTabId!==id) { state.setActive(tab.sessionId); notifyActive(tab.sessionId) }
     } else if (state._viewerState[workspaceKey]?.activeTabId!==id) state.setActiveTab(id)
-    setTree(prev => mapTree(prev, n=>n.type==='leaf'&&n.id===pane ? {...n,activeTabId:id} : n))
+    setTree(prev => leaves(prev).find(p=>p.id===pane)?.activeTabId===id ? prev : mapTree(prev, n=>n.type==='leaf'&&n.id===pane ? {...n,activeTabId:id} : n))
   }
   const move = (id:string, pane:string, zone:DropZone) => {
     setTree(prev => {
@@ -111,7 +112,7 @@ function LeafPane({ node, tabs, activeTabId, split, onClose, onSelect, onMove, o
   const pendingSelRef = useRef<{ startLine: number; startCol: number; endLine: number; endCol: number; text: string } | null>(null)
 
   useEffect(() => {
-    if (!activeTab || activeTab.type === 'terminal' || activeTab.type === 'pdf' || activeTab.type === 'image') { setMemos([]); return }
+    if (!activeTab || activeTab.type === 'terminal' || activeTab.type === 'browser' || activeTab.type === 'pdf' || activeTab.type === 'image') { setMemos([]); return }
     api.loadNotes(activeTab.path).then(res => setMemos(res.notes || [])).catch(() => {})
     setSelInfo(null)
     setMdEditMode(false)
@@ -231,21 +232,21 @@ function LeafPane({ node, tabs, activeTabId, split, onClose, onSelect, onMove, o
 
   const [copied, setCopied] = useState(false)
   const copyContent = async () => {
-    if (!activeTab || activeTab.type === 'terminal' || activeTab.type === 'pdf' || activeTab.type === 'image') return
+    if (!activeTab || activeTab.type === 'terminal' || activeTab.type === 'browser' || activeTab.type === 'pdf' || activeTab.type === 'image') return
     try { await navigator.clipboard.writeText(activeTab.content); setCopied(true); setTimeout(() => setCopied(false), 1500) } catch {}
   }
 
   return (
     <div className={`leaf-pane ${node.activeTabId===activeTabId?'focused-pane':''}`} data-pane-id={node.id}
-      onPointerDownCapture={e=>{if(!(e.target as HTMLElement).closest('.vtab-bar')&&activeTab)onSelect(node.id,activeTab.id)}}
-      onFocusCapture={e=>{if(!(e.target as HTMLElement).closest('.vtab-bar')&&activeTab&&node.activeTabId!==activeTabId)onSelect(node.id,activeTab.id)}}
+      onPointerDownCapture={e=>{if(!(e.target as HTMLElement).closest('.vtab-bar, a')&&activeTab)onSelect(node.id,activeTab.id)}}
+      onFocusCapture={e=>{if(!(e.target as HTMLElement).closest('.vtab-bar, a')&&activeTab&&node.activeTabId!==activeTabId)onSelect(node.id,activeTab.id)}}
       onDragOver={e=>{
         if(!e.dataTransfer.types.includes('application/agentboard-tab')||(e.target as HTMLElement).closest('.vtab-bar'))return
         e.preventDefault();const r=e.currentTarget.getBoundingClientRect(),x=(e.clientX-r.left)/r.width,y=(e.clientY-r.top)/r.height
         setDropZone(x<.22?'left':x>.78?'right':y<.25?'top':y>.75?'bottom':'center')
       }}
       onDragLeave={e=>{if(!e.currentTarget.contains(e.relatedTarget as Node))setDropZone(null)}}
-      onDrop={e=>{const id=e.dataTransfer.getData('application/agentboard-tab');if(!id)return;e.preventDefault();onMove(id,node.id,dropZone||'center');setDropZone(null)}}
+      onDrop={e=>{document.body.classList.remove('dragging-viewer-tab');const id=e.dataTransfer.getData('application/agentboard-tab');if(!id)return;e.preventDefault();onMove(id,node.id,dropZone||'center');setDropZone(null)}}
     >
       <div className="vtab-bar">
         {node.tabIds.map(tid => {
@@ -254,14 +255,14 @@ function LeafPane({ node, tabs, activeTabId, split, onClose, onSelect, onMove, o
           return (
             <div key={t.id} className={`vtab ${t.id === node.activeTabId ? 'active' : ''} ${dragTarget === t.id ? 'tab-drop-target' : ''}`}
               draggable
-              onDragStart={e => { e.dataTransfer.setData('application/agentboard-tab', t.id); e.dataTransfer.effectAllowed = 'move' }}
+              onDragStart={e => { document.body.classList.add('dragging-viewer-tab'); e.dataTransfer.setData('application/agentboard-tab', t.id); e.dataTransfer.effectAllowed = 'move' }}
               onDragOver={e => { if (e.dataTransfer.types.includes('application/agentboard-tab')) { e.preventDefault(); setDragTarget(t.id) } }}
               onDragLeave={() => setDragTarget(null)}
-              onDragEnd={() => { setDragTarget(null); setDropZone(null) }}
-              onDrop={e => { e.preventDefault(); e.stopPropagation(); const id = e.dataTransfer.getData('application/agentboard-tab'); const r = e.currentTarget.getBoundingClientRect(); if (id) { onMove(id,node.id,'center'); useStore.getState().reorderTab(id, t.id, e.clientX > r.left + r.width / 2) }; setDragTarget(null) }}
+              onDragEnd={() => { document.body.classList.remove('dragging-viewer-tab'); setDragTarget(null); setDropZone(null) }}
+              onDrop={e => { document.body.classList.remove('dragging-viewer-tab'); e.preventDefault(); e.stopPropagation(); const id = e.dataTransfer.getData('application/agentboard-tab'); const r = e.currentTarget.getBoundingClientRect(); if (id) { onMove(id,node.id,'center'); useStore.getState().reorderTab(id, t.id, e.clientX > r.left + r.width / 2) }; setDragTarget(null) }}
               onClick={() => onSelect(node.id, t.id)}
             >
-              <span className={`tab-kind tab-kind-${t.type}`}>{t.type === 'terminal' ? '›_' : t.type === 'pdf' ? 'PDF' : '▤'}</span>
+              <span className={`tab-kind tab-kind-${t.type}`}>{t.type === 'browser' ? '◎' : t.type === 'terminal' ? '›_' : t.type === 'pdf' ? 'PDF' : '▤'}</span>
               <span className="vtab-name" title={t.type === 'terminal' && t.sessionId && sessionState[t.sessionId] ? sessionLabel(sessionState[t.sessionId], titles) : t.path}>{t.type === 'terminal' && t.sessionId && sessionState[t.sessionId] ? sessionLabel(sessionState[t.sessionId], titles) : t.name}</span>
               <span title={t.type === 'terminal' ? '탭 닫기 (세션 유지)' : '탭 닫기'} className="vtab-close vtab-x" onClick={e => { e.stopPropagation(); onClose(node.id, t.id) }}>&times;</span>
             </div>
@@ -274,8 +275,8 @@ function LeafPane({ node, tabs, activeTabId, split, onClose, onSelect, onMove, o
           {isTextTab && <button className="vtab-action" onClick={copyContent} title="Copy">{copied ? '✓' : '⎘'}</button>}
           {isRendered && <button className="vtab-action" onClick={() => setMdEditMode(v => !v)} title={mdEditMode ? 'Preview' : 'Edit'}>{mdEditMode ? '👁' : '✎'}</button>}
           {dirty && <button className="vtab-action vtab-send" onClick={saveFile} title="Save (Ctrl+S)" disabled={saving}>{saving ? '...' : '💾'}</button>}
-          {activeTab?.type !== 'terminal' && <button className="vtab-action" onClick={downloadTab} title="Download">↓</button>}
-          {activeTab?.type !== 'terminal' && <button className="vtab-action" onClick={refreshTab} title="Refresh">↻</button>}
+          {activeTab?.type !== 'terminal' && activeTab?.type !== 'browser' && <button className="vtab-action" onClick={downloadTab} title="Download">↓</button>}
+          {activeTab?.type !== 'terminal' && activeTab?.type !== 'browser' && <button className="vtab-action" onClick={refreshTab} title="Refresh">↻</button>}
           {isTextTab && memos.length > 0 && (
             <button className="vtab-action vtab-send" onClick={sendMemosToAgent} title="Send notes to agent">
               ▶ {memos.length}
@@ -284,9 +285,15 @@ function LeafPane({ node, tabs, activeTabId, split, onClose, onSelect, onMove, o
         </div>
       </div>
       <div className="viewer-body">
-      <div ref={contentRef} className={`viewer-content ${activeTab?.type === 'terminal' ? 'terminal-tab-content' : ''}`} onClick={() => setCtxMenu(null)}>
+      <div ref={contentRef} className={`viewer-content ${activeTab?.type === 'terminal' ? 'terminal-tab-content' : activeTab?.type === 'browser' ? 'browser-tab-content' : ''}`} onClick={e => {
+        setCtxMenu(null)
+        const link=(e.target as HTMLElement).closest('a')
+        const href=link?.getAttribute('href')
+        if(activeTab?.type!=='browser'&&href&&/^https?:\/\//i.test(href)&&!e.ctrlKey&&!e.metaKey&&!e.shiftKey&&!e.altKey){e.preventDefault();if(activeTab)onSelect(node.id,activeTab.id);useStore.getState().openBrowser(href,ownerKey)}
+      }}>
         {!activeTab ? <div className="viewer-empty">Drop here</div>
           : activeTab.type === 'terminal' ? <TerminalTab key={activeTab.sessionId} sessionId={activeTab.sessionId!} />
+          : activeTab.type === 'browser' ? <BrowserPane key={activeTab.id} tab={activeTab} ownerKey={ownerKey} />
           : activeTab.type === 'diff' ? <DiffView diff={activeTab.content} />
           : activeTab.type === 'pdf' ? <PdfViewer key={activeTab.id} url={activeTab.content} viewState={activeTab.viewState} onViewChange={rememberView} />
           : activeTab.type === 'image' ? <FileContent content={activeTab.content} type="image" lang="" />
@@ -306,7 +313,7 @@ function LeafPane({ node, tabs, activeTabId, split, onClose, onSelect, onMove, o
           )
         }
       </div>
-      {activeTab && activeTab.type!=='pdf' && activeTab.type!=='terminal' && <ScrollSlider container={contentRef} identity={`${activeTab.id}:${mdEditMode}`} />}
+      {activeTab && activeTab.type!=='pdf' && activeTab.type!=='terminal' && activeTab.type!=='browser' && <ScrollSlider container={contentRef} identity={`${activeTab.id}:${mdEditMode}`} />}
       </div>
       {dropZone&&<div className={`pane-drop-overlay pane-drop-${dropZone}`}>{dropZone==='center'?'이 화면으로 탭 이동':'여기에 화면 분할'}</div>}
       {ctxMenu && (

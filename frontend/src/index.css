@@ -1685,3 +1685,18 @@ tr.ln-memo:hover .fv-line-content::after { opacity: 1; }
 .vertical-scroll-rail { width:32px; flex-shrink:0; display:flex; flex-direction:column; align-items:center; gap:6px; padding:8px 2px; background:var(--bg-secondary); border-left:1px solid var(--border); color:var(--text-secondary); font-size:10px; }
 .vertical-slider, .pdf-page-slider.vertical-slider { writing-mode:vertical-lr; direction:ltr; appearance:auto; width:18px; min-width:0; height:100%; min-height:50px; flex:1; margin:0; accent-color:#a49af4; cursor:pointer; }
 .vertical-slider:disabled { opacity:.3; cursor:default; }
+
+.browser-tab-content { display:flex; overflow:hidden; }
+.browser-pane { display:flex; flex-direction:column; width:100%; min-width:0; min-height:0; flex:1; }
+.browser-toolbar { display:flex; align-items:center; gap:4px; padding:6px; background:var(--bg-secondary); border-bottom:1px solid var(--border); flex-shrink:0; }
+.browser-toolbar input { flex:1; min-width:60px; padding:7px; color:var(--text-primary); background:var(--bg-primary); border:1px solid var(--border); border-radius:5px; font-size:13px; }
+.browser-toolbar button,.browser-toolbar a { padding:5px 7px; border:1px solid var(--border); background:var(--bg-tertiary); color:var(--text-primary); border-radius:4px; text-decoration:none; cursor:pointer; }
+.browser-toolbar button:disabled { opacity:.3; cursor:default; }
+.browser-help { color:var(--text-muted); font-size:11px; line-height:1.5; padding:4px 8px; background:var(--bg-secondary); }
+.browser-error { color:var(--red); padding:6px; font-size:12px; }
+.browser-slot { flex:1; min-height:0; min-width:0; }
+.browser-surface { position:fixed; z-index:8; background:white; }
+.browser-surface iframe { display:block; width:100%; height:100%; border:0; }
+.tab-kind-browser { color:#8cbfbd; }
+
+.dragging-viewer-tab .browser-surface { pointer-events:none; }

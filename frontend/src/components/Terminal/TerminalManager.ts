@@ -4,7 +4,7 @@ import { WebLinksAddon } from '@xterm/addon-web-links'
 import { Unicode11Addon } from '@xterm/addon-unicode11'
 import { loadTerminalPreferences, terminalGeometry, type TerminalPreferences } from './readability'
 import { send } from '../../ws'
-import { useStore } from '../../store'
+import { useStore, workspaceId } from '../../store'
 
 // The terminal's whole buffer (scrollback + visible) as plain text. Powers the
 // mobile "select text" overlay, where the OS does native range-select + copy —
@@ -115,7 +115,12 @@ export function create(id: string): TermInstance {
 
   const searchAddon = new SearchAddon()
   term.loadAddon(searchAddon)
-  term.loadAddon(new WebLinksAddon())
+  term.loadAddon(new WebLinksAddon((event, url) => {
+    event.preventDefault()
+    if(event.ctrlKey||event.metaKey||event.shiftKey){window.open(url,'_blank','noopener,noreferrer');return}
+    const state=useStore.getState(), session=state.sessions[id]
+    state.openBrowser(url,session?workspaceId(session.cwd||'~',session.host||'local'):undefined)
+  }))
   // Match tmux's character-width tables for emoji/CJK — without this, xterm
   // measures some emoji as narrow that tmux counted as wide, shifting every
   // box-drawing border to the right of them (Claude Code UI is emoji-heavy).

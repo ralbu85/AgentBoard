@@ -7,6 +7,7 @@ import { Toaster } from './components/Toaster'
 import { Header } from './components/Header'
 import { ExplorerColumn } from './components/Sidebar/ExplorerColumn'
 import { Sidebar } from './components/Sidebar/Sidebar'
+import { BrowserSurfaces } from './components/Viewer/BrowserPane'
 import { DesktopSplitLayout } from './components/Viewer/DesktopSplitLayout'
 import * as TM from './components/Terminal/TerminalManager'
 
@@ -137,6 +138,7 @@ export function App() {
 
   return (
     <div className="app">
+      <BrowserSurfaces />
       <Toaster />
       <Header onToggleSidebar={() => setSidebarOpen((v) => !v)} />
       <div className="workspace">
