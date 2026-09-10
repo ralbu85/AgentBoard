@@ -12,9 +12,9 @@ Workspace groups have dark headers, visible borders and spacing. Selection uses 
 
 - Terminal default 15px, compact line height 1.0 (also replaces the previous saved 1.25 default), no automatic font shrinking. A− / A+ / reset controls persist 12–22px preferences.
 - Adaptive width uses 30–80 columns within the existing server protocol; a fixed 80-column option remains available.
-- Korean terminal and input text use a bundled, renamed Hangul subset of NanumMyeongjo (SIL OFL, license included); Latin terminal text retains D2Coding.
+- Terminal and input text use D2Coding, a coding-oriented fixed-width font. The experimental serif font has been removed.
 - Brighter ANSI gray and minimum text contrast 4.5. The toolbar stays above terminal output.
-- PDF current/total page display, page slider, previous/next buttons, zoom and reload preserving the current page. Canvas painting is limited to pages near the viewport.
+- PDF current/total page display, vertical page slider, previous/next buttons, zoom and reload preserving the current page. Canvas painting is limited to pages near the viewport.
 
 ## Validation
 
@@ -24,4 +24,20 @@ Frontend store/readability/terminal/API tests and backend tests pass. Isolated C
 
 Input drafts are stored per machine/session/workspace in this browser. Switching sessions, workspaces or file tabs and reloading preserves them. Successful send clears only the submitted draft if it has not changed during the request. Failed sends keep the text; newer typing and delayed uploads stay associated with their original session. Korean IME composition does not trigger Enter-to-send.
 
-Follow-up validation: 32 frontend tests pass. An isolated Chromium fixture with two agents in one workspace verifies expanded rows, independent drafts across navigation and reload, failed and delayed sends, completion dismissal, legacy title replacement and loaded Korean serif font. No real agent input is sent during verification.
+Follow-up validation covers both store logic and browser behavior. An isolated Chromium fixture with two agents in one workspace verifies expanded rows, independent drafts across navigation and reload, failed and delayed sends, completion dismissal, legacy title replacement and the loaded coding font. No real agent input is sent during verification.
+
+## Persistent split workbench and reading positions
+
+Tabs can be dragged to a pane edge to split left/right/top/bottom, or to its center/tab bar to move between panes. The two toolbar split buttons move the selected tab right or below; open at least two tabs in that pane. Drag the divider (or use its arrow keys) to resize. Merge reunites the tabs. Direction, ratios and per-pane selections are stored per workspace and restored after switching workspaces or reloading. Layout restoration waits until saved tabs have loaded. Multiple terminal panes remain visible independently.
+
+PDF documents share in-flight loading and parsed-document caches (up to four unused/recent documents and a 64 MiB source-byte budget; mounted documents hold leases). Explicit refresh invalidates the cached document. Canvas painting remains limited to nearby pages. Placeholder pages cannot shrink to zero, so scroll anchors stay stable before painting. Each PDF retains page, fractional position within that page, zoom and horizontal offset across tab changes, workspace changes, close/reopen and reload. Reloading the browser necessarily rebuilds the memory cache.
+
+PDF page navigation is a vertical rail on the right. Other file views have a percentage-based vertical slider connected to the actual scroll container, including CodeMirror. Workspace cards never flex-shrink: long lists scroll instead of clipping their lower session rows. Opening a workspace prepares a separate terminal tab for every session while preserving the selected file.
+
+## State stabilization and completion identity
+
+Reading a snapshot no longer changes agent state. Foreground and background observers share normalized content samples; ANSI colors, cursor movement and wrapping are excluded from the activity signature. Typed agent prompts remain idle unless an explicit busy indicator is present. Starting work requires 0.6 seconds of an explicit busy indicator or 3 seconds of continuously changing ambiguous output. Finishing work requires 2 seconds of a stable idle candidate. This avoids the synthetic working→idle cycle caused by selecting/resizing a completed terminal.
+
+Completed turns carry a content-derived completion identifier. Explicit user submissions distinguish repeated identical answers from separate turns. The browser suppresses repeated identifiers after acknowledgement, including state replay, while a different result can notify again. The temporary green completed-turn flash is removed: live state and unread result are independent. Process exit still has its actual completed state. Older remote agents without identifiers retain legacy notification compatibility; upgrade their shared backend modules to get server-side stabilization and result identities. Terminal state inference remains heuristic and is not an agent-provided lifecycle hook.
+
+Validation includes 17-session crowded sidebars, concurrent PDF and terminal panes, horizontal/vertical splits, divider ratios across reload, vertical sliders for PDF/Markdown/code, cached PDF fetch counts, exact reading-position restoration, draft isolation and failed/delayed sends, and duplicate-versus-new completion events. All browser automation uses mocked commands; it sends no input to real agent sessions.

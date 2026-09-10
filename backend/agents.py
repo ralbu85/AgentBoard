@@ -86,6 +86,7 @@ class AgentConn:
                 s["cwd"] = msg.get("cwd", s["cwd"])
             elif mtype == "aiState":
                 s["aiState"] = msg.get("state")
+                s["completionId"] = msg.get("completionId")
             elif mtype == "info":
                 s["process"] = msg.get("process", s["process"])
                 s["createdAt"] = msg.get("createdAt", s["createdAt"])

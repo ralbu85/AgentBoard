@@ -1,41 +1,92 @@
 import { useState, useRef, useCallback, useEffect, useMemo, useLayoutEffect, Fragment } from 'react'
 import { useStore, viewerKey, sessionLabel, type ViewerTab } from '../../store'
 import { useToasts } from '../../toasts'
+import { notifyActive } from '../../ws'
 import { api } from '../../api'
 import { FileContent, type Memo, type SelectionInfo } from './FileContent'
 import { PdfViewer } from '../PdfViewer'
+import { ScrollSlider } from './ScrollSlider'
 import { CodeEditor } from './CodeEditor'
 import { renderMarkdown, findTaskLines, toggleTaskLine } from '../../markdown'
 import { TerminalPane } from '../Terminal/TerminalPane'
 import { InputCard } from '../Terminal/InputCard'
+import { leaves, mapTree, moveTab, newLeaf, readLayout, saveLayout, syncTree, type PaneNode, type TreeNode, type DropZone } from './layout'
 import { NotebookView } from './NotebookView'
 
 const EMPTY_TABS: ViewerTab[] = []
-
-interface PaneNode { type: 'leaf'; id: string; tabIds: string[]; activeTabId: string | null }
 
 export function ViewerPane() {
   const tabs = useStore(s => s._viewerState[viewerKey(s)]?.tabs || EMPTY_TABS)
   const activeTabId = useStore(s => s._viewerState[viewerKey(s)]?.activeTabId || null)
   const key = useStore(viewerKey)
-  const select = (_pane: string, id: string) => {
-    const state = useStore.getState()
-    const tab = tabs.find(t => t.id === id)
-    if (tab?.type === 'terminal' && tab.sessionId) {
-      state.setActive(tab.sessionId)
-      state.acknowledgeCompletion(tab.sessionId)
-    } else state.setActiveTab(id)
-  }
-  if (!tabs.length) return <div className="viewer-empty">왼쪽에서 에이전트 세션이나 파일을 선택하세요.</div>
-  return <div className="viewer-inner"><LeafPane key={key} node={{type: 'leaf', id: key, tabIds: tabs.map(t => t.id), activeTabId}}
-    tabs={tabs} onSelect={select} onClose={(_pane, id) => useStore.getState().closeTab(id)} /></div>
+  const ready = useStore(s => s._restoredWorkspaces[viewerKey(s)])
+  if (!ready) return <div className="viewer-empty">작업 화면 복원 중…</div>
+  return <WorkspaceViewer key={key} workspaceKey={key} tabs={tabs} activeTabId={activeTabId} />
 }
 
-function LeafPane({ node, tabs, onClose, onSelect }: {
-  node: PaneNode; tabs: ViewerTab[]
-  onClose: (p: string, t: string) => void
-  onSelect: (p: string, t: string) => void
-}) {
+function WorkspaceViewer({workspaceKey, tabs, activeTabId}: {workspaceKey:string; tabs:ViewerTab[]; activeTabId:string|null}) {
+  const [tree, setTree] = useState(() => readLayout(workspaceKey, tabs.map(t=>t.id), activeTabId))
+  const workspaceSessionIds = useStore(s=>Object.values(s.sessions).filter(session=>JSON.stringify([session.host||'local',session.cwd||'~'])===workspaceKey).map(session=>session.id).join('\0'))
+  useEffect(()=>{ useStore.getState().ensureSessionTabs(workspaceKey) },[workspaceKey,workspaceSessionIds])
+  const focused = useRef(leaves(tree).find(p=>p.tabIds.includes(activeTabId||''))?.id || leaves(tree)[0].id)
+  const ids = tabs.map(t=>t.id).join('\0')
+  const displayedTree = useMemo(()=>syncTree(tree,tabs.map(t=>t.id),activeTabId,focused.current),[tree,ids,activeTabId])
+  useLayoutEffect(() => {
+    setTree(prev => {
+      const next = syncTree(prev, tabs.map(t=>t.id), activeTabId, focused.current)
+      focused.current = leaves(next).find(p=>p.tabIds.includes(activeTabId||''))?.id || leaves(next)[0].id
+      return next
+    })
+  }, [ids, activeTabId])
+  useEffect(() => { saveLayout(workspaceKey, tree) }, [workspaceKey, tree])
+
+  const select = (pane:string, id:string) => {
+    focused.current = pane
+    const state = useStore.getState(), tab = tabs.find(t=>t.id===id)
+    if (tab?.type==='terminal' && tab.sessionId) {
+      state.acknowledgeCompletion(tab.sessionId)
+      if (state.activeId!==tab.sessionId || state._viewerState[workspaceKey]?.activeTabId!==id) { state.setActive(tab.sessionId); notifyActive(tab.sessionId) }
+    } else if (state._viewerState[workspaceKey]?.activeTabId!==id) state.setActiveTab(id)
+    setTree(prev => mapTree(prev, n=>n.type==='leaf'&&n.id===pane ? {...n,activeTabId:id} : n))
+  }
+  const move = (id:string, pane:string, zone:DropZone) => {
+    setTree(prev => {
+      const next=moveTab(prev,id,pane,zone)
+      focused.current=leaves(next).find(p=>p.tabIds.includes(id))?.id || pane
+      return next
+    })
+    const state=useStore.getState(), tab=tabs.find(t=>t.id===id)
+    if(tab?.type==='terminal'&&tab.sessionId){ state.setActive(tab.sessionId); notifyActive(tab.sessionId) } else state.setActiveTab(id)
+  }
+  const resize = (id:string, ratio:number) => setTree(prev=>mapTree(prev,n=>n.type==='split'&&n.id===id ? {...n,ratio:Math.max(.15,Math.min(.85,ratio))}:n))
+  const merge = () => setTree(newLeaf(tabs.map(t=>t.id),activeTabId))
+  if (!tabs.length) return <div className="viewer-empty">왼쪽에서 에이전트 세션이나 파일을 선택하세요.</div>
+  return <div className="viewer-inner"><RenderNode node={displayedTree} tabs={tabs} activeTabId={activeTabId} onSelect={select} onClose={(_pane,id)=>useStore.getState().closeTab(id)} onMove={move} onResize={resize} onMerge={merge} split={displayedTree.type==='split'} /></div>
+}
+
+interface PaneActions {
+  tabs:ViewerTab[]; activeTabId:string|null; split:boolean
+  onSelect:(pane:string,id:string)=>void; onClose:(pane:string,id:string)=>void
+  onMove:(id:string,pane:string,zone:DropZone)=>void
+  onResize:(id:string,ratio:number)=>void; onMerge:()=>void
+}
+function RenderNode({node,...actions}: {node:TreeNode}&PaneActions) {
+  const ref=useRef<HTMLDivElement>(null)
+  if(node.type==='leaf')return <LeafPane node={node} {...actions} />
+  const horizontal=node.direction==='horizontal'
+  return <div ref={ref} className={`workbench-split split-${node.direction}`}>
+    <div className="workbench-split-child" style={{flex:node.ratio}}><RenderNode node={node.children[0]} {...actions}/></div>
+    <div className="workbench-split-resizer" role="separator" tabIndex={0} aria-label="분할 크기 조절" aria-orientation={horizontal?'vertical':'horizontal'} aria-valuenow={Math.round(node.ratio*100)} aria-valuemin={15} aria-valuemax={85}
+      onKeyDown={e=>{if(['ArrowLeft','ArrowUp','ArrowRight','ArrowDown'].includes(e.key)){e.preventDefault();actions.onResize(node.id,node.ratio+(['ArrowLeft','ArrowUp'].includes(e.key)?-.05:.05))}}}
+      onPointerDown={e=>{e.preventDefault();e.currentTarget.setPointerCapture(e.pointerId)}}
+      onPointerMove={e=>{if(!e.currentTarget.hasPointerCapture(e.pointerId))return;const r=ref.current?.getBoundingClientRect();if(r)actions.onResize(node.id,horizontal?(e.clientX-r.left)/r.width:(e.clientY-r.top)/r.height)}}
+      onPointerUp={e=>{if(e.currentTarget.hasPointerCapture(e.pointerId))e.currentTarget.releasePointerCapture(e.pointerId)}} />
+    <div className="workbench-split-child" style={{flex:1-node.ratio}}><RenderNode node={node.children[1]} {...actions}/></div>
+  </div>
+}
+
+function LeafPane({ node, tabs, activeTabId, split, onClose, onSelect, onMove, onMerge }: {node:PaneNode}&PaneActions) {
+  const [dropZone, setDropZone] = useState<DropZone|null>(null)
   const [dragTarget, setDragTarget] = useState<string | null>(null)
   const contentRef = useRef<HTMLDivElement>(null)
   const updateTab = useStore(s => s.updateTab)
@@ -185,7 +236,17 @@ function LeafPane({ node, tabs, onClose, onSelect }: {
   }
 
   return (
-    <div className="leaf-pane">
+    <div className={`leaf-pane ${node.activeTabId===activeTabId?'focused-pane':''}`} data-pane-id={node.id}
+      onPointerDownCapture={e=>{if(!(e.target as HTMLElement).closest('.vtab-bar')&&activeTab)onSelect(node.id,activeTab.id)}}
+      onFocusCapture={e=>{if(!(e.target as HTMLElement).closest('.vtab-bar')&&activeTab&&node.activeTabId!==activeTabId)onSelect(node.id,activeTab.id)}}
+      onDragOver={e=>{
+        if(!e.dataTransfer.types.includes('application/agentboard-tab')||(e.target as HTMLElement).closest('.vtab-bar'))return
+        e.preventDefault();const r=e.currentTarget.getBoundingClientRect(),x=(e.clientX-r.left)/r.width,y=(e.clientY-r.top)/r.height
+        setDropZone(x<.22?'left':x>.78?'right':y<.25?'top':y>.75?'bottom':'center')
+      }}
+      onDragLeave={e=>{if(!e.currentTarget.contains(e.relatedTarget as Node))setDropZone(null)}}
+      onDrop={e=>{const id=e.dataTransfer.getData('application/agentboard-tab');if(!id)return;e.preventDefault();onMove(id,node.id,dropZone||'center');setDropZone(null)}}
+    >
       <div className="vtab-bar">
         {node.tabIds.map(tid => {
           const t = tabs.find(tt => tt.id === tid)
@@ -196,8 +257,8 @@ function LeafPane({ node, tabs, onClose, onSelect }: {
               onDragStart={e => { e.dataTransfer.setData('application/agentboard-tab', t.id); e.dataTransfer.effectAllowed = 'move' }}
               onDragOver={e => { if (e.dataTransfer.types.includes('application/agentboard-tab')) { e.preventDefault(); setDragTarget(t.id) } }}
               onDragLeave={() => setDragTarget(null)}
-              onDragEnd={() => setDragTarget(null)}
-              onDrop={e => { e.preventDefault(); const id = e.dataTransfer.getData('application/agentboard-tab'); const r = e.currentTarget.getBoundingClientRect(); if (id) useStore.getState().reorderTab(id, t.id, e.clientX > r.left + r.width / 2); setDragTarget(null) }}
+              onDragEnd={() => { setDragTarget(null); setDropZone(null) }}
+              onDrop={e => { e.preventDefault(); e.stopPropagation(); const id = e.dataTransfer.getData('application/agentboard-tab'); const r = e.currentTarget.getBoundingClientRect(); if (id) { onMove(id,node.id,'center'); useStore.getState().reorderTab(id, t.id, e.clientX > r.left + r.width / 2) }; setDragTarget(null) }}
               onClick={() => onSelect(node.id, t.id)}
             >
               <span className={`tab-kind tab-kind-${t.type}`}>{t.type === 'terminal' ? '›_' : t.type === 'pdf' ? 'PDF' : '▤'}</span>
@@ -207,6 +268,9 @@ function LeafPane({ node, tabs, onClose, onSelect }: {
           )
         })}
         <div className="vtab-actions">
+          <button className="vtab-action" title="좌우 분할 (선택한 탭을 오른쪽으로)" disabled={node.tabIds.length<2} onClick={()=>activeTab&&onMove(activeTab.id,node.id,'right')}>◫</button>
+          <button className="vtab-action" title="상하 분할 (선택한 탭을 아래로)" disabled={node.tabIds.length<2} onClick={()=>activeTab&&onMove(activeTab.id,node.id,'bottom')}>⬒</button>
+          {split&&<button className="vtab-action" title="분할 합치기" onClick={onMerge}>▣</button>}
           {isTextTab && <button className="vtab-action" onClick={copyContent} title="Copy">{copied ? '✓' : '⎘'}</button>}
           {isRendered && <button className="vtab-action" onClick={() => setMdEditMode(v => !v)} title={mdEditMode ? 'Preview' : 'Edit'}>{mdEditMode ? '👁' : '✎'}</button>}
           {dirty && <button className="vtab-action vtab-send" onClick={saveFile} title="Save (Ctrl+S)" disabled={saving}>{saving ? '...' : '💾'}</button>}
@@ -219,6 +283,7 @@ function LeafPane({ node, tabs, onClose, onSelect }: {
           )}
         </div>
       </div>
+      <div className="viewer-body">
       <div ref={contentRef} className={`viewer-content ${activeTab?.type === 'terminal' ? 'terminal-tab-content' : ''}`} onClick={() => setCtxMenu(null)}>
         {!activeTab ? <div className="viewer-empty">Drop here</div>
           : activeTab.type === 'terminal' ? <TerminalTab key={activeTab.sessionId} sessionId={activeTab.sessionId!} />
@@ -241,6 +306,9 @@ function LeafPane({ node, tabs, onClose, onSelect }: {
           )
         }
       </div>
+      {activeTab && activeTab.type!=='pdf' && activeTab.type!=='terminal' && <ScrollSlider container={contentRef} identity={`${activeTab.id}:${mdEditMode}`} />}
+      </div>
+      {dropZone&&<div className={`pane-drop-overlay pane-drop-${dropZone}`}>{dropZone==='center'?'이 화면으로 탭 이동':'여기에 화면 분할'}</div>}
       {ctxMenu && (
         <div className="ctx-menu" style={{ left: ctxMenu.x, top: ctxMenu.y }} onClick={e => e.stopPropagation()}>
           <button className="ctx-menu-item" onClick={addNoteFromCtx}>+ Add Note</button>
@@ -408,9 +476,6 @@ function MarkdownView({ content, filePath, onContextMenu, onEdit }: { content: s
 
 function TerminalTab({ sessionId }: { sessionId: string }) {
   const session = useStore(s => s.sessions[sessionId])
-  useEffect(() => {
-    if (session && useStore.getState().activeId !== sessionId) useStore.getState().setActive(sessionId)
-  }, [sessionId, !!session])
   if (!session) return <div className="viewer-empty">종료되거나 제거된 세션입니다. 이 탭을 닫아 주세요.</div>
   return <><TerminalPane sessionId={sessionId} /><InputCard key={sessionId} sessionId={sessionId} /></>
 }

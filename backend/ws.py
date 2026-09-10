@@ -99,7 +99,7 @@ async def handle_ws(ws: WebSocket):
             if s.status != "stopped":
                 await ws.send_text(json.dumps({"type": "status", "id": s.id, "status": s.status}))
             if s.ai_state:
-                await ws.send_text(json.dumps({"type": "aiState", "id": s.id, "state": s.ai_state}))
+                await ws.send_text(json.dumps({"type": "aiState", "id": s.id, "state": s.ai_state, "completionId": s.completion_id}))
             if s.cwd:
                 await ws.send_text(json.dumps({"type": "cwd", "id": s.id, "cwd": s.cwd}))
             if s.process or s.created_at or s.alt_screen or s.auto_title:
@@ -125,7 +125,7 @@ async def handle_ws(ws: WebSocket):
             if d["status"] != "stopped":
                 await ws.send_text(json.dumps({"type": "status", "id": d["id"], "status": d["status"]}))
             if d.get("aiState"):
-                await ws.send_text(json.dumps({"type": "aiState", "id": d["id"], "state": d["aiState"]}))
+                await ws.send_text(json.dumps({"type": "aiState", "id": d["id"], "state": d["aiState"], "completionId": d.get("completionId")}))
             if d.get("cwd"):
                 await ws.send_text(json.dumps({"type": "cwd", "id": d["id"], "cwd": d["cwd"]}))
             if d.get("process") or d.get("createdAt") or d.get("altScreen"):

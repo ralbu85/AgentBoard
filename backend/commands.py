@@ -9,6 +9,7 @@ cross-import, no shared state between processes).
 from __future__ import annotations
 
 import asyncio
+import uuid
 from typing import Awaitable, Callable, Optional
 
 from .logger import log
@@ -120,6 +121,8 @@ async def apply_command(store, streamer, tmux, msg: dict,
     if mtype == "key":
         s = store.get(mid)
         if s:
+            if msg.get("key") == "Enter":
+                s.submission_id = uuid.uuid4().hex
             await tmux.send_keys(s.session_name, msg.get("key", ""))
             await streamer.poll_now(mid)
         return None
@@ -129,6 +132,8 @@ async def apply_command(store, streamer, tmux, msg: dict,
         data = msg.get("data", "")
         if s and data:
             mapped = SEQ_MAP.get(data)
+            if mapped == "Enter":
+                s.submission_id = uuid.uuid4().hex
             if mapped:
                 await tmux.send_keys(s.session_name, mapped)
             else:
@@ -139,6 +144,7 @@ async def apply_command(store, streamer, tmux, msg: dict,
     if mtype == "input":
         s = store.get(mid)
         if s:
+            s.submission_id = uuid.uuid4().hex
             for line in msg.get("text", "").split("\n"):
                 await tmux.send_keys(s.session_name, line, literal=True)
                 await tmux.send_keys(s.session_name, "Enter")
@@ -148,6 +154,7 @@ async def apply_command(store, streamer, tmux, msg: dict,
     if mtype == "paste":
         s = store.get(mid)
         if s:
+            s.submission_id = uuid.uuid4().hex
             await tmux.paste_text(s.session_name, msg.get("text", ""))
             await streamer.poll_now(mid)
         return None

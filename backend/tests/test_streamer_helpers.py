@@ -118,3 +118,11 @@ def test_strip_cursor_removes_visibility_and_movement():
 def test_strip_cursor_keeps_colors():
     s = "\x1b[31mred\x1b[0m"
     assert _strip_cursor(s) == s
+
+
+def test_snapshot_does_not_advance_agent_state(monkeypatch):
+    def unexpected(*args, **kwargs):
+        raise AssertionError('Opening a viewer must not infer a new agent turn')
+    monkeypatch.setattr(streamer, '_detect_state', unexpected)
+    result, _ = _snapshot(monkeypatch)
+    assert result

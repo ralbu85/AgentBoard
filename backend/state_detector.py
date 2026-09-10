@@ -11,6 +11,7 @@ and as override for slow-output working states).
 This approach works universally for any agent, not just Claude Code.
 """
 import re
+import hashlib
 
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]|\x1b\].*?\x07|\x1b[()][AB012]")
 
@@ -61,6 +62,30 @@ _IDLE_BAR = [
 STABLE_THRESHOLD = 2.0
 
 
+def has_busy_indicator(output: str) -> bool:
+    tail = "\n".join(strip_ansi(output).strip().splitlines()[-15:])
+    return any(pattern in tail for pattern in _FORCE_WORKING)
+
+
+def activity_signature(output: str) -> str:
+    # Ignore colors, cursor positioning, blank lines and line wrapping. The
+    # same terminal tail is shared by foreground and background observations.
+    return " ".join(strip_ansi(output).split())[-1200:]
+
+
+def completion_signature(output: str, submission: str = "") -> str:
+    lines = strip_ansi(output).splitlines()
+    result = []
+    for line in lines:
+        text = line.strip()
+        if not text or any(p in text for p in _IDLE_BAR):
+            continue
+        if text.startswith(("❯", "›")) or text.startswith("? for shortcuts"):
+            continue
+        result.append(text)
+    return hashlib.sha256((submission + "|" + " ".join(" ".join(result).split())[-1200:]).encode()).hexdigest()[:24]
+
+
 def detect_state(output: str, process: str = "", stable_seconds: float = -1.0) -> str:
     """
     Detect agent state.
@@ -88,6 +113,9 @@ def detect_state(output: str, process: str = "", stable_seconds: float = -1.0) -
     has_force_working = any(p in tail for p in _FORCE_WORKING)
     if has_force_working:
         return "working"
+
+    if last_line.startswith(("❯", "›")) and not last_line.startswith("❯ 1."):
+        return "idle"
 
     # ── 3. Velocity-based detection ──
     if stable_seconds >= 0:

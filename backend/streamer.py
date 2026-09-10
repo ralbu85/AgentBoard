@@ -17,7 +17,7 @@ from typing import Callable
 
 from . import tmux, config
 from .logger import log
-from .state_detector import detect_state
+from .state_detector import detect_state, has_busy_indicator, activity_signature, completion_signature
 
 _broadcast: Callable | None = None
 _active_ids: dict[int, str] = {}             # ws_id → session id (per-client)
@@ -156,6 +156,8 @@ async def stop_stream(id: str, session_name: str):
     _last_cursor.pop(id, None)
     _last_snapshot_at.pop(id, None)
     _alt_override.discard(id)
+    _state_samples.pop(id, None)
+    _pending_state.pop(id, None)
 
 
 async def _read_fifo(id: str, session_name: str, fifo: str):
@@ -296,7 +298,8 @@ async def get_snapshot(id: str, session_name: str) -> str:
     combined += _cursor_suffix(current.rstrip("\n"), cur)
 
     _update_info(id, s, info_str)
-    _detect_state(id, s, current)
+    # Viewing/resizing a session is not evidence of a new agent turn.
+    # Only the regular state observers may advance the state machine.
     # Cache the visible capture so the next poll doesn't see a diff and re-broadcast.
     _last_screen[id] = _strip_cursor(current)
     _last_cursor[id] = cur
@@ -549,31 +552,39 @@ def _update_info(id: str, s, info: dict):
         })
 
 
-_pending_idle: dict[str, float] = {}  # id → monotonic time when idle was first detected
-IDLE_DEBOUNCE = 1.0  # wait 1s before broadcasting idle (prevents flicker)
+_state_samples: dict[str, tuple[str, float]] = {}
+_pending_state: dict[str, tuple[str, float]] = {}
+
 
 def _detect_state(id: str, s, output: str, stable_seconds: float = -1.0):
-    new_state = detect_state(output, s.process, stable_seconds)
+    now = _time.monotonic()
+    signature = activity_signature(output)
+    previous, changed_at = _state_samples.get(id, (None, now))
+    if signature != previous:
+        changed_at = now
+    _state_samples[id] = (signature, changed_at)
+    new_state = detect_state(output, s.process, now - changed_at)
+    # A newly observed stable pane must not produce a synthetic working→done
+    # event simply because its first capture is new to this observer.
+    if s.ai_state is None and new_state == "working" and not has_busy_indicator(output):
+        new_state = "idle"
     if new_state == s.ai_state:
-        _pending_idle.pop(id, None)
+        _pending_state.pop(id, None)
         return
-
-    # Debounce: delay idle transitions to prevent working↔idle flicker
+    delay = (0.6 if has_busy_indicator(output) else 3.0) if new_state == "working" else (2.0 if new_state == "idle" and s.ai_state == "working" else 0.0)
+    if delay:
+        pending = _pending_state.get(id)
+        if not pending or pending[0] != new_state:
+            _pending_state[id] = (new_state, now)
+            return
+        if now - pending[1] < delay:
+            return
+    _pending_state.pop(id, None)
     if new_state == "idle" and s.ai_state == "working":
-        now = _time.monotonic()
-        first_seen = _pending_idle.get(id)
-        if first_seen is None:
-            _pending_idle[id] = now
-            return  # don't broadcast yet
-        if now - first_seen < IDLE_DEBOUNCE:
-            return  # still within debounce window
-        # Debounce passed — commit the transition
-        _pending_idle.pop(id, None)
-    else:
-        _pending_idle.pop(id, None)
-
+        s.completion_id = completion_signature(output, getattr(s, "submission_id", ""))
     s.ai_state = new_state
-    broadcast({"type": "aiState", "id": id, "state": new_state})
+    broadcast({"type": "aiState", "id": id, "state": new_state,
+               "completionId": getattr(s, "completion_id", "")})
 
 
 # ── Lifecycle ──

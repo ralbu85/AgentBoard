@@ -13,7 +13,7 @@ export interface ViewerTab {
   dirty?: boolean
   version?: string
   sessionId?: string
-  viewState?: { scrollTop?: number; scrollLeft?: number; page?: number; zoom?: number; cursor?: number; editorScroll?: number }
+  viewState?: { scrollTop?: number; scrollLeft?: number; page?: number; zoom?: number; pageOffset?: number; pdfScrollLeft?: number; cursor?: number; editorScroll?: number }
 }
 
 interface AppState {
@@ -26,6 +26,7 @@ interface AppState {
   _restoredWorkspaces: Record<string, boolean>
   updateTabView: (id: string, view: NonNullable<ViewerTab['viewState']>, key?: string) => void
   reorderTab: (id: string, target: string, after?: boolean) => void
+  ensureSessionTabs: (key: string) => void
   _viewerState: Record<string, { tabs: ViewerTab[]; activeTabId: string | null }>
   viewerTabs: ViewerTab[]       // computed: current session's tabs
   activeTabId: string | null    // computed: current session's active tab
@@ -153,6 +154,8 @@ export function workspaceEntries(state: Pick<AppState, 'sessions' | 'workspaceFo
   return [...entries.values()].filter(e => includeHidden || !state.hiddenWorkspaces.includes(e.key))
     .sort((a, b) => (rank.get(a.key) ?? Infinity) - (rank.get(b.key) ?? Infinity) || a.cwd.localeCompare(b.cwd) || a.host.localeCompare(b.host))
 }
+
+const restoringViewers = new Set<string>()
 
 export const useStore = create<AppState>((set, get) => ({
   sessions: {},
@@ -353,9 +356,9 @@ export const useStore = create<AppState>((set, get) => ({
 
   restoreViewerTabs: async (key) => {
     const state = get()
-    if (state._restoredWorkspaces[key]) return
+    if (state._restoredWorkspaces[key] || restoringViewers.has(key)) return
+    restoringViewers.add(key)
     const baseline = state._viewerState[key]
-    set({ _restoredWorkspaces: { ...state._restoredWorkspaces, [key]: true } })
     let saved: {tabs?: ViewerTab[]; activeTabId?: string} | null = null
     try { saved = JSON.parse(localStorage.getItem(`agentboard.viewer.${key}`) || 'null') } catch {}
     if (!saved) {
@@ -392,10 +395,21 @@ export const useStore = create<AppState>((set, get) => ({
       const active = tabs.find(t => t.id === activeTabId)
       const vs = { tabs, activeTabId }
       persistViewer(key, vs)
-      return { _viewerState: {...current._viewerState, [key]: vs},
+      return { _viewerState: {...current._viewerState, [key]: vs}, _restoredWorkspaces: {...current._restoredWorkspaces, [key]: true},
         ...(viewerKey(current) === key && active?.type === 'terminal' && active.sessionId ? {activeId: active.sessionId} : {}) }
     })
+    restoringViewers.delete(key)
   },
+
+  ensureSessionTabs: (key) => set(state => {
+    const current = state._viewerState[key] || {tabs:[],activeTabId:null}
+    const missing = Object.values(state.sessions).filter(session => workspaceId(session.cwd || '~', session.host || 'local') === key && !current.tabs.some(tab => tab.sessionId === session.id))
+    if (!missing.length) return {}
+    const added: ViewerTab[] = missing.map(session => ({id:`terminal:${session.id}`,path:`terminal:${session.id}`,name:sessionLabel(session,state.titles),type:'terminal',content:'',lang:'',sessionId:session.id}))
+    const next = {tabs:[...current.tabs,...added],activeTabId:current.activeTabId || added[0].id}
+    persistViewer(key,next)
+    return {_viewerState:{...state._viewerState,[key]:next}}
+  }),
 
   updateTabView: (id, view, key) => set(state => {
     const owner = key || viewerKey(state), current = state._viewerState[owner]
@@ -523,13 +537,14 @@ export const useStore = create<AppState>((set, get) => ({
         if (!s) break
         const ca = { ...state._completedAt }
         const unread = new Set(state.unreadCompletions)
-        if (s.aiState === 'working' && msg.state === 'idle') {
+        const newCompletion = msg.completionId == null || (!!msg.completionId && msg.completionId !== s.completionId)
+        if (s.aiState === 'working' && msg.state === 'idle' && newCompletion) {
           ca[msg.id] = Date.now()
           unread.add(completionKey(s))
           persistList('agentboard.unreadCompletions', [...unread])
         }
         set({
-          sessions: { ...state.sessions, [msg.id]: { ...s, aiState: msg.state } },
+          sessions: { ...state.sessions, [msg.id]: { ...s, aiState: msg.state, completionId: msg.completionId ?? s.completionId } },
           _completedAt: ca,
           unreadCompletions: [...unread],
         })
@@ -572,9 +587,7 @@ export const useStore = create<AppState>((set, get) => ({
     if (s.status === 'stopped') return 'stopped'
     if (s.status === 'completed') return 'completed'
 
-    const completedAt = state._completedAt[id]
-    if (s.aiState === 'idle' && completedAt && Date.now() - completedAt < 10000) return 'completed'
-
+    // A completed turn is an unread event, not a temporary process state.
     return s.aiState || 'running'
   },
 }))

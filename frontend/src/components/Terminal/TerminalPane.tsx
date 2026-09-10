@@ -29,7 +29,6 @@ const STATE_DISPLAY: Record<string, { label: string; icon: string }> = {
 export function TerminalPane({ sessionId }: { sessionId?: string }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const activeId = useStore((s) => sessionId || s.activeId)
-  const effectiveState = useStore((s) => s.effectiveState)
   const altScreen = useStore((s) => ((sessionId || s.activeId) ? s.sessions[(sessionId || s.activeId)!]?.altScreen : false))
   const [readability, setReadability] = useState(TM.getReadability)
   const changeReadability = (patch: Partial<ReturnType<typeof TM.getReadability>>) => { TM.setReadability(patch); setReadability(TM.getReadability()) }
@@ -38,7 +37,7 @@ export function TerminalPane({ sessionId }: { sessionId?: string }) {
   // the OS's own long-press range-select + copy works (native, no custom copy).
   const [selectText, setSelectText] = useState<string | null>(null)
   const isMobile = window.innerWidth <= 768
-  const currentState = activeId ? effectiveState(activeId) : null
+  const currentState = useStore(s => activeId ? s.effectiveState(activeId) : null)
   const stateInfo = STATE_DISPLAY[currentState || ''] || STATE_DISPLAY.idle
   // Full-screen apps scroll via the app (PageUp forwarded), so xterm's own
   // scroll state can't tell us — always offer the jump-to-bottom button there.
@@ -47,7 +46,7 @@ export function TerminalPane({ sessionId }: { sessionId?: string }) {
   useEffect(() => {
     if (!activeId || !containerRef.current) return
     TM.open(activeId, containerRef.current)
-    TM.show(activeId)
+    TM.reveal(activeId)
     // The terminal element may have been sized for a different container
     // (rotation, split-pane drag, mobile keyboard) before this session was
     // last viewed. Recompute now that it's visible again.
@@ -56,7 +55,7 @@ export function TerminalPane({ sessionId }: { sessionId?: string }) {
     // Re-assert active so the backend returns a fresh snapshot that fully clears
     // this terminal's old buffer — otherwise switch paths that don't call
     // notifyActive themselves (e.g. kill/remove auto-select) leave stale content.
-    notifyActive(activeId)
+    if (useStore.getState().activeId === activeId) notifyActive(activeId)
   }, [activeId])
 
   // Poll scroll state for button visibility

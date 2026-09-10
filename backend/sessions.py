@@ -25,6 +25,8 @@ class Session:
     status: str = "running"      # running | stopped | completed
     ai_state: str | None = None  # idle | working | waiting
     auto_title: str = ""
+    completion_id: str = ""
+    submission_id: str = ""
     process: str = ""
     created_at: int = 0
     mem_kb: int = 0
@@ -42,6 +44,7 @@ class Session:
             "cmd": self.cmd,
             "status": self.status,
             "aiState": self.ai_state,
+            "completionId": self.completion_id,
             "process": self.process,
             "autoTitle": self.auto_title,
             "createdAt": self.created_at,

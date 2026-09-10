@@ -51,8 +51,8 @@ def test_fast_idle_on_idle_bar():
     assert detect_state(CLAUDE_IDLE_BAR, "claude", 1.0) == "idle"
 
 
-def test_no_fast_idle_below_half_second():
-    assert detect_state(CLAUDE_PROMPT, "claude", 0.3) == "working"
+def test_idle_prompt_does_not_become_busy_during_redraw():
+    assert detect_state(CLAUDE_PROMPT, "claude", 0.3) == "idle"
 
 
 # ── legacy fallback (stable_seconds unknown) ──
@@ -86,3 +86,11 @@ def test_ansi_is_stripped_before_matching():
 
 def test_strip_ansi_removes_sgr_and_osc():
     assert strip_ansi("\x1b[31mred\x1b[0m \x1b]0;title\x07plain") == "red plain"
+
+
+def test_typing_at_agent_prompt_is_not_agent_work():
+    assert detect_state("completed result\n› still typing a request", "codex", 0.0) == "idle"
+
+
+def test_busy_indicator_wins_while_input_prompt_remains_visible():
+    assert detect_state("Thinking… esc to interrupt\n›", "codex", 9.0) == "working"
