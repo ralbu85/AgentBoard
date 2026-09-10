@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { useStore } from '../../store'
+import { useStore, completionKey } from '../../store'
 import { api } from '../../api'
 import { useToasts } from '../../toasts'
 import { notifyActive } from '../../ws'
@@ -29,6 +29,7 @@ const STATE_DISPLAY: Record<string, { label: string; icon: string }> = {
 export function TerminalPane() {
   const containerRef = useRef<HTMLDivElement>(null)
   const activeId = useStore((s) => s.activeId)
+  const unread = useStore(s => !!s.activeId && !!s.sessions[s.activeId] && s.unreadCompletions.includes(completionKey(s.sessions[s.activeId])))
   const effectiveState = useStore((s) => s.effectiveState)
   const altScreen = useStore((s) => (s.activeId ? s.sessions[s.activeId]?.altScreen : false))
   const [showScrollBtn, setShowScrollBtn] = useState(false)
@@ -118,13 +119,17 @@ export function TerminalPane() {
   }
 
   return (
-    <div ref={containerRef} className="terminal-container">
+    <div className="terminal-pane-shell">
+      <div className="terminal-toolbar">
       {activeId && (
         <div className={`terminal-state-badge tsb-${currentState || 'idle'}`}>
           <span className="state-icon">{stateInfo.icon}</span>
           {stateInfo.label}
         </div>
       )}
+      {activeId && unread && <button className="completion-review" onClick={() => useStore.getState().acknowledgeCompletion(activeId)} title="완료 결과를 확인했음으로 표시">
+        ✓ 완료 · 확인
+      </button>}
       {canFullLog && (
         <button className="full-log-btn" onClick={openFullLog} title="전체 스크롤백을 뷰어에서 열기">
           📜 전체 로그
@@ -135,6 +140,8 @@ export function TerminalPane() {
           텍스트 선택
         </button>
       )}
+      </div>
+      <div ref={containerRef} className="terminal-container">
       {selectText !== null && (
         <div className="term-select-overlay">
           <div className="tso-bar">
@@ -169,6 +176,7 @@ export function TerminalPane() {
           ))}
         </div>
       )}
+      </div>
     </div>
   )
 }

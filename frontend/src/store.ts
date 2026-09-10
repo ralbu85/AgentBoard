@@ -27,6 +27,8 @@ interface AppState {
 
   // Completion flash tracking
   _completedAt: Record<string, number>
+  unreadCompletions: string[]
+  acknowledgeCompletion: (id: string) => void
 
   // Correlation map for spawns: reqId -> new session id (so the spawner can
   // match its own session, even amid concurrent spawns on the same host).
@@ -118,6 +120,8 @@ function persistList(key: string, value: string[]) {
   try { localStorage.setItem(key, JSON.stringify(value)) } catch { /* storage disabled */ }
 }
 
+export const completionKey = (session: Session) => JSON.stringify([session.host || 'local', session.sessionName || session.id, session.cwd || '~'])
+
 export const workspaceId = (cwd: string, host = 'local') => JSON.stringify([host, cwd])
 export interface WorkspaceEntry { key: string; cwd: string; host: string; ids: string[] }
 export function workspaceEntries(state: Pick<AppState, 'sessions' | 'workspaceFolders' | 'workspaceOrder' | 'hiddenWorkspaces'>, includeHidden = false): WorkspaceEntry[] {
@@ -145,6 +149,15 @@ export const useStore = create<AppState>((set, get) => ({
   tunnelUrl: null,
   _viewerState: {},
   _completedAt: {},
+  unreadCompletions: readStringList('agentboard.unreadCompletions'),
+  acknowledgeCompletion: (id) => set(state => {
+    const session = state.sessions[id]
+    if (!session) return {}
+    const unread = state.unreadCompletions.filter(key => key !== completionKey(session))
+    persistList('agentboard.unreadCompletions', unread)
+    const completed = { ...state._completedAt }; delete completed[id]
+    return { unreadCompletions: unread, _completedAt: completed }
+  }),
   _spawnReqs: {},
   spawnOpen: false,
   spawnPreset: {},
@@ -368,7 +381,9 @@ export const useStore = create<AppState>((set, get) => ({
   removeSession: (id) => {
     const state = get()
     const { [id]: _, ...rest } = state.sessions
-    const updates: Partial<AppState> = { sessions: rest }
+    const unread = state.unreadCompletions.filter(key => !state.sessions[id] || key !== completionKey(state.sessions[id]))
+    persistList('agentboard.unreadCompletions', unread)
+    const updates: Partial<AppState> = { sessions: rest, unreadCompletions: unread }
     if (state.activeId === id) {
       const ids = Object.keys(rest).filter(id => rest[id].cwd === state.workspaceCwd && (rest[id].host || 'local') === state.workspaceHost)
       updates.activeId = ids.length > 0 ? ids[0] : null
@@ -415,7 +430,9 @@ export const useStore = create<AppState>((set, get) => ({
       case 'removed': {
         if (!state.sessions[msg.id]) break
         const { [msg.id]: _, ...rest } = state.sessions
-        const updates: Partial<AppState> = { sessions: rest }
+        const unread = state.unreadCompletions.filter(key => key !== completionKey(state.sessions[msg.id]))
+        persistList('agentboard.unreadCompletions', unread)
+        const updates: Partial<AppState> = { sessions: rest, unreadCompletions: unread }
         if (state.activeId === msg.id) {
           const ids = Object.keys(rest).filter(id => rest[id].cwd === state.workspaceCwd && (rest[id].host || 'local') === state.workspaceHost)
           updates.activeId = ids.length > 0 ? ids[0] : null
@@ -431,15 +448,19 @@ export const useStore = create<AppState>((set, get) => ({
         const updated = { ...s, status: msg.status as Session['status'] }
         if (msg.status === 'completed') updated.aiState = null
 
+        const unread = new Set(state.unreadCompletions)
+        if (msg.status === 'completed' && s.status !== 'completed') unread.add(completionKey(s))
+        persistList('agentboard.unreadCompletions', [...unread])
         // Track completion time for flash
         const ca = { ...state._completedAt }
-        if (prev === 'working' && (msg.status === 'completed' || msg.status === 'running')) {
+        if (prev === 'working' && msg.status === 'completed') {
           ca[msg.id] = Date.now()
         }
 
         set({
           sessions: { ...state.sessions, [msg.id]: updated },
           _completedAt: ca,
+          unreadCompletions: [...unread],
         })
         break
       }
@@ -454,12 +475,16 @@ export const useStore = create<AppState>((set, get) => ({
         const s = state.sessions[msg.id]
         if (!s) break
         const ca = { ...state._completedAt }
+        const unread = new Set(state.unreadCompletions)
         if (s.aiState === 'working' && msg.state === 'idle') {
           ca[msg.id] = Date.now()
+          unread.add(completionKey(s))
+          persistList('agentboard.unreadCompletions', [...unread])
         }
         set({
           sessions: { ...state.sessions, [msg.id]: { ...s, aiState: msg.state } },
           _completedAt: ca,
+          unreadCompletions: [...unread],
         })
         break
       }

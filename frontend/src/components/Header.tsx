@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useStore } from '../store'
+import { useStore, completionKey } from '../store'
 import { api } from '../api'
 import { SpawnModal } from './SpawnModal/SpawnModal'
 import { ProfileEditor } from './SpawnModal/ProfileEditor'
@@ -20,6 +20,7 @@ const ACTIVE_STATE_DISPLAY: Record<string, { label: string; icon: string; cls: s
 }
 
 export function Header({ onToggleSidebar }: Props) {
+  const unread = useStore(s => Object.values(s.sessions).filter(session => s.unreadCompletions.includes(completionKey(session))).length)
   const sessions = useStore((s) => s.sessions)
   const activeId = useStore((s) => s.activeId)
   const effectiveState = useStore((s) => s.effectiveState)
@@ -102,6 +103,7 @@ export function Header({ onToggleSidebar }: Props) {
         <span className="logo">AgentBoard</span>
       </div>
       <div className="header-center">
+        {unread > 0 && <span className="badge unread-chip">✓ {unread} 미확인</span>}
         {counts.working > 0 && <span className="badge badge-working">● {counts.working} Thinking</span>}
         {counts.waiting > 0 && <span className="badge badge-waiting">◆ {counts.waiting} Asking</span>}
         {counts.idle > 0 && <span className="badge badge-idle">○ {counts.idle} Idle</span>}
@@ -141,7 +143,7 @@ export function Header({ onToggleSidebar }: Props) {
               <span className="scan-name">#{s.id} {s.cmd}</span>
               <span className="scan-cwd" title={s.cwd}>{s.hostLabel || s.host || 'local'} · {s.cwd}</span>
               <span>{effectiveState(s.id)}</span>
-              <button className="btn btn-xs" onClick={() => { useStore.getState().setActive(s.id); setShowScan(false) }}>열기</button>
+              <button className="btn btn-xs" onClick={() => { useStore.getState().setActive(s.id); useStore.getState().acknowledgeCompletion(s.id); setShowScan(false) }}>열기</button>
               <button className="btn btn-xs" onClick={async () => {
                 if (s.status === 'running') {
                   if (!window.confirm(`#${s.id} 프로세스를 종료할까요? 실행 중인 작업이 중단됩니다.`)) return

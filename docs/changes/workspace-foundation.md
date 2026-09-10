@@ -28,3 +28,7 @@ The desktop sidebar now has a compact workspace switcher above a full-height fil
 Order and removed-workspace lists persist in this browser's local storage. Removal hides the workspace even when it has running sessions; it does not delete files, stop sessions, or discard editor buffers. Removed entries can be reopened. The selected workspace falls back to the next visible entry, or to an empty selection if none remain. Opening a hidden session from the session manager restores its workspace.
 
 Verified with navigation state tests and Chromium desktop/mobile checks, including ordering across reloads, drag ordering, cancel/confirm removal, and restoration without destructive API calls.
+
+## Persistent overview follow-up
+
+The compact switcher was replaced by a permanently visible workspace overview, with a separate file-explorer column alongside it. This preserves at-a-glance agent status. Completion markers now persist until acknowledged; see `terminal-readability.md` for exact review semantics, client-local limitations, and the typography evaluation.

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useStore } from '../../store'
+import { useStore, completionKey } from '../../store'
 import { api } from '../../api'
 import { notifyActive } from '../../ws'
 import { spawnAndFocus } from '../../spawn'
@@ -13,6 +13,7 @@ const STATE_COLORS: Record<string, string> = {
 // "+" runs the default profile; "▾" opens the profile menu (Claude variants,
 // Codex, terminal, custom, edit).
 export function SessionTabs({ wsCwd }: { wsCwd: string }) {
+  const unreadCompletions = useStore(s => s.unreadCompletions)
   const sessions = useStore((s) => s.sessions)
   const titles = useStore((s) => s.titles)
   const activeId = useStore((s) => s.activeId)
@@ -30,7 +31,7 @@ export function SessionTabs({ wsCwd }: { wsCwd: string }) {
   const host = workspaceHost
   const defaultProfile = profiles.find((p) => p.default) || profiles[0]
 
-  const select = (id: string) => { setActive(id); setWorkspace(sessions[id]?.cwd || wsCwd, sessions[id]?.host || 'local'); notifyActive(id) }
+  const select = (id: string) => { setActive(id); useStore.getState().acknowledgeCompletion(id); setWorkspace(sessions[id]?.cwd || wsCwd, sessions[id]?.host || 'local'); notifyActive(id) }
   const launch = (command: string) => { setMenuOpen(false); spawnAndFocus(wsCwd, host, command) }
   const addDefault = () => launch(defaultProfile?.command || 'claude')
 
@@ -50,14 +51,16 @@ export function SessionTabs({ wsCwd }: { wsCwd: string }) {
       <div className="session-tabs-scroll">
         {ids.map((id) => {
           const s = sessions[id]
+          const unread = unreadCompletions.includes(completionKey(s))
           const state = effectiveState(id) || 'running'
           const title = titles[id] || `#${id} ${s.cmd}`
           const hostTag = s.host && s.host !== 'local' ? (s.hostLabel || s.host) : ''
           return (
-            <div key={id} className={`session-tab ${id === activeId ? 'active' : ''}`}
+            <div key={id} className={`session-tab ${id === activeId ? 'active' : ''} ${unread ? 'has-unread' : ''}`}
               title={hostTag ? `${title} · ${hostTag}` : title} onClick={() => select(id)}>
               <span className={`session-dot dot-${state}`} style={{ background: STATE_COLORS[state] || '#6e7681' }} />
               <span className="session-tab-title">{title}</span>
+              {unread && <span className="unread-chip" title="완료 후 미확인">✓ 미확인</span>}
               <button className="session-tab-close" onClick={(e) => close(e, id)} title={s.status === 'running' ? '프로세스 종료' : '목록에서 제거'}>{s.status === 'running' ? '■' : '✕'}</button>
             </div>
           )

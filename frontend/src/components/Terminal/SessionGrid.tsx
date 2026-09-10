@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { useStore } from '../../store'
+import { useStore, completionKey } from '../../store'
 import { notifyActive, send } from '../../ws'
 import * as TM from './TerminalManager'
 import '@xterm/xterm/css/xterm.css'
@@ -16,6 +16,7 @@ const STATE_LABELS: Record<string, string> = {
 function GridTile({ id }: { id: string }) {
   const ref = useRef<HTMLDivElement>(null)
   const s = useStore((st) => st.sessions[id])
+  const unread = useStore(st => !!st.sessions[id] && st.unreadCompletions.includes(completionKey(st.sessions[id])))
   const rawTitle = useStore((st) => st.titles[id])
   const state = useStore((st) => st.effectiveState(id)) || 'running'
   const activeId = useStore((st) => st.activeId)
@@ -32,13 +33,14 @@ function GridTile({ id }: { id: string }) {
     return () => clearTimeout(t)
   }, [id])
 
-  const focus = () => { setActive(id); notifyActive(id) }
+  const focus = () => { setActive(id); useStore.getState().acknowledgeCompletion(id); notifyActive(id) }
 
   return (
-    <div className={`grid-tile ${isActive ? 'active' : ''}`} onClick={focus}>
+    <div className={`grid-tile ${isActive ? 'active' : ''} ${unread ? 'has-unread' : ''}`}  onClick={focus}>
       <div className="grid-tile-bar">
         <span className={`session-dot dot-${state}`} style={{ background: STATE_COLORS[state] || '#6e7681' }} />
         <span className="grid-tile-title">{title}</span>
+        {unread && <span className="unread-chip">✓ 미확인</span>}
         <span className={`session-state state-${state}`}>{STATE_LABELS[state] || state}</span>
       </div>
       <div className="grid-tile-term" ref={ref} />

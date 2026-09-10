@@ -1,10 +1,10 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { useStore, viewerKey, workspaceEntries, workspaceId, type ViewerTab } from './store'
+import { useStore, viewerKey, workspaceEntries, workspaceId, completionKey, type ViewerTab } from './store'
 
 const tab: ViewerTab = { id: '/project/a.py', path: '/project/a.py', name: 'a.py', type: 'code', lang: 'python', content: 'original', version: 'v1' }
 beforeEach(() => {
   localStorage.clear()
-  useStore.setState({ sessions: {}, activeId: null, workspaceCwd: '/project', workspaceHost: 'local', _viewerState: {}, _completedAt: {}, workspaceFolders: [], workspaceOrder: [], hiddenWorkspaces: [] })
+  useStore.setState({ sessions: {}, activeId: null, workspaceCwd: '/project', workspaceHost: 'local', _viewerState: {}, _completedAt: {}, workspaceFolders: [], workspaceOrder: [], hiddenWorkspaces: [], unreadCompletions: [] })
 })
 describe('workspace files', () => {
   it('opens and edits without an agent session', () => {
@@ -102,5 +102,37 @@ describe('workspace navigation', () => {
     s.setActive('1')
     expect(workspaceEntries(useStore.getState())).toHaveLength(1)
     expect(useStore.getState().hiddenWorkspaces).toEqual([])
+  })
+})
+
+describe('unreviewed completions', () => {
+  it('keeps a completion until explicitly acknowledged, including the active session', () => {
+    const s = useStore.getState()
+    s.upsertSession({ id: '1', cwd: '/project', cmd: 'codex' }); s.setActive('1')
+    s.handleMessage({ type: 'aiState', id: '1', state: 'working' })
+    s.handleMessage({ type: 'aiState', id: '1', state: 'idle' })
+    const key = completionKey(useStore.getState().sessions['1'])
+    expect(useStore.getState().unreadCompletions).toContain(key)
+    expect(JSON.parse(localStorage.getItem('agentboard.unreadCompletions')!)).toContain(key)
+    s.setActive('1') // automatic selection is not acknowledgement
+    expect(useStore.getState().unreadCompletions).toContain(key)
+    s.acknowledgeCompletion('1')
+    expect(useStore.getState().unreadCompletions).toEqual([])
+    s.handleMessage({ type: 'aiState', id: '1', state: 'idle' })
+    expect(useStore.getState().unreadCompletions).toEqual([])
+  })
+  it('keeps new activity visible alongside the unread result and marks process completion', () => {
+    const s = useStore.getState()
+    s.upsertSession({ id: '1', cwd: '/project', cmd: 'codex' })
+    s.handleMessage({ type: 'aiState', id: '1', state: 'working' })
+    s.handleMessage({ type: 'aiState', id: '1', state: 'idle' })
+    s.handleMessage({ type: 'aiState', id: '1', state: 'working' })
+    expect(s.effectiveState('1')).toBe('working')
+    expect(useStore.getState().unreadCompletions).toHaveLength(1)
+    s.acknowledgeCompletion('1')
+    s.handleMessage({ type: 'status', id: '1', status: 'completed' })
+    expect(useStore.getState().unreadCompletions).toHaveLength(1)
+    s.removeSession('1')
+    expect(useStore.getState().unreadCompletions).toEqual([])
   })
 })

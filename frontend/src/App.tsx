@@ -5,6 +5,7 @@ import { initWs, terminalHandlers } from './ws'
 import { Login } from './components/Login'
 import { Toaster } from './components/Toaster'
 import { Header } from './components/Header'
+import { ExplorerColumn } from './components/Sidebar/ExplorerColumn'
 import { Sidebar } from './components/Sidebar/Sidebar'
 import { TerminalArea } from './components/Terminal/TerminalArea'
 import { DesktopSplitLayout } from './components/Viewer/DesktopSplitLayout'
@@ -16,7 +17,9 @@ export function App() {
   const [authed, setAuthed] = useState<boolean | null>(null)
   const [loadingMsg, setLoadingMsg] = useState('Connecting...')
   const [sidebarOpen, setSidebarOpen] = useState(window.innerWidth > 768)
-  const [sidebarWidth, setSidebarWidth] = useState(300)
+  const [sidebarWidth, setSidebarWidth] = useState(280)
+  const [explorerWidth, setExplorerWidth] = useState(240)
+  const [explorerOpen, setExplorerOpen] = useState(true)
   const [desktop, setDesktop] = useState(isDesktop)
   const workspaceKey = useStore(viewerKey)
   useEffect(() => {
@@ -134,7 +137,7 @@ export function App() {
               e.preventDefault()
               const startX = e.clientX
               const startW = sidebarWidth
-              const onMove = (ev: MouseEvent) => setSidebarWidth(Math.min(400, Math.max(140, startW + ev.clientX - startX)))
+              const onMove = (ev: MouseEvent) => setSidebarWidth(Math.min(420, Math.max(240, startW + ev.clientX - startX)))
               const onUp = () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); document.body.style.cursor = '' }
               document.body.style.cursor = 'col-resize'
               document.addEventListener('mousemove', onMove)
@@ -142,6 +145,17 @@ export function App() {
             }}
           />
         )}
+        {desktop && (explorerOpen ? <>
+          <ExplorerColumn width={explorerWidth} onClose={() => setExplorerOpen(false)} />
+          <div className="sidebar-resizer" title="파일 탐색기 너비 조절" onMouseDown={e => {
+            e.preventDefault()
+            const startX = e.clientX, startW = explorerWidth
+            const move = (ev: MouseEvent) => setExplorerWidth(Math.min(420, Math.max(180, startW + ev.clientX - startX)))
+            const up = () => { document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up); document.body.style.cursor = '' }
+            document.body.style.cursor = 'col-resize'
+            document.addEventListener('mousemove', move); document.addEventListener('mouseup', up)
+          }} />
+        </> : <button className="explorer-reopen" onClick={() => setExplorerOpen(true)} title="파일 탐색기 열기">파일 ›</button>)}
         <main className="main-area">
           {desktop ? (
             <DesktopSplitLayout />
