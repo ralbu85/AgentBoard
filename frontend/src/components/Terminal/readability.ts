@@ -1,11 +1,11 @@
 export interface TerminalPreferences { fontSize: number; lineHeight: number; adaptiveColumns: boolean }
-const defaults: TerminalPreferences = { fontSize: 15, lineHeight: 1.25, adaptiveColumns: true }
+const defaults: TerminalPreferences = { fontSize: 15, lineHeight: 1, adaptiveColumns: true }
 export function loadTerminalPreferences(): TerminalPreferences {
   try {
     const saved = JSON.parse(localStorage.getItem('agentboard.terminalPreferences') || 'null')
     return {
       fontSize: Number.isFinite(saved?.fontSize) ? Math.min(22, Math.max(12, saved.fontSize)) : defaults.fontSize,
-      lineHeight: Number.isFinite(saved?.lineHeight) ? Math.min(1.5, Math.max(1, saved.lineHeight)) : defaults.lineHeight,
+      lineHeight: 1, // Compact spacing also replaces the previous persisted 1.25 default.
       adaptiveColumns: typeof saved?.adaptiveColumns === 'boolean' ? saved.adaptiveColumns : true,
     }
   } catch { return { ...defaults } }

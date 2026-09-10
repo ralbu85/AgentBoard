@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { api } from './api'
-import { useStore, viewerKey, workspaceEntries, workspaceId, completionKey, type ViewerTab } from './store'
+import { useStore, viewerKey, workspaceEntries, workspaceId, completionKey, sessionLabel, type ViewerTab } from './store'
 
 const tab: ViewerTab = { id: '/project/a.py', path: '/project/a.py', name: 'a.py', type: 'code', lang: 'python', content: 'original', version: 'v1' }
 beforeEach(() => {
@@ -176,4 +176,12 @@ it('remembers file position after closing and reopening the tab', () => {
   s.openTab(tab); s.updateTabView(tab.id, {editorScroll: 900, cursor: 4}); s.closeTab(tab.id)
   s.openTab(tab)
   expect(useStore.getState()._viewerState[viewerKey(useStore.getState())].tabs[0].viewState).toEqual({editorScroll:900, cursor:4})
+})
+
+it('uses agent titles instead of legacy numbered command labels', () => {
+  const s = useStore.getState(); s.upsertSession({id:'1', cwd:'/project', cmd:'claude'})
+  const session = {...useStore.getState().sessions['1'], autoTitle:'문서 구조 개선'}
+  expect(sessionLabel(session, {'1':'claude #1'})).toBe('문서 구조 개선')
+  expect(sessionLabel(session, {'1':'내가 지정한 제목'})).toBe('내가 지정한 제목')
+  expect(sessionLabel({...session, autoTitle:''}, {})).toBe('claude · 제목 대기')
 })

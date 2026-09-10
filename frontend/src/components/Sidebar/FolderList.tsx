@@ -22,6 +22,7 @@ export function FolderList({ onSelect }: Props) {
     const existing = state._viewerState[entry.key]
     if (existing?.tabs.length || localStorage.getItem(`agentboard.viewer.${entry.key}`)) useStore.setState({activeId: id})
     else state.setActive(id)
+    entry.ids.forEach(sessionId => state.acknowledgeCompletion(sessionId))
     onSelect?.()
   }
   const remove = (entry: WorkspaceEntry) => {
@@ -47,16 +48,11 @@ export function FolderList({ onSelect }: Props) {
         value={filter} onChange={e => setFilter(e.target.value)} />
     </div>
     <div className="workspace-picker-hint">⠿ 드래그하여 순서 변경</div>
-    <div className="workspace-status-legend"><span className="fs-working">● 작업</span><span className="fs-waiting">● 입력 대기</span></div>
+
     {visible.map(entry => {
       const name = entry.cwd.split('/').filter(Boolean).pop() || entry.cwd
       const active = state.workspaceCwd === entry.cwd && state.workspaceHost === entry.host
       const unread = entry.ids.filter(id => state.unreadCompletions.includes(completionKey(state.sessions[id]))).length
-      const counts = { working: 0, waiting: 0, idle: 0 }
-      for (const id of entry.ids) {
-        const status = state.effectiveState(id)
-        if (status === 'working' || status === 'waiting' || status === 'idle') counts[status]++
-      }
       return <div key={entry.key} className={`workspace-session-group ${active ? 'active-workspace' : ''}`}><div className={`workspace-picker-row ${active ? 'active' : ''} ${unread ? 'has-unread' : ''} ${dropTarget === entry.key ? 'drop-target' : ''}`}
         onDragOver={e => { if (dragged && dragged !== entry.key) { e.preventDefault(); setDropTarget(entry.key) } }}
         onDrop={e => { e.preventDefault(); if (dragged) { const rect = e.currentTarget.getBoundingClientRect(); const after = e.clientY > rect.top + rect.height / 2; state.reorderWorkspace(dragged, entry.key, after) }; setDragged(null); setDropTarget(null) }}>
@@ -65,10 +61,9 @@ export function FolderList({ onSelect }: Props) {
           onDragStart={e => { e.dataTransfer.setData('text/plain', entry.key); e.dataTransfer.effectAllowed = 'move'; setDragged(entry.key) }}
           onDragEnd={() => { setDragged(null); setDropTarget(null) }}>⠿</span>
         <button className="workspace-picker-select" onClick={() => select(entry)} title={`${entry.host}: ${entry.cwd}`} aria-current={active ? 'page' : undefined}>
-          <span className="workspace-picker-name">{name}</span>
+          <span className="workspace-picker-name"><span aria-hidden="true">▾ </span>{name}</span>
           <span className="workspace-picker-path">{entry.host === 'local' ? entry.cwd : `${entry.host} · ${entry.cwd}`}</span>
-          <span className="folder-states">{Object.entries(counts).map(([status, count]) => count > 0 &&
-            <span key={status} className={`fstate fs-${status}`} title={`${({working: '작업 중', waiting: '입력 대기', idle: '대기'} as Record<string, string>)[status]}: ${count}`}><i className="fs-dot" />{count}</span>)}{unread > 0 && <span className="unread-chip" title="클릭하여 미확인 표시 해제" onClick={e => { e.stopPropagation(); entry.ids.forEach(id => state.acknowledgeCompletion(id)) }}>✓ {unread}</span>}</span>
+          <span className="workspace-session-count">에이전트 세션 {entry.ids.length}개</span>
         </button>
         <div className="workspace-picker-actions">
           <button title={`${name} 목록에서 제거`} onClick={() => remove(entry)}>×</button>
@@ -79,10 +74,10 @@ export function FolderList({ onSelect }: Props) {
         const status = state.effectiveState(id) || 'idle'
         const pending = state.unreadCompletions.includes(completionKey(session))
         return <button key={id} className={`workspace-session ${state.activeId === id && active ? 'selected' : ''} ${pending ? 'has-unread' : ''}`}
-          title={`${sessionLabel(session, state.titles)} · #${id}`} onClick={() => { state.setActive(id); state.acknowledgeCompletion(id); onSelect?.() }}>
+          title={sessionLabel(session, state.titles)} onClick={() => { state.setActive(id); state.acknowledgeCompletion(id); onSelect?.() }}>
           <span className={`session-dot dot-${status}`} />
-          <span className="workspace-session-name">{sessionLabel(session, state.titles)}</span>
-          <span className="workspace-session-status">{pending ? '✓ 미확인' : ({working:'작업 중',waiting:'입력 대기',idle:'대기',completed:'완료',stopped:'종료'} as Record<string,string>)[status] || status}</span>
+          <span className="workspace-session-details"><span className="workspace-session-name">{sessionLabel(session, state.titles)}</span><span className="workspace-session-meta">{session.cmd || session.process || '터미널'}{session.createdAt ? ` · ${new Date(session.createdAt * 1000).toLocaleString('ko-KR', {month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})}` : ''}</span></span>
+          <span className="workspace-session-status">{pending ? '완료 · 새 소식' : ({working:'작업 중',waiting:'입력 대기',idle:'대기',completed:'완료',stopped:'종료'} as Record<string,string>)[status] || status}</span>
         </button>
       })}</div></div>
     })}

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useStore } from '../store'
+import { useStore, sessionLabel } from '../store'
 import { api } from '../api'
 import { SpawnModal } from './SpawnModal/SpawnModal'
 import { ProfileEditor } from './SpawnModal/ProfileEditor'
@@ -20,6 +20,7 @@ const ACTIVE_STATE_DISPLAY: Record<string, { label: string; icon: string; cls: s
 }
 
 export function Header({ onToggleSidebar }: Props) {
+  const titles = useStore(s => s.titles)
   const sessions = useStore((s) => s.sessions)
   const activeId = useStore((s) => s.activeId)
   const effectiveState = useStore((s) => s.effectiveState)
@@ -138,7 +139,7 @@ export function Header({ onToggleSidebar }: Props) {
           </div>
           <div className="managed-session-list">
             {Object.values(sessions).map(s => <div key={s.id} className="scan-item">
-              <span className="scan-name">#{s.id} {s.cmd}</span>
+              <span className="scan-name">{sessionLabel(s, titles)}</span>
               <span className="scan-cwd" title={s.cwd}>{s.hostLabel || s.host || 'local'} · {s.cwd}</span>
               <span>{effectiveState(s.id)}</span>
               <button className="btn btn-xs" onClick={() => { useStore.getState().setActive(s.id); useStore.getState().acknowledgeCompletion(s.id); setShowScan(false) }}>열기</button>

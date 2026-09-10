@@ -126,7 +126,10 @@ function persistList(key: string, value: string[]) {
 }
 
 export function sessionLabel(session: Session, titles: Record<string, string>): string {
-  return titles[session.id] || session.autoTitle || `${session.cmd || session.process || 'Terminal'} · #${session.id}`
+  const manual = titles[session.id]?.trim()
+  const generic = /^(?:(?:claude|codex|terminal|bash|zsh)\s*[·# ]*\d+|#\d+\s*(?:claude|codex|terminal|bash|zsh))$/i
+  if (manual && !generic.test(manual)) return manual
+  return session.autoTitle?.trim() || `${session.cmd || session.process || '터미널'} · 제목 대기`
 }
 
 export const completionKey = (session: Session) => JSON.stringify([session.host || 'local', session.sessionName || session.id, session.cwd || '~'])

@@ -1,6 +1,7 @@
 import { useRef, useState, useEffect, type KeyboardEvent, type DragEvent } from 'react'
 import { useToasts } from '../../toasts'
 import { api } from '../../api'
+import { useDrafts } from './drafts'
 import { useStore } from '../../store'
 import { FilePanel } from '../FilePanel'
 import * as TM from './TerminalManager'
@@ -25,7 +26,10 @@ const isMobile = () => window.innerWidth <= 768
 
 export function InputCard({ sessionId }: Props) {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const [text, setText] = useState('')
+  const draftKey = useStore(s => JSON.stringify([s.sessions[sessionId]?.host || 'local', sessionId, s.sessions[sessionId]?.cwd || '~']))
+  const text = useDrafts(s => s.drafts[draftKey] || '')
+  const setText = (value: string | ((previous: string) => string)) => useDrafts.getState().write(draftKey, value)
+  const [sending, setSending] = useState(false)
   const [showFiles, setShowFiles] = useState(false)
   const [dragOver, setDragOver] = useState(false)
   const [uploading, setUploading] = useState(0)
@@ -78,18 +82,18 @@ export function InputCard({ sessionId }: Props) {
     el.style.height = `${el.scrollHeight}px`
   }, [text])
 
-  const doSend = () => {
-    if (text.includes('\n')) {
-      api.paste(sessionId, text)  // Multi-line: paste as single block
-    } else {
-      api.input(sessionId, text)  // Single line: send + Enter
-    }
-    setText('')
-    if (textareaRef.current) textareaRef.current.style.height = 'auto'
+  const doSend = async () => {
+    if (sending) return
+    const sent = text
+    setSending(true)
+    try {
+      const result = sent.includes('\n') ? await api.paste(sessionId, sent) : await api.input(sessionId, sent)
+      if (result?.ok !== false) setText(current => current === sent ? '' : current)
+    } finally { setSending(false) }
   }
 
   const onKeyDown = (e: KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault()
       doSend()
     }
@@ -133,7 +137,7 @@ export function InputCard({ sessionId }: Props) {
           placeholder="Type command..."
           rows={1}
         />
-        <button className="btn send-btn" onClick={doSend}>Send</button>
+        <button className="btn send-btn" disabled={sending} onClick={doSend}>Send</button>
       </div>
       <div className="quick-keys">
         {QUICK_KEYS.map((k) => (

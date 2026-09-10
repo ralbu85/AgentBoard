@@ -100,7 +100,7 @@ export function create(id: string): TermInstance {
     // font where Hangul = exactly 2 Latin cells — no gaps in the fixed grid.
     // (A crisp SF Mono for Latin + system Hangul mismatched their metrics and
     // left the wide-spacing look.) ui-monospace backs it up.
-    fontFamily: '"D2Coding", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+    fontFamily: '"AgentBoardMyeongjo", "D2Coding", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
     theme: {
       background: '#101014', foreground: '#ececf1', cursor: '#ececf1',
       selectionBackground: 'rgba(124, 108, 240, 0.25)',
@@ -454,7 +454,7 @@ export function destroy(id: string) {
 // re-measure the cell and re-fit (cols depend on cell width on mobile).
 if (typeof document !== 'undefined' && document.fonts?.ready) {
   document.fonts.ready
-    .then(() => document.fonts.load('12px "D2Coding"'))
+    .then(() => Promise.all([document.fonts.load('15px "D2Coding"'), document.fonts.load('15px "AgentBoardMyeongjo"', '한글')]))
     .catch(() => {})
     .finally(() => {
       terminals.forEach((t, id) => {
@@ -463,6 +463,7 @@ if (typeof document !== 'undefined' && document.fonts?.ready) {
         _lastSentRows.delete(id)
         _lastSentCols.delete(id)
         refit(id)
+        t.term.refresh(0, t.term.rows - 1)
       })
     })
 }

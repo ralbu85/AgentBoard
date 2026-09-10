@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { useStore } from '../../store'
+import { useStore, sessionLabel } from '../../store'
 import { api } from '../../api'
 import { useToasts } from '../../toasts'
 import { notifyActive } from '../../ws'
@@ -104,7 +104,8 @@ export function TerminalPane({ sessionId }: { sessionId?: string }) {
       useToasts.getState().push(res?.error || '로그를 불러오지 못했습니다')
       return
     }
-    const title = useStore.getState().titles[activeId] || `#${activeId}`
+    const state = useStore.getState()
+    const title = state.sessions[activeId] ? sessionLabel(state.sessions[activeId], state.titles) : '터미널'
     useStore.getState().openLogTab(activeId, `${title} 로그`, res.text)
   }
 
@@ -124,7 +125,7 @@ export function TerminalPane({ sessionId }: { sessionId?: string }) {
       <div className="terminal-toolbar">
         <div className="terminal-font-controls" aria-label="터미널 가독성 설정">
           <button onClick={() => changeReadability({fontSize: readability.fontSize - 1})} disabled={readability.fontSize <= 12} title="터미널 글씨 작게">A−</button>
-          <button onClick={() => changeReadability({fontSize: 15, lineHeight: 1.25})} title="기본 글씨 크기와 행간으로">{readability.fontSize}px</button>
+          <button onClick={() => changeReadability({fontSize: 15, lineHeight: 1})} title="기본 글씨 크기와 행간으로">{readability.fontSize}px</button>
           <button onClick={() => changeReadability({fontSize: readability.fontSize + 1})} disabled={readability.fontSize >= 22} title="터미널 글씨 크게">A+</button>
           <button aria-pressed={readability.adaptiveColumns} onClick={() => changeReadability({adaptiveColumns: !readability.adaptiveColumns})} title="폭에 맞춰 줄바꿈 / 80열 고정">{readability.adaptiveColumns ? '자동 폭' : '80열'}</button>
         </div>

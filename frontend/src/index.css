@@ -1645,3 +1645,22 @@ tr.ln-memo:hover .fv-line-content::after { opacity: 1; }
 .workspace-picker-name { font-size: 13px; color: #e3e7f0; }
 .workspace-picker-path, .workspace-session-status { font-size: 11px; }
 .workspace-picker-row.drop-target { outline: 2px solid #a49af4; outline-offset: -2px; }
+
+@font-face {
+  font-family: "AgentBoardMyeongjo";
+  src: url("/fonts/AgentBoardMyeongjo.woff2") format("woff2");
+  font-weight: 400; font-style: normal; font-display: swap;
+  unicode-range: U+1100-11FF, U+3130-318F, U+A960-A97F, U+AC00-D7FF;
+}
+.workspace-session-count { font-size: 11px; color: var(--text-secondary); }
+.workspace-session-group .workspace-sessions { display: flex; flex-direction: column; gap: 5px; padding: 8px; }
+.workspace-session-group .workspace-session { min-height: 58px; align-items: flex-start; padding: 9px 8px; border: 1px solid #343b49; border-left: 2px solid #49536b; }
+.workspace-session .session-dot { margin-top: 5px; flex-shrink: 0; }
+.workspace-session-details { display: flex; flex-direction: column; gap: 5px; flex: 1; min-width: 0; }
+.workspace-session-details .workspace-session-name { white-space: normal; overflow-wrap: anywhere; font-size: 13px; line-height: 1.35; color: var(--text-primary); }
+.workspace-session-meta { color: var(--text-muted); font-size: 11px; }
+.workspace-session-status { max-width: 56px; white-space: normal; text-align: right; line-height: 1.35; }
+.workspace-session-group .workspace-picker-row.has-unread { border-bottom-color: #343b49; }
+.workspace-session-group .workspace-session.has-unread { background: #29261f; border-left-color: #d6b575; }
+.workspace-session.has-unread .workspace-session-status { color: #dfc18c; }
+.input-card textarea { font-family: "AgentBoardMyeongjo", var(--font-mono); }
