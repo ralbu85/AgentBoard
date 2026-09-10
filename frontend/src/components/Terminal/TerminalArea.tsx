@@ -47,6 +47,11 @@ export function TerminalArea({ mobile = false }: { mobile?: boolean }) {
     document.addEventListener('mouseup', onUp)
   }
 
+  if (!workspaceCwd) return <div className="ws-empty-main">
+    <p>워크스페이스를 선택하거나 새 폴더를 열어 주세요.</p>
+    <button className="btn btn-primary" onClick={() => useStore.getState().openWorkspaceModal()}>워크스페이스 열기</button>
+  </div>
+
   return (
     <div className="terminal-area">
       <div className="workspace-bar">

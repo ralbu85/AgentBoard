@@ -53,6 +53,8 @@ interface AppState {
   // these are tracked explicitly (persisted) in addition to session-derived ones.
   workspaceFolders: string[]
   workspaceModalOpen: boolean
+  workspaceOrder: string[]
+  hiddenWorkspaces: string[]
 
   // Actions
   openProfileEditor: () => void
@@ -60,7 +62,9 @@ interface AppState {
   openWorkspaceModal: () => void
   closeWorkspaceModal: () => void
   addWorkspaceFolder: (cwd: string) => void
-  removeWorkspaceFolder: (cwd: string) => void
+  removeWorkspaceFolder: (cwd: string, host?: string) => void
+  reorderWorkspace: (key: string, before: string) => void
+  restoreWorkspace: (key: string) => void
   openSpawn: (preset?: { cwd?: string; host?: string }) => void
   closeSpawn: () => void
   setWorkspace: (cwd: string, host?: string) => void
@@ -104,6 +108,36 @@ export function viewerKey(state: Pick<AppState, 'workspaceCwd' | 'workspaceHost'
   return JSON.stringify([state.workspaceHost || session?.host || 'local', state.workspaceCwd || session?.cwd || '~'])
 }
 
+function readStringList(key: string): string[] {
+  try {
+    const value = JSON.parse(localStorage.getItem(key) || '[]')
+    return Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : []
+  } catch { return [] }
+}
+function persistList(key: string, value: string[]) {
+  try { localStorage.setItem(key, JSON.stringify(value)) } catch { /* storage disabled */ }
+}
+
+export const workspaceId = (cwd: string, host = 'local') => JSON.stringify([host, cwd])
+export interface WorkspaceEntry { key: string; cwd: string; host: string; ids: string[] }
+export function workspaceEntries(state: Pick<AppState, 'sessions' | 'workspaceFolders' | 'workspaceOrder' | 'hiddenWorkspaces'>, includeHidden = false): WorkspaceEntry[] {
+  const entries = new Map<string, WorkspaceEntry>()
+  const add = (cwd: string, host = 'local', id?: string) => {
+    const key = workspaceId(cwd, host)
+    if (!entries.has(key)) entries.set(key, { key, cwd, host, ids: [] })
+    if (id) entries.get(key)!.ids.push(id)
+  }
+  for (const cwd of state.workspaceFolders) add(cwd)
+  for (const session of Object.values(state.sessions)) add(session.cwd || '~', session.host || 'local', session.id)
+  // Keep removed empty/remote workspaces available for restoration as well.
+  for (const key of [...state.workspaceOrder, ...state.hiddenWorkspaces]) {
+    try { const [host, cwd] = JSON.parse(key); if (typeof host === 'string' && typeof cwd === 'string') add(cwd, host) } catch {}
+  }
+  const rank = new Map(state.workspaceOrder.map((key, i) => [key, i]))
+  return [...entries.values()].filter(e => includeHidden || !state.hiddenWorkspaces.includes(e.key))
+    .sort((a, b) => (rank.get(a.key) ?? Infinity) - (rank.get(b.key) ?? Infinity) || a.cwd.localeCompare(b.cwd) || a.host.localeCompare(b.host))
+}
+
 export const useStore = create<AppState>((set, get) => ({
   sessions: {},
   activeId: null,
@@ -123,6 +157,8 @@ export const useStore = create<AppState>((set, get) => ({
     try { return JSON.parse(localStorage.getItem('agentboard.workspaceFolders') || '[]') } catch { return [] }
   })(),
   workspaceModalOpen: false,
+  workspaceOrder: readStringList('agentboard.workspaceOrder'),
+  hiddenWorkspaces: readStringList('agentboard.hiddenWorkspaces'),
 
   // These are unused placeholders — use selectors instead:
   // useStore(s => s._viewerState[s.activeId]?.tabs || [])
@@ -150,15 +186,43 @@ export const useStore = create<AppState>((set, get) => ({
   openWorkspaceModal: () => set({ workspaceModalOpen: true }),
   closeWorkspaceModal: () => set({ workspaceModalOpen: false }),
   addWorkspaceFolder: (cwd) => set((state) => {
-    if (state.workspaceFolders.includes(cwd)) return {}
-    const next = [...state.workspaceFolders, cwd]
-    try { localStorage.setItem('agentboard.workspaceFolders', JSON.stringify(next)) } catch {}
-    return { workspaceFolders: next }
+    const next = state.workspaceFolders.includes(cwd) ? state.workspaceFolders : [...state.workspaceFolders, cwd]
+    const hidden = state.hiddenWorkspaces.filter(key => key !== workspaceId(cwd))
+    persistList('agentboard.workspaceFolders', next)
+    persistList('agentboard.hiddenWorkspaces', hidden)
+    return { workspaceFolders: next, hiddenWorkspaces: hidden }
   }),
-  removeWorkspaceFolder: (cwd) => set((state) => {
-    const next = state.workspaceFolders.filter((f) => f !== cwd)
-    try { localStorage.setItem('agentboard.workspaceFolders', JSON.stringify(next)) } catch {}
-    return { workspaceFolders: next }
+  removeWorkspaceFolder: (cwd, host = 'local') => set((state) => {
+    const key = workspaceId(cwd, host)
+    const hidden = [...new Set([...state.hiddenWorkspaces, key])]
+    persistList('agentboard.hiddenWorkspaces', hidden)
+    const updates: Partial<AppState> = { hiddenWorkspaces: hidden }
+    if (viewerKey(state) === key) {
+      const next = workspaceEntries({ ...state, hiddenWorkspaces: hidden })[0]
+      updates.workspaceCwd = next?.cwd || null
+      updates.workspaceHost = next?.host || 'local'
+      updates.activeId = next?.ids.find(id => state.sessions[id].status === 'running') || next?.ids[0] || null
+    }
+    return updates
+  }),
+  reorderWorkspace: (key, before) => set(state => {
+    const keys = workspaceEntries(state).map(e => e.key)
+    if (key === before || !keys.includes(key) || !keys.includes(before)) return {}
+    const next = keys.filter(k => k !== key)
+    next.splice(next.indexOf(before), 0, key)
+    persistList('agentboard.workspaceOrder', next)
+    return { workspaceOrder: next }
+  }),
+  restoreWorkspace: (key) => set(state => {
+    const hidden = state.hiddenWorkspaces.filter(k => k !== key)
+    persistList('agentboard.hiddenWorkspaces', hidden)
+    const entry = workspaceEntries(state, true).find(e => e.key === key)
+    const folders = entry?.host === 'local' && !state.workspaceFolders.includes(entry.cwd)
+      ? [...state.workspaceFolders, entry.cwd] : state.workspaceFolders
+    persistList('agentboard.workspaceFolders', folders)
+    const order = entry && !state.workspaceOrder.includes(key) ? [...workspaceEntries(state, true).map(e => e.key)] : state.workspaceOrder
+    persistList('agentboard.workspaceOrder', order)
+    return { hiddenWorkspaces: hidden, workspaceFolders: folders, workspaceOrder: order }
   }),
   loadProfiles: async () => {
     try { const r = await api.profiles(); set({ profiles: Array.isArray(r?.profiles) ? r.profiles : [] }) }
@@ -169,9 +233,14 @@ export const useStore = create<AppState>((set, get) => ({
     try { const r = await api.saveProfiles(profiles); if (Array.isArray(r?.profiles)) set({ profiles: r.profiles }) }
     catch { useToasts.getState().push('프로필 저장 실패') }
   },
-  setActive: (id) => set((state) => ({ activeId: id,
-    ...(id && state.sessions[id] ? { workspaceCwd: state.sessions[id].cwd || '~', workspaceHost: state.sessions[id].host || 'local' } : {}),
-  })),
+  setActive: (id) => set((state) => {
+    const session = id ? state.sessions[id] : undefined
+    if (!session) return { activeId: id }
+    const key = workspaceId(session.cwd || '~', session.host || 'local')
+    const hidden = state.hiddenWorkspaces.filter(k => k !== key)
+    if (hidden.length !== state.hiddenWorkspaces.length) persistList('agentboard.hiddenWorkspaces', hidden)
+    return { activeId: id, workspaceCwd: session.cwd || '~', workspaceHost: session.host || 'local', hiddenWorkspaces: hidden }
+  }),
 
   openTab: (tab, key) => {
     const { _viewerState } = get()

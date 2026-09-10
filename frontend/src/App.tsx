@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api } from './api'
-import { useStore, viewerKey } from './store'
+import { useStore, viewerKey, workspaceEntries } from './store'
 import { initWs, terminalHandlers } from './ws'
 import { Login } from './components/Login'
 import { Toaster } from './components/Toaster'
@@ -57,9 +57,12 @@ export function App() {
     initWs()
 
     const state = useStore.getState()
-    const ids = Object.keys(state.sessions)
+    const entries = workspaceEntries(state)
+    const ids = entries.flatMap(e => e.ids)
     if (!state.activeId && ids.length > 0) {
       state.setActive(ids[0])  // TerminalPane's effect notifies + snapshots
+    } else if (!state.workspaceCwd && entries.length) {
+      state.setWorkspace(entries[0].cwd, entries[0].host)
     }
 
     const onKey = (e: KeyboardEvent) => {

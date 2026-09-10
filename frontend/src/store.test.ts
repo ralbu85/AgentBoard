@@ -1,10 +1,10 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { useStore, viewerKey, type ViewerTab } from './store'
+import { useStore, viewerKey, workspaceEntries, workspaceId, type ViewerTab } from './store'
 
 const tab: ViewerTab = { id: '/project/a.py', path: '/project/a.py', name: 'a.py', type: 'code', lang: 'python', content: 'original', version: 'v1' }
 beforeEach(() => {
   localStorage.clear()
-  useStore.setState({ sessions: {}, activeId: null, workspaceCwd: '/project', workspaceHost: 'local', _viewerState: {}, _completedAt: {} })
+  useStore.setState({ sessions: {}, activeId: null, workspaceCwd: '/project', workspaceHost: 'local', _viewerState: {}, _completedAt: {}, workspaceFolders: [], workspaceOrder: [], hiddenWorkspaces: [] })
 })
 describe('workspace files', () => {
   it('opens and edits without an agent session', () => {
@@ -54,5 +54,53 @@ describe('workspace files', () => {
     s.handleMessage({ type: 'aiState', id: '1', state: 'idle' })
     s.handleMessage({ type: 'aiState', id: '1', state: 'working' })
     expect(s.effectiveState('1')).toBe('working')
+  })
+})
+
+describe('workspace navigation', () => {
+  it('keeps user order when sessions update, including identical paths on different hosts', () => {
+    const s = useStore.getState()
+    s.addWorkspaceFolder('/alpha'); s.addWorkspaceFolder('/beta')
+    s.upsertSession({ id: 'remote:1', cwd: '/alpha', cmd: 'bash', host: 'remote' })
+    s.reorderWorkspace(workspaceId('/beta'), workspaceId('/alpha'))
+    s.upsertSession({ id: '1', cwd: '/alpha', cmd: 'codex' })
+    expect(workspaceEntries(useStore.getState()).map(e => e.key)).toEqual([
+      workspaceId('/beta'), workspaceId('/alpha'), workspaceId('/alpha', 'remote'),
+    ])
+    expect(JSON.parse(localStorage.getItem('agentboard.workspaceOrder')!)[0]).toBe(workspaceId('/beta'))
+  })
+  it('removes a workspace with live sessions without removing the sessions or drafts', () => {
+    const s = useStore.getState()
+    s.addWorkspaceFolder('/another')
+    s.upsertSession({ id: '1', cwd: '/project', cmd: 'codex' }); s.setActive('1')
+    s.openTab(tab); s.updateTab(tab.id, 'unsaved')
+    s.removeWorkspaceFolder('/project')
+    expect(workspaceEntries(useStore.getState()).map(e => e.cwd)).toEqual(['/another'])
+    expect(useStore.getState().sessions['1'].status).toBe('running')
+    expect(useStore.getState()._viewerState[workspaceId('/project')].tabs[0].content).toBe('unsaved')
+    expect(useStore.getState().workspaceCwd).toBe('/another')
+    expect(useStore.getState().activeId).toBeNull()
+    s.upsertSession({ id: '2', cwd: '/project', cmd: 'bash' })
+    expect(workspaceEntries(useStore.getState()).map(e => e.cwd)).toEqual(['/another'])
+    s.restoreWorkspace(workspaceId('/project'))
+    expect(workspaceEntries(useStore.getState()).find(e => e.cwd === '/project')?.ids).toEqual(['1','2'])
+  })
+  it('can restore an empty remote workspace after its session is gone', () => {
+    const s = useStore.getState()
+    s.upsertSession({ id: 'remote:1', cwd: '/project', cmd: 'bash', host: 'remote' })
+    s.removeWorkspaceFolder('/project', 'remote')
+    s.removeSession('remote:1')
+    s.restoreWorkspace(workspaceId('/project', 'remote'))
+    expect(workspaceEntries(useStore.getState())).toMatchObject([{ cwd: '/project', host: 'remote', ids: [] }])
+  })
+  it('clears selection when removing the last workspace and can reopen its session', () => {
+    const s = useStore.getState()
+    s.upsertSession({ id: '1', cwd: '/project', cmd: 'codex' }); s.setActive('1')
+    s.removeWorkspaceFolder('/project')
+    expect(useStore.getState().workspaceCwd).toBeNull()
+    expect(workspaceEntries(useStore.getState())).toHaveLength(0)
+    s.setActive('1')
+    expect(workspaceEntries(useStore.getState())).toHaveLength(1)
+    expect(useStore.getState().hiddenWorkspaces).toEqual([])
   })
 })

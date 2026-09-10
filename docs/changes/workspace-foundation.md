@@ -20,3 +20,11 @@ Still planned:
 - Real Codex output fixtures for the remaining heuristic status edge cases.
 
 Validation: frontend unit tests, backend unit tests, TypeScript/build, and isolated Chromium desktop/mobile checks with mocked sessions/files, including versioned saves, conflict handling and upload results (no live agent input or termination).
+
+## Workspace navigation follow-up
+
+The desktop sidebar now has a compact workspace switcher above a full-height file tree. The switcher contains searchable workspaces, drag handles, up/down controls, and confirmed removal. Mobile exposes the same controls in its workspace drawer.
+
+Order and removed-workspace lists persist in this browser's local storage. Removal hides the workspace even when it has running sessions; it does not delete files, stop sessions, or discard editor buffers. Removed entries can be reopened. The selected workspace falls back to the next visible entry, or to an empty selection if none remain. Opening a hidden session from the session manager restores its workspace.
+
+Verified with navigation state tests and Chromium desktop/mobile checks, including ordering across reloads, drag ordering, cancel/confirm removal, and restoration without destructive API calls.

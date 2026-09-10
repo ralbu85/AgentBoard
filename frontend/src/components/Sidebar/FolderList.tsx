@@ -1,128 +1,84 @@
 import { useState } from 'react'
-import { useStore } from '../../store'
+import { useStore, workspaceEntries, type WorkspaceEntry } from '../../store'
 
-// Left navigation: a clean list of workspace folders. Sessions live in the main
-// area (as tabs/grid), not here — this column has one job: pick a folder.
-interface Props {
-  onSelect?: () => void
-}
-
-// State buckets shown per folder, in display order. `running` (alive but no
-// detected AI state) folds into idle. completed/stopped aren't shown — they're
-// transient/inactive and would just add noise to the folder summary.
-const STATE_BUCKETS = [
-  { key: 'working', label: '작업 중' },
-  { key: 'waiting', label: '입력 대기' },
-  { key: 'idle', label: '대기' },
-] as const
-
-function bucketOf(state: string | null): 'working' | 'waiting' | 'idle' | null {
-  if (state === 'working') return 'working'
-  if (state === 'waiting') return 'waiting'
-  if (state === 'idle' || state === 'running') return 'idle'
-  return null // completed / stopped / unknown
-}
+interface Props { onSelect?: () => void }
 
 export function FolderList({ onSelect }: Props) {
-  const sessions = useStore((s) => s.sessions)
-  const activeId = useStore((s) => s.activeId)
-  const workspaceCwd = useStore((s) => s.workspaceCwd)
-  const workspaceHost = useStore(s => s.workspaceHost)
-  const removeWorkspaceFolder = useStore(s => s.removeWorkspaceFolder)
-  const effectiveState = useStore((s) => s.effectiveState)
-  const setActive = useStore((s) => s.setActive)
-  const setWorkspace = useStore((s) => s.setWorkspace)
-  const openWorkspaceModal = useStore((s) => s.openWorkspaceModal)
-  const workspaceFolders = useStore((s) => s.workspaceFolders)
+  const state = useStore()
   const [filter, setFilter] = useState('')
-
-  // Workspaces = folders with sessions ∪ explicitly-registered folders (so a
-  // just-created, still-empty workspace still shows).
-  const folders = new Map<string, string[]>()
-  const keyOf = (cwd: string, host = 'local') => JSON.stringify([host, cwd])
-  for (const f of workspaceFolders) folders.set(keyOf(f), [])
-  for (const id of Object.keys(sessions)) {
-    const cwd = sessions[id].cwd || '~'
-    const key = keyOf(cwd, sessions[id].host || 'local')
-    if (!folders.has(key)) folders.set(key, [])
-    folders.get(key)!.push(id)
-  }
-
+  const [dragged, setDragged] = useState<string | null>(null)
+  const [dropTarget, setDropTarget] = useState<string | null>(null)
+  const [showRemoved, setShowRemoved] = useState(false)
+  const entries = workspaceEntries(state)
   const q = filter.trim().toLowerCase()
-  const keys = [...folders.keys()]
-    .filter((k) => !q || k.toLowerCase().includes(q))
-    .sort((a, b) => (a.split('/').pop() || a).localeCompare(b.split('/').pop() || b))
+  const visible = entries.filter(e => `${e.cwd} ${e.host}`.toLowerCase().includes(q))
+  const removed = workspaceEntries(state, true).filter(e => state.hiddenWorkspaces.includes(e.key))
 
-  const effWorkspace = workspaceCwd || (activeId ? sessions[activeId]?.cwd : undefined)
-
-  const selectFolder = (key: string) => {
-    const [host, cwd] = JSON.parse(key)
-    setWorkspace(cwd, host)
-    const ids = folders.get(key) || []
-    if (ids.length === 0) {
-      setActive(null)  // empty workspace — main shows the "+ 세션 추가" prompt
-    } else if (!ids.includes(activeId || '')) {
-      const running = ids.find((id) => sessions[id].status === 'running') || ids[0]
-      setActive(running)
-    }
+  const select = (entry: WorkspaceEntry) => {
+    state.restoreWorkspace(entry.key)
+    state.setWorkspace(entry.cwd, entry.host)
+    const id = entry.ids.includes(state.activeId || '') ? state.activeId
+      : entry.ids.find(id => state.sessions[id].status === 'running') || entry.ids[0] || null
+    state.setActive(id)
     onSelect?.()
   }
+  const remove = (entry: WorkspaceEntry) => {
+    const dirty = state._viewerState[entry.key]?.tabs.some(t => t.dirty)
+    if (!window.confirm(`워크스페이스를 목록에서 제거할까요?\n${entry.host}: ${entry.cwd}\n\n실제 폴더와 파일, 세션 ${entry.ids.length}개는 그대로 유지됩니다.${dirty ? '\n저장하지 않은 편집 내용은 이 창에 유지됩니다.' : ''}\n제거한 항목 목록에서 다시 열 수 있습니다.`)) return
+    state.removeWorkspaceFolder(entry.cwd, entry.host)
+  }
+  const move = (entry: WorkspaceEntry, delta: number) => {
+    const index = entries.findIndex(e => e.key === entry.key)
+    const neighbor = entries[index + delta]
+    if (!neighbor) return
+    if (delta < 0) state.reorderWorkspace(entry.key, neighbor.key)
+    else state.reorderWorkspace(neighbor.key, entry.key)
+  }
 
-  return (
-    <div className="folder-list">
-      <div className="folder-list-head">
-        <span className="fl-title">WORKSPACES</span>
-        <button className="fl-add" title="워크스페이스 폴더 열기" onClick={openWorkspaceModal}>＋</button>
-      </div>
-      {folders.size >= 6 && (
-        <div className="folder-filter-wrap">
-          <input className="folder-filter" type="search" placeholder="폴더 검색…"
-            value={filter} onChange={(e) => setFilter(e.target.value)} />
-        </div>
-      )}
-      {keys.map((key) => {
-        const [host, cwd] = JSON.parse(key) as [string, string]
-        const ids = folders.get(key)!
-        const name = cwd === '~' ? '~' : (cwd.split('/').filter(Boolean).pop() || cwd)
-        const isActive = effWorkspace === cwd && workspaceHost === host
-        const counts = { working: 0, waiting: 0, idle: 0 }
-        for (const id of ids) {
-          const b = bucketOf(effectiveState(id))
-          if (b) counts[b]++
-        }
-        const s0 = ids.length ? sessions[ids[0]] : null
-        const remote = s0 && s0.host && s0.host !== 'local' ? (s0.hostLabel || s0.host) : ''
-        return (
-          <div key={key} className={`folder-item ${isActive ? 'active' : ''}`}
-            title={`${host}: ${cwd}`} onClick={() => selectFolder(key)}>
-            <svg className="folder-ico" width="16" height="16" viewBox="0 0 20 20" fill="none">
-              <path d="M2 5C2 4 3 3 4 3H8L10 5H16C17 5 18 6 18 7V15C18 16 17 17 16 17H4C3 17 2 16 2 15V5Z"
-                fill={isActive ? 'var(--accent)' : 'none'} opacity={isActive ? '0.25' : '1'}
-                stroke="currentColor" strokeWidth="1.4" />
-            </svg>
-            <span className="folder-name">{name}</span>
-            {remote && <span className="folder-host">{remote}</span>}
-            {host === 'local' && ids.length === 0 && <button className="workspace-remove" title="워크스페이스 목록에서 제거 (폴더는 유지)" onClick={e => {
-              e.stopPropagation()
-              removeWorkspaceFolder(cwd)
-            }}>×</button>}
-            <span className="folder-states">
-              {STATE_BUCKETS.map(({ key, label }) => counts[key] > 0 && (
-                <span key={key} className={`fstate fs-${key} ${key === 'waiting' ? 'attn' : ''}`}
-                  title={`${label} ${counts[key]}개`}>
-                  <i className="fs-dot" />{counts[key]}
-                </span>
-              ))}
-            </span>
-          </div>
-        )
-      })}
-      {keys.length === 0 && (
-        <div className="folder-empty">
-          <p>워크스페이스가 없습니다</p>
-          <button className="btn btn-primary btn-xs" onClick={openWorkspaceModal}>+ 워크스페이스 열기</button>
-        </div>
-      )}
+  return <div className="folder-list workspace-picker-list">
+    <div className="folder-list-head">
+      <span className="fl-title">워크스페이스 · {entries.length}</span>
+      <button className="fl-add" title="워크스페이스 폴더 열기" onClick={state.openWorkspaceModal}>＋</button>
     </div>
-  )
+    <div className="folder-filter-wrap">
+      <input className="folder-filter" type="search" placeholder="이름·경로·머신 검색…" aria-label="워크스페이스 검색"
+        value={filter} onChange={e => setFilter(e.target.value)} />
+    </div>
+    <div className="workspace-picker-hint">⠿ 드래그 또는 화살표로 순서 변경</div>
+    {visible.map(entry => {
+      const name = entry.cwd.split('/').filter(Boolean).pop() || entry.cwd
+      const active = state.workspaceCwd === entry.cwd && state.workspaceHost === entry.host
+      const index = entries.findIndex(e => e.key === entry.key)
+      const counts = { working: 0, waiting: 0, idle: 0 }
+      for (const id of entry.ids) {
+        const status = state.effectiveState(id)
+        if (status === 'working' || status === 'waiting' || status === 'idle') counts[status]++
+      }
+      return <div key={entry.key} className={`workspace-picker-row ${active ? 'active' : ''} ${dropTarget === entry.key ? 'drop-target' : ''}`}
+        onDragOver={e => { if (dragged && dragged !== entry.key) { e.preventDefault(); setDropTarget(entry.key) } }}
+        onDrop={e => { e.preventDefault(); if (dragged) state.reorderWorkspace(dragged, entry.key); setDragged(null); setDropTarget(null) }}>
+        <span className="workspace-drag" draggable title="드래그하여 순서 변경"
+          onDragStart={e => { e.dataTransfer.setData('text/plain', entry.key); e.dataTransfer.effectAllowed = 'move'; setDragged(entry.key) }}
+          onDragEnd={() => { setDragged(null); setDropTarget(null) }}>⠿</span>
+        <button className="workspace-picker-select" onClick={() => select(entry)} title={`${entry.host}: ${entry.cwd}`} aria-current={active ? 'page' : undefined}>
+          <span className="workspace-picker-name">{name}</span>
+          <span className="workspace-picker-path">{entry.host === 'local' ? entry.cwd : `${entry.host} · ${entry.cwd}`}</span>
+          <span className="folder-states">{Object.entries(counts).map(([status, count]) => count > 0 &&
+            <span key={status} className={`fstate fs-${status}`} title={`${status}: ${count}`}><i className="fs-dot" />{count}</span>)}</span>
+        </button>
+        <div className="workspace-picker-actions">
+          <button disabled={index === 0} title={`${name} 위로 이동`} onClick={() => move(entry, -1)}>↑</button>
+          <button disabled={index === entries.length - 1} title={`${name} 아래로 이동`} onClick={() => move(entry, 1)}>↓</button>
+          <button title={`${name} 목록에서 제거`} onClick={() => remove(entry)}>×</button>
+        </div>
+      </div>
+    })}
+    {!visible.length && <div className="folder-empty">{q ? '검색 결과가 없습니다.' : '워크스페이스를 추가해 주세요.'}</div>}
+    {removed.length > 0 && <div className="workspace-removed">
+      <button className="btn btn-xs" onClick={() => setShowRemoved(v => !v)} aria-expanded={showRemoved}>제거한 항목 ({removed.length}) {showRemoved ? '▴' : '▾'}</button>
+      {showRemoved && removed.map(entry => <button key={entry.key} className="workspace-restore" onClick={() => select(entry)} title={`${entry.host}: ${entry.cwd}`}>
+        <span>{entry.cwd.split('/').filter(Boolean).pop() || entry.cwd} · {entry.host}</span><span>다시 열기</span>
+      </button>)}
+    </div>}
+  </div>
 }

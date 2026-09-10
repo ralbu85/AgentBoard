@@ -6,7 +6,7 @@ import { PaneResizer } from './PaneResizer'
 
 export function DesktopSplitLayout() {
   const [leftWidth, setLeftWidth] = useState(55)
-  const hasViewerTabs = useStore(s => (s._viewerState[viewerKey(s)]?.tabs.length || 0) > 0)
+  const hasViewerTabs = useStore(s => !!s.workspaceCwd && (s._viewerState[viewerKey(s)]?.tabs.length || 0) > 0)
 
   const hasSessions = useStore(s => Object.values(s.sessions).some(session =>
     JSON.stringify([session.host || 'local', session.cwd || '~']) === viewerKey(s)))
