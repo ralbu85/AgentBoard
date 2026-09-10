@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api } from './api'
-import { useStore } from './store'
+import { useStore, viewerKey } from './store'
 import { initWs, terminalHandlers } from './ws'
 import { Login } from './components/Login'
 import { Toaster } from './components/Toaster'
@@ -16,11 +16,24 @@ export function App() {
   const [authed, setAuthed] = useState<boolean | null>(null)
   const [loadingMsg, setLoadingMsg] = useState('Connecting...')
   const [sidebarOpen, setSidebarOpen] = useState(window.innerWidth > 768)
-  const [sidebarWidth, setSidebarWidth] = useState(220)
-  const activeId = useStore((s) => s.activeId)
+  const [sidebarWidth, setSidebarWidth] = useState(300)
+  const [desktop, setDesktop] = useState(isDesktop)
+  const workspaceKey = useStore(viewerKey)
+  useEffect(() => {
+    const resize = () => setDesktop(isDesktop())
+    window.addEventListener('resize', resize)
+    return () => window.removeEventListener('resize', resize)
+  }, [])
+  const anyDirty = useStore(s => Object.values(s._viewerState).some(v => v.tabs.some(t => t.dirty)))
+  useEffect(() => {
+    if (!anyDirty) return
+    const warn = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = '' }
+    window.addEventListener('beforeunload', warn)
+    return () => window.removeEventListener('beforeunload', warn)
+  }, [anyDirty])
 
-  // Re-open the files that were open in this session (read fresh from disk).
-  useEffect(() => { if (activeId) useStore.getState().restoreViewerTabs(activeId) }, [activeId])
+  // Re-open the files that were open in this workspace (read fresh from disk).
+  useEffect(() => { if (authed) useStore.getState().restoreViewerTabs(workspaceKey) }, [workspaceKey, authed])
 
   useEffect(() => {
     setLoadingMsg('Loading sessions...')
@@ -111,7 +124,7 @@ export function App() {
       <Header onToggleSidebar={() => setSidebarOpen((v) => !v)} />
       <div className="workspace">
         <Sidebar visible={sidebarOpen} onClose={() => setSidebarOpen(false)} width={sidebarWidth} />
-        {sidebarOpen && isDesktop() && (
+        {sidebarOpen && desktop && (
           <div
             className="sidebar-resizer"
             onMouseDown={(e) => {
@@ -127,10 +140,10 @@ export function App() {
           />
         )}
         <main className="main-area">
-          {isDesktop() ? (
+          {desktop ? (
             <DesktopSplitLayout />
           ) : (
-            <TerminalArea />
+            <TerminalArea mobile />
           )}
         </main>
       </div>

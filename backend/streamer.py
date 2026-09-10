@@ -444,7 +444,17 @@ async def _poll_active():
                 log.debug("active poll failed for %s: %s", s.session_name, e)
 
 
+def _background_stability(samples: dict, id: str, output: str, now: float) -> float:
+    cleaned = _strip_cursor(output)
+    previous, changed_at = samples.get(id, (None, now))
+    if previous != cleaned:
+        changed_at = now
+    samples[id] = (cleaned, changed_at)
+    return now - changed_at
+
+
 async def _poll_background():
+    samples: dict[str, tuple[str, float]] = {}
     while True:
         await asyncio.sleep(BG_POLL_MS / 1000)
         from .sessions import store
@@ -452,6 +462,8 @@ async def _poll_background():
         # fork (N sessions = N forks every cycle). Empty result == server down
         # == every session dead, matching is_alive's semantics.
         alive_names = {ts["sessionName"] for ts in await tmux.list_sessions()}
+        for stale in samples.keys() - store.sessions.keys():
+            samples.pop(stale, None)
         for id, s in list(store.sessions.items()):
             if s.status == "stopped":
                 continue
@@ -464,6 +476,7 @@ async def _poll_background():
                 continue
 
             if id in get_active_session_ids():
+                samples.pop(id, None)
                 continue
 
             try:
@@ -472,7 +485,8 @@ async def _poll_background():
                     tmux.capture_pane(s.session_name, lines=20),
                 )
                 _update_info(id, s, info)
-                _detect_state(id, s, tail)
+                stable_for = _background_stability(samples, id, tail, _time.monotonic())
+                _detect_state(id, s, tail, stable_for)
             except Exception as e:
                 log.debug("background poll failed for %s: %s", s.session_name, e)
 

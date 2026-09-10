@@ -11,6 +11,7 @@ export interface ViewerTab {
   type: 'code' | 'markdown' | 'latex' | 'pdf' | 'image' | 'diff' | 'notebook'
   lang: string
   dirty?: boolean
+  version?: string
 }
 
 interface AppState {
@@ -19,7 +20,7 @@ interface AppState {
   titles: Record<string, string>
   tunnelUrl: string | null
 
-  // Viewer tabs (per session)
+  // Viewer tabs per workspace (host + root path)
   _viewerState: Record<string, { tabs: ViewerTab[]; activeTabId: string | null }>
   viewerTabs: ViewerTab[]       // computed: current session's tabs
   activeTabId: string | null    // computed: current session's active tab
@@ -39,6 +40,7 @@ interface AppState {
   // The folder shown in the workspace file panel. Follows the selected folder
   // or the active session; null → fall back to the active session's cwd.
   workspaceCwd: string | null
+  workspaceHost: string
 
   // How the workspace shows its sessions: one at a time, or all tiled.
   viewMode: 'single' | 'grid'
@@ -61,17 +63,17 @@ interface AppState {
   removeWorkspaceFolder: (cwd: string) => void
   openSpawn: (preset?: { cwd?: string; host?: string }) => void
   closeSpawn: () => void
-  setWorkspace: (cwd: string) => void
+  setWorkspace: (cwd: string, host?: string) => void
   setViewMode: (m: 'single' | 'grid') => void
   upsertSession: (s: { id: string; cwd: string; cmd: string; host?: string }) => void
   loadProfiles: () => Promise<void>
   saveProfiles: (profiles: SpawnProfile[]) => Promise<void>
   setActive: (id: string | null) => void
   removeSession: (id: string) => void
-  openTab: (tab: ViewerTab) => void
+  openTab: (tab: ViewerTab, key?: string) => void
   closeTab: (id: string) => void
-  updateTab: (tabId: string, content: string) => void
-  markTabSaved: (tabId: string) => void
+  updateTab: (tabId: string, content: string, key?: string) => void
+  markTabSaved: (tabId: string, content?: string, version?: string, key?: string) => void
   openDiffTab: (path: string, name: string, diff: string) => void
   openLogTab: (sessionId: string, name: string, content: string) => void
   restoreViewerTabs: (sessionId: string) => Promise<void>
@@ -93,9 +95,13 @@ function persistViewer(sessionId: string, vs: { tabs: ViewerTab[]; activeTabId: 
         id: t.id, path: t.path, name: t.name, type: t.type, lang: t.lang,
         content: (t.type === 'pdf' || t.type === 'image') ? t.content : undefined,
       }))
-    if (meta.length) localStorage.setItem(`agentboard.viewer.${sessionId}`, JSON.stringify({ tabs: meta, activeTabId: vs.activeTabId }))
-    else localStorage.removeItem(`agentboard.viewer.${sessionId}`)
+    localStorage.setItem(`agentboard.viewer.${sessionId}`, JSON.stringify({ tabs: meta, activeTabId: vs.activeTabId }))
   } catch { /* quota / disabled — ignore */ }
+}
+
+export function viewerKey(state: Pick<AppState, 'workspaceCwd' | 'workspaceHost' | 'activeId' | 'sessions'>): string {
+  const session = state.activeId ? state.sessions[state.activeId] : undefined
+  return JSON.stringify([state.workspaceHost || session?.host || 'local', state.workspaceCwd || session?.cwd || '~'])
 }
 
 export const useStore = create<AppState>((set, get) => ({
@@ -109,6 +115,7 @@ export const useStore = create<AppState>((set, get) => ({
   spawnOpen: false,
   spawnPreset: {},
   workspaceCwd: null,
+  workspaceHost: 'local',
   viewMode: ((typeof localStorage !== 'undefined' && localStorage.getItem('agentboard.viewMode')) as 'single' | 'grid') || 'single',
   profiles: [],
   profileEditorOpen: false,
@@ -124,7 +131,7 @@ export const useStore = create<AppState>((set, get) => ({
 
   openSpawn: (preset = {}) => set({ spawnOpen: true, spawnPreset: preset }),
   closeSpawn: () => set({ spawnOpen: false, spawnPreset: {} }),
-  setWorkspace: (cwd) => set({ workspaceCwd: cwd }),
+  setWorkspace: (cwd, host = 'local') => set({ workspaceCwd: cwd, workspaceHost: host }),
   setViewMode: (m) => { try { localStorage.setItem('agentboard.viewMode', m) } catch {} ; set({ viewMode: m }) },
   // Optimistic insert so a just-created session's tab appears instantly; the
   // ws `spawned` event reconciles it (same id). No-op if it already arrived.
@@ -162,11 +169,13 @@ export const useStore = create<AppState>((set, get) => ({
     try { const r = await api.saveProfiles(profiles); if (Array.isArray(r?.profiles)) set({ profiles: r.profiles }) }
     catch { useToasts.getState().push('프로필 저장 실패') }
   },
-  setActive: (id) => set({ activeId: id }),
+  setActive: (id) => set((state) => ({ activeId: id,
+    ...(id && state.sessions[id] ? { workspaceCwd: state.sessions[id].cwd || '~', workspaceHost: state.sessions[id].host || 'local' } : {}),
+  })),
 
-  openTab: (tab) => {
-    const { activeId, _viewerState } = get()
-    if (!activeId) return
+  openTab: (tab, key) => {
+    const { _viewerState } = get()
+    const activeId = key || viewerKey(get())
     const cur = _viewerState[activeId] || { tabs: [], activeTabId: null }
     const existing = cur.tabs.find(t => t.path === tab.path)
     const nextVs = existing
@@ -177,8 +186,8 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   closeTab: (id) => {
-    const { activeId, _viewerState } = get()
-    if (!activeId) return
+    const { _viewerState } = get()
+    const activeId = viewerKey(get())
     const cur = _viewerState[activeId] || { tabs: [], activeTabId: null }
     const tab = cur.tabs.find(t => t.id === id)
     if (tab?.dirty && !window.confirm(`저장하지 않은 변경이 있습니다: ${tab.name}\n닫을까요?`)) return
@@ -193,25 +202,29 @@ export const useStore = create<AppState>((set, get) => ({
     persistViewer(activeId, nextVs)
   },
 
-  updateTab: (tabId, content) => {
-    const { activeId, _viewerState } = get()
-    if (!activeId) return
+  updateTab: (tabId, content, key) => {
+    const { _viewerState } = get()
+    const activeId = key || viewerKey(get())
     const cur = _viewerState[activeId] || { tabs: [], activeTabId: null }
     const tabs = cur.tabs.map(t => t.id === tabId ? { ...t, content, dirty: true } : t)
     set({ _viewerState: { ..._viewerState, [activeId]: { ...cur, tabs } } })
   },
 
-  markTabSaved: (tabId) => {
-    const { activeId, _viewerState } = get()
-    if (!activeId) return
-    const cur = _viewerState[activeId] || { tabs: [], activeTabId: null }
-    const tabs = cur.tabs.map(t => t.id === tabId ? { ...t, dirty: false } : t)
-    set({ _viewerState: { ..._viewerState, [activeId]: { ...cur, tabs } } })
+  markTabSaved: (tabId, content, version, key) => {
+    const state = get()
+    const owner = key || viewerKey(state)
+    const cur = state._viewerState[owner]
+    if (!cur) return
+    const tabs = cur.tabs.map(t => t.id === tabId ? {
+      ...t, dirty: content !== undefined && t.content !== content,
+      version: version ?? t.version,
+    } : t)
+    set({ _viewerState: { ...state._viewerState, [owner]: { ...cur, tabs } } })
   },
 
   openDiffTab: (path, name, diff) => {
-    const { activeId, _viewerState } = get()
-    if (!activeId) return
+    const { _viewerState } = get()
+    const activeId = viewerKey(get())
     const id = `diff:${path}`
     const cur = _viewerState[activeId] || { tabs: [], activeTabId: null }
     const existing = cur.tabs.find(t => t.id === id)
@@ -221,8 +234,8 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   openLogTab: (sessionId, name, content) => {
-    const { activeId, _viewerState } = get()
-    if (!activeId) return
+    const { _viewerState } = get()
+    const activeId = viewerKey(get())
     // Ephemeral like diffs (id prefixed `log:`) — a live capture, not a file, so
     // it's excluded from persistViewer and re-fetched on demand, never restored.
     const id = `log:${sessionId}`
@@ -238,7 +251,21 @@ export const useStore = create<AppState>((set, get) => ({
     if (_viewerState[sessionId]?.tabs?.length) return  // already populated
     let saved: any
     try { saved = JSON.parse(localStorage.getItem(`agentboard.viewer.${sessionId}`) || 'null') } catch { return }
+    if (!saved) {
+      const state = get()
+      const oldTabs: ViewerTab[] = []
+      for (const session of Object.values(state.sessions)) {
+        if (JSON.stringify([session.host || 'local', session.cwd || '~']) !== sessionId || (session.host || 'local') !== 'local') continue
+        try {
+          const legacy = JSON.parse(localStorage.getItem(`agentboard.viewer.${session.id}`) || 'null')
+          for (const tab of legacy?.tabs || []) if (!oldTabs.some(t => t.path === tab.path)) oldTabs.push(tab)
+        } catch { /* invalid legacy metadata */ }
+      }
+      saved = { tabs: oldTabs, activeTabId: oldTabs[0]?.id }
+    }
     if (!saved?.tabs?.length) return
+    // Remote file APIs are not implemented; never read remote paths on the hub.
+    try { if (JSON.parse(sessionId)[0] !== 'local') return } catch { return }
     const tabs: ViewerTab[] = []
     for (const m of saved.tabs) {
       if (m.type === 'pdf' || m.type === 'image') {
@@ -247,9 +274,10 @@ export const useStore = create<AppState>((set, get) => ({
       }
       try {
         const res = await api.readFile(m.path)  // fresh from disk
+        if (res.ok === false) continue
         let content = res.content || ''
         if (m.path.endsWith('.json')) { try { content = JSON.stringify(JSON.parse(content), null, 2) } catch {} }
-        tabs.push({ id: m.id, path: m.path, name: m.name, type: m.type, lang: m.lang, content })
+        tabs.push({ id: m.id, path: m.path, name: m.name, type: m.type, lang: m.lang, content, version: res.version })
       } catch { /* file gone — drop it */ }
     }
     if (!tabs.length) return
@@ -260,8 +288,8 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   setActiveTab: (id) => {
-    const { activeId, _viewerState } = get()
-    if (!activeId) return
+    const { _viewerState } = get()
+    const activeId = viewerKey(get())
     const cur = _viewerState[activeId] || { tabs: [], activeTabId: null }
     const nextVs = { ...cur, activeTabId: id }
     set({ _viewerState: { ..._viewerState, [activeId]: nextVs } })
@@ -273,7 +301,7 @@ export const useStore = create<AppState>((set, get) => ({
     const { [id]: _, ...rest } = state.sessions
     const updates: Partial<AppState> = { sessions: rest }
     if (state.activeId === id) {
-      const ids = Object.keys(rest)
+      const ids = Object.keys(rest).filter(id => rest[id].cwd === state.workspaceCwd && (rest[id].host || 'local') === state.workspaceHost)
       updates.activeId = ids.length > 0 ? ids[0] : null
     }
     set(updates)
@@ -320,7 +348,7 @@ export const useStore = create<AppState>((set, get) => ({
         const { [msg.id]: _, ...rest } = state.sessions
         const updates: Partial<AppState> = { sessions: rest }
         if (state.activeId === msg.id) {
-          const ids = Object.keys(rest)
+          const ids = Object.keys(rest).filter(id => rest[id].cwd === state.workspaceCwd && (rest[id].host || 'local') === state.workspaceHost)
           updates.activeId = ids.length > 0 ? ids[0] : null
         }
         set(updates)
@@ -403,7 +431,7 @@ export const useStore = create<AppState>((set, get) => ({
     if (s.status === 'completed') return 'completed'
 
     const completedAt = state._completedAt[id]
-    if (completedAt && Date.now() - completedAt < 10000) return 'completed'
+    if (s.aiState === 'idle' && completedAt && Date.now() - completedAt < 10000) return 'completed'
 
     return s.aiState || 'running'
   },

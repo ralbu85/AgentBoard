@@ -36,6 +36,7 @@ class SessionIdRequest(BaseModel):
     id: str = Field(min_length=1, max_length=_ID_MAX)
 
 class FileWriteRequest(BaseModel):
+    expectedVersion: str | None = Field(default=None, max_length=64)
     path: str = Field(min_length=1, max_length=_PATH_MAX)
     content: str = Field(max_length=_CONTENT_MAX)
 

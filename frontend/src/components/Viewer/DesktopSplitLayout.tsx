@@ -1,12 +1,15 @@
 import { useState, useCallback, useEffect } from 'react'
-import { useStore } from '../../store'
+import { useStore, viewerKey } from '../../store'
 import { TerminalArea } from '../Terminal/TerminalArea'
 import { ViewerPane } from './ViewerPane'
 import { PaneResizer } from './PaneResizer'
 
 export function DesktopSplitLayout() {
   const [leftWidth, setLeftWidth] = useState(55)
-  const hasViewerTabs = useStore(s => (s._viewerState[s.activeId || '']?.tabs || []).length > 0)
+  const hasViewerTabs = useStore(s => (s._viewerState[viewerKey(s)]?.tabs.length || 0) > 0)
+
+  const hasSessions = useStore(s => Object.values(s.sessions).some(session =>
+    JSON.stringify([session.host || 'local', session.cwd || '~']) === viewerKey(s)))
 
   // Refit terminal when viewer appears/disappears
   useEffect(() => {
@@ -26,6 +29,11 @@ export function DesktopSplitLayout() {
     // Only trigger height refit, not width resize — prevents garbled wide content
     window.dispatchEvent(new Event('resize'))
   }, [])
+
+  // Empty workspaces are useful for reading/editing without an agent.
+  if (hasViewerTabs && !hasSessions) {
+    return <div className="split-layout"><div className="pane-viewer" style={{ width: '100%' }}><ViewerPane /></div></div>
+  }
 
   // No viewer tabs → terminal fullscreen
   if (!hasViewerTabs) {

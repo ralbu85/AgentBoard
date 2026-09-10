@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { api } from '../api'
-import { useStore } from '../store'
+import { useStore, viewerKey } from '../store'
 import type { FileEntry } from '../types'
 import { renderMarkdown } from '../markdown'
 import { sanitize } from '../sanitize'
@@ -232,7 +232,8 @@ export function FilePanel({ initialPath, onClose }: Props) {
     setPreview(null)
   }
 
-  const openTab = useStore(s => s.openTab)
+  const ownerKey = useStore(viewerKey)
+  const openTab = (tab: import('../store').ViewerTab) => useStore.getState().openTab(tab, ownerKey)
   const openDiffTab = useStore(s => s.openDiffTab)
   const isDesktop = window.innerWidth > 768
 
@@ -240,10 +241,10 @@ export function FilePanel({ initialPath, onClose }: Props) {
     const name = window.prompt('새 파일 이름')?.trim()
     if (!name) return
     const full = `${initialPath.replace(/\/$/, '')}/${name}`
-    const res = await api.writeFile(full, '')
+    const res = await api.writeFile(full, '', '')
     if (res?.ok === false) return
     bump()
-    openTab({ id: full, name, path: full, content: '', type: 'code', lang: '' })
+    openTab({ id: full, name, path: full, content: '', type: 'code', lang: '', version: res.version })
   }
 
   async function showDiff() {
@@ -262,11 +263,11 @@ export function FilePanel({ initialPath, onClose }: Props) {
       id: full, name, path: full, content, type, lang,
     })
 
-    if (e === 'ipynb' && entry.size < 20_000_000) {
+    if (e === 'ipynb' && entry.size <= 10 * 1024 * 1024) {
       try {
         const res = await api.readFile(full)
         const content = res.content || ''
-        if (isDesktop) { openTab(makeTab(entry.name, content, 'notebook', 'json')); return }
+        if (isDesktop) { openTab({ ...makeTab(entry.name, content, 'notebook', 'json'), version: res.version }); return }
         setPreview({ name: entry.name, content, type: 'notebook', lang: 'json', path: full })
       } catch { /* */ }
     } else if (PDF_EXTS.has(e)) {
@@ -283,7 +284,7 @@ export function FilePanel({ initialPath, onClose }: Props) {
         let content = res.content || ''
         if (e === 'json') try { content = JSON.stringify(JSON.parse(content), null, 2) } catch {}
         const type = TEX_EXTS.has(e) ? 'latex' as const : MD_EXTS.has(e) ? 'markdown' as const : 'code' as const
-        if (isDesktop) { openTab(makeTab(entry.name, content, type, EXT_LANG[e] || '')); return }
+        if (isDesktop) { openTab({ ...makeTab(entry.name, content, type, EXT_LANG[e] || ''), version: res.version }); return }
         setPreview({ name: entry.name, content, type, lang: EXT_LANG[e] || '', path: full })
       } catch { /* */ }
     }
@@ -294,15 +295,30 @@ export function FilePanel({ initialPath, onClose }: Props) {
   const [refresh, setRefresh] = useState(0)
   const bump = useCallback(() => setRefresh((n) => n + 1), [])
 
+  const [transfers, setTransfers] = useState<{ name: string; progress: number; status: string }[]>([])
+  const uploadController = useRef<AbortController | null>(null)
+  useEffect(() => () => uploadController.current?.abort(), [])
+
   async function uploadFiles(files: FileList | File[], targetDir?: string) {
+    if (uploadController.current) return
     const arr = Array.from(files)
-    if (arr.length === 0) return
+    if (!arr.length) return
+    const controller = new AbortController()
+    uploadController.current = controller
     setUploading(arr.length)
+    setTransfers(arr.map(f => ({ name: f.name, progress: 0, status: '대기' })))
+    const update = (index: number, patch: Partial<{ progress: number; status: string }>) =>
+      setTransfers(rows => rows.map((row, i) => i === index ? { ...row, ...patch } : row))
     try {
-      await api.uploadMany(targetDir || path, arr)
-      loadDir(path)
-      bump()  // refresh the tree too
+      for (let i = 0; i < arr.length; i++) {
+        if (controller.signal.aborted) { update(i, { status: '취소됨' }); continue }
+        update(i, { status: '전송 중' })
+        const result = await api.upload(targetDir || initialPath, arr[i], controller.signal, progress => update(i, { progress }))
+        update(i, { status: result.ok ? '완료' : result.error || '실패', ...(result.ok ? { progress: 100 } : {}) })
+      }
+      bump()
     } finally {
+      uploadController.current = null
       setUploading(0)
     }
   }
@@ -419,6 +435,7 @@ export function FilePanel({ initialPath, onClose }: Props) {
     >
       <div className="fp-header">
         <div className="fp-folder" title={path}>📁 {folder}{uploading > 0 ? ` · 업로드 중 ${uploading}` : ''}</div>
+        <button className="fv-btn" onClick={bump} title="파일 목록 새로고침">↻</button>
         <button className="fv-btn" onClick={showDiff} title="변경사항 (git diff)">⇄</button>
         <button className="fv-btn" onClick={newFile} title="새 파일">
           <svg width="14" height="14" viewBox="0 0 20 20" fill="none"><path d="M5 2H12L16 6V18H5C4 18 3 17 3 16V4C3 3 4 2 5 2Z" stroke="currentColor" strokeWidth="1.5"/><path d="M10 9V14M7.5 11.5H12.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
@@ -426,7 +443,7 @@ export function FilePanel({ initialPath, onClose }: Props) {
         <button className="fv-btn file-newfolder-btn" onClick={() => doMkdir(initialPath, bump)} title="새 폴더">
           <svg width="14" height="14" viewBox="0 0 20 20" fill="none"><path d="M2 5C2 4 3 3 4 3H8L10 5H16C17 5 18 6 18 7V15C18 16 17 17 16 17H4C3 17 2 16 2 15V5Z" stroke="currentColor" strokeWidth="1.5"/><path d="M10 9V13M8 11H12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
         </button>
-        <button className="fv-btn file-upload-btn" onClick={() => fileInputRef.current?.click()} title="업로드">
+        <button className="fv-btn file-upload-btn" disabled={uploading > 0} onClick={() => fileInputRef.current?.click()} title="업로드">
           <svg width="14" height="14" viewBox="0 0 20 20" fill="none"><path d="M10 14V4M10 4L6 8M10 4L14 8M4 16H16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
         </button>
         <button className="fv-btn" onClick={onClose} title="Close">
@@ -434,6 +451,11 @@ export function FilePanel({ initialPath, onClose }: Props) {
         </button>
         <input ref={fileInputRef} type="file" multiple style={{ display: 'none' }} onChange={handleUpload} />
       </div>
+      {transfers.length > 0 && <div className="transfer-summary" aria-live="polite">
+        {uploading > 0 ? <button className="btn btn-xs" onClick={() => uploadController.current?.abort()}>전송 취소</button>
+          : <button className="btn btn-xs" onClick={() => setTransfers([])}>전송 내역 닫기</button>}
+        {transfers.map((t, i) => <div key={i} title={t.name}>{t.name} · {t.status}{t.status === '전송 중' ? ` ${t.progress}%` : ''}</div>)}
+      </div>}
       {dragOver && <div className="fp-drop-overlay">파일을 놓아 업로드</div>}
       <div className="file-list">
         <TreeDir dirPath={initialPath} name={folder} depth={0} refresh={refresh} bump={bump} onFileClick={(fullPath, entry) => {
@@ -442,10 +464,10 @@ export function FilePanel({ initialPath, onClose }: Props) {
           const makeTab = (name: string, content: string, type: PreviewType, lang: string) => ({
             id: fullPath, name, path: fullPath, content, type, lang,
           })
-          if (e === 'ipynb' && entry.size < 20_000_000) {
+          if (e === 'ipynb' && entry.size <= 10 * 1024 * 1024) {
             api.readFile(fullPath).then(res => {
               const content = res.content || ''
-              if (isDesktop) { openTab(makeTab(entry.name, content, 'notebook', 'json')); return }
+              if (isDesktop) { openTab({ ...makeTab(entry.name, content, 'notebook', 'json'), version: res.version }); return }
               setPreview({ name: entry.name, content, type: 'notebook', lang: 'json', path: fullPath })
             }).catch(() => {})
           } else if (PDF_EXTS.has(e)) {
@@ -461,7 +483,7 @@ export function FilePanel({ initialPath, onClose }: Props) {
               let content = res.content || ''
               if (e === 'json') try { content = JSON.stringify(JSON.parse(content), null, 2) } catch {}
               const type = TEX_EXTS.has(e) ? 'latex' as const : MD_EXTS.has(e) ? 'markdown' as const : 'code' as const
-              if (isDesktop) { openTab(makeTab(entry.name, content, type, EXT_LANG[e] || '')); return }
+              if (isDesktop) { openTab({ ...makeTab(entry.name, content, type, EXT_LANG[e] || ''), version: res.version }); return }
               setPreview({ name: entry.name, content, type, lang: EXT_LANG[e] || '', path: fullPath })
             }).catch(() => {})
           }

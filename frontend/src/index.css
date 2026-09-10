@@ -1517,3 +1517,25 @@ tr.ln-memo:hover .fv-line-content::after { opacity: 1; }
   .pane-resizer { display: none; }
   .pane-terminal { width: 100% !important; }
 }
+
+/* Workspace navigation and explorer share the left column. */
+.workspace-navigation { flex: 1; min-height: 100px; overflow: hidden; }
+.workspace-navigation.with-explorer { flex: 0 0 32%; resize: vertical; min-height: 100px; max-height: 65%; }
+.sidebar-explorer { flex: 1; min-height: 0; display: flex; flex-direction: column; border-top: 1px solid var(--border); }
+.sidebar-explorer .file-panel { flex: 1; height: 100%; min-height: 0; border: 0; }
+.sidebar-explorer .fp-header { flex-wrap: wrap; }
+.sidebar-explorer .fp-folder { flex: 1 0 100%; overflow: hidden; text-overflow: ellipsis; }
+.workspace-remove { margin-left: auto; border: 0; background: transparent; color: var(--text-muted); cursor: pointer; }
+.workspace-remove:hover { color: var(--text-primary); }
+.transfer-summary { padding: 6px 10px; font-size: 12px; color: var(--text-secondary); border-bottom: 1px solid var(--border); }
+
+.scan-popup { max-width: calc(100vw - 24px); width: 720px; max-height: 75vh; overflow-y: auto; }
+.managed-session-list .scan-item { flex-wrap: wrap; }
+.managed-session-list .scan-name { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.transfer-summary { max-height: 150px; overflow-y: auto; overflow-wrap: anywhere; flex-shrink: 0; }
+
+.header-right .btn { white-space: nowrap; }
+@media (max-width: 768px) {
+  .header-right { gap: 4px; }
+  .header-right .btn { padding-left: 8px; padding-right: 8px; }
+}

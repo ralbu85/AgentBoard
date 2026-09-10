@@ -8,15 +8,16 @@ import { FilePanel } from '../FilePanel'
 
 // The workspace: the selected folder's sessions (tabs → single/grid terminals)
 // plus that folder's files. The left sidebar only picks the folder.
-export function TerminalArea() {
+export function TerminalArea({ mobile = false }: { mobile?: boolean }) {
   const viewMode = useStore((s) => s.viewMode)
   const setViewMode = useStore((s) => s.setViewMode)
   const activeId = useStore((s) => s.activeId)
   const workspaceCwd = useStore((s) => s.workspaceCwd)
   const sessions = useStore((s) => s.sessions)
   const activeCwd = useStore((s) => (activeId ? s.sessions[activeId]?.cwd : undefined))
+  const host = useStore(s => s.workspaceHost)
   const wsCwd = workspaceCwd || activeCwd || '~'
-  const hasSessions = Object.values(sessions).some((s) => (s.cwd || '~') === wsCwd)
+  const hasSessions = Object.values(sessions).some((s) => (s.cwd || '~') === wsCwd && (s.host || 'local') === host)
 
   const [showFiles, setShowFiles] = useState(false)
   const [fileHeight, setFileHeight] = useState(260)
@@ -55,9 +56,9 @@ export function TerminalArea() {
             <button className={viewMode === 'single' ? 'active' : ''} onClick={() => setViewMode('single')} title="단일 보기">▢</button>
             <button className={viewMode === 'grid' ? 'active' : ''} onClick={() => setViewMode('grid')} title="격자 보기">▦</button>
           </div>
-          <button className={`wb-files-btn ${showFiles ? 'active' : ''}`} onClick={() => setShowFiles((v) => !v)} title="파일 패널">
+          {mobile && <button className={`wb-files-btn ${showFiles ? 'active' : ''}`} onClick={() => setShowFiles((v) => !v)} title="파일 패널">
             📄 파일
-          </button>
+          </button>}
         </div>
       </div>
 
@@ -76,10 +77,10 @@ export function TerminalArea() {
       {/* Input stays available in both views — it targets the active session. */}
       {hasSessions && activeId && <InputCard sessionId={activeId} />}
 
-      {showFiles && (
+      {mobile && showFiles && (
         <div className="workspace-files" style={{ height: fileHeight }}>
           <div className="workspace-files-resizer" onMouseDown={onResizeStart} />
-          <FilePanel key={wsCwd} initialPath={wsCwd} onClose={() => setShowFiles(false)} />
+          {host !== 'local' ? <p className="folder-empty">원격 파일 탐색은 아직 지원하지 않습니다.</p> : <FilePanel key={wsCwd} initialPath={wsCwd} onClose={() => setShowFiles(false)} />}
         </div>
       )}
     </div>

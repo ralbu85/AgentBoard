@@ -75,18 +75,19 @@ export function Header({ onToggleSidebar }: Props) {
     // Default to the current workspace folder so the user isn't asked to pick one.
     const st = useStore.getState()
     const cwd = st.workspaceCwd || (st.activeId ? st.sessions[st.activeId]?.cwd : undefined) || '~'
-    const host = st.activeId ? (st.sessions[st.activeId]?.host || 'local') : 'local'
+    const host = st.workspaceHost
     openSpawn({ cwd, host })
   }
 
   const handleScan = async () => {
     const list = await api.scan()
-    setUnmanaged(list)
+    setUnmanaged(Array.isArray(list) ? list : [])
     setShowScan(true)
   }
 
   const handleAttach = async (sessionName: string, cwd: string) => {
-    await api.attach(sessionName, cwd)
+    const result = await api.attach(sessionName, cwd)
+    if (result.ok === false) return
     setUnmanaged(prev => prev.filter(s => s.sessionName !== sessionName))
     if (unmanaged.length <= 1) setShowScan(false)
   }
@@ -121,7 +122,7 @@ export function Header({ onToggleSidebar }: Props) {
             {notif ? '🔔' : '🔕'}
           </button>
         )}
-        <button className="btn" onClick={handleScan} title="Detect tmux sessions">Scan</button>
+        <button className="btn" onClick={handleScan} title="전체 세션 관리 및 외부 tmux 세션 찾기">세션 관리</button>
         <button className="btn btn-primary" onClick={handleSpawn}>+ New</button>
       </div>
 
@@ -132,9 +133,27 @@ export function Header({ onToggleSidebar }: Props) {
       {showScan && (
         <div className="scan-popup">
           <div className="scan-header">
-            <span>Unmanaged tmux sessions</span>
+            <span>세션 관리 · {Object.keys(sessions).length}개</span>
             <button className="btn btn-xs" onClick={() => setShowScan(false)}>&times;</button>
           </div>
+          <div className="managed-session-list">
+            {Object.values(sessions).map(s => <div key={s.id} className="scan-item">
+              <span className="scan-name">#{s.id} {s.cmd}</span>
+              <span className="scan-cwd" title={s.cwd}>{s.hostLabel || s.host || 'local'} · {s.cwd}</span>
+              <span>{effectiveState(s.id)}</span>
+              <button className="btn btn-xs" onClick={() => { useStore.getState().setActive(s.id); setShowScan(false) }}>열기</button>
+              <button className="btn btn-xs" onClick={async () => {
+                if (s.status === 'running') {
+                  if (!window.confirm(`#${s.id} 프로세스를 종료할까요? 실행 중인 작업이 중단됩니다.`)) return
+                  await api.kill(s.id)
+                } else {
+                  const r = await api.remove(s.id)
+                  if (r.ok !== false) useStore.getState().removeSession(s.id)
+                }
+              }}>{s.status === 'running' ? '종료' : '제거'}</button>
+            </div>)}
+          </div>
+          <div className="scan-header">관리되지 않은 로컬 tmux 세션</div>
           {unmanaged.length === 0 ? (
             <div className="scan-empty">No unmanaged sessions found</div>
           ) : (

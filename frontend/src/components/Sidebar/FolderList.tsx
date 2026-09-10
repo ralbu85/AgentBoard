@@ -27,6 +27,8 @@ export function FolderList({ onSelect }: Props) {
   const sessions = useStore((s) => s.sessions)
   const activeId = useStore((s) => s.activeId)
   const workspaceCwd = useStore((s) => s.workspaceCwd)
+  const workspaceHost = useStore(s => s.workspaceHost)
+  const removeWorkspaceFolder = useStore(s => s.removeWorkspaceFolder)
   const effectiveState = useStore((s) => s.effectiveState)
   const setActive = useStore((s) => s.setActive)
   const setWorkspace = useStore((s) => s.setWorkspace)
@@ -37,11 +39,13 @@ export function FolderList({ onSelect }: Props) {
   // Workspaces = folders with sessions ∪ explicitly-registered folders (so a
   // just-created, still-empty workspace still shows).
   const folders = new Map<string, string[]>()
-  for (const f of workspaceFolders) if (!folders.has(f)) folders.set(f, [])
+  const keyOf = (cwd: string, host = 'local') => JSON.stringify([host, cwd])
+  for (const f of workspaceFolders) folders.set(keyOf(f), [])
   for (const id of Object.keys(sessions)) {
     const cwd = sessions[id].cwd || '~'
-    if (!folders.has(cwd)) folders.set(cwd, [])
-    folders.get(cwd)!.push(id)
+    const key = keyOf(cwd, sessions[id].host || 'local')
+    if (!folders.has(key)) folders.set(key, [])
+    folders.get(key)!.push(id)
   }
 
   const q = filter.trim().toLowerCase()
@@ -51,9 +55,10 @@ export function FolderList({ onSelect }: Props) {
 
   const effWorkspace = workspaceCwd || (activeId ? sessions[activeId]?.cwd : undefined)
 
-  const selectFolder = (cwd: string) => {
-    setWorkspace(cwd)
-    const ids = folders.get(cwd) || []
+  const selectFolder = (key: string) => {
+    const [host, cwd] = JSON.parse(key)
+    setWorkspace(cwd, host)
+    const ids = folders.get(key) || []
     if (ids.length === 0) {
       setActive(null)  // empty workspace — main shows the "+ 세션 추가" prompt
     } else if (!ids.includes(activeId || '')) {
@@ -75,10 +80,11 @@ export function FolderList({ onSelect }: Props) {
             value={filter} onChange={(e) => setFilter(e.target.value)} />
         </div>
       )}
-      {keys.map((cwd) => {
-        const ids = folders.get(cwd)!
+      {keys.map((key) => {
+        const [host, cwd] = JSON.parse(key) as [string, string]
+        const ids = folders.get(key)!
         const name = cwd === '~' ? '~' : (cwd.split('/').filter(Boolean).pop() || cwd)
-        const isActive = effWorkspace === cwd
+        const isActive = effWorkspace === cwd && workspaceHost === host
         const counts = { working: 0, waiting: 0, idle: 0 }
         for (const id of ids) {
           const b = bucketOf(effectiveState(id))
@@ -87,8 +93,8 @@ export function FolderList({ onSelect }: Props) {
         const s0 = ids.length ? sessions[ids[0]] : null
         const remote = s0 && s0.host && s0.host !== 'local' ? (s0.hostLabel || s0.host) : ''
         return (
-          <div key={cwd} className={`folder-item ${isActive ? 'active' : ''}`}
-            title={cwd} onClick={() => selectFolder(cwd)}>
+          <div key={key} className={`folder-item ${isActive ? 'active' : ''}`}
+            title={`${host}: ${cwd}`} onClick={() => selectFolder(key)}>
             <svg className="folder-ico" width="16" height="16" viewBox="0 0 20 20" fill="none">
               <path d="M2 5C2 4 3 3 4 3H8L10 5H16C17 5 18 6 18 7V15C18 16 17 17 16 17H4C3 17 2 16 2 15V5Z"
                 fill={isActive ? 'var(--accent)' : 'none'} opacity={isActive ? '0.25' : '1'}
@@ -96,6 +102,10 @@ export function FolderList({ onSelect }: Props) {
             </svg>
             <span className="folder-name">{name}</span>
             {remote && <span className="folder-host">{remote}</span>}
+            {host === 'local' && ids.length === 0 && <button className="workspace-remove" title="워크스페이스 목록에서 제거 (폴더는 유지)" onClick={e => {
+              e.stopPropagation()
+              removeWorkspaceFolder(cwd)
+            }}>×</button>}
             <span className="folder-states">
               {STATE_BUCKETS.map(({ key, label }) => counts[key] > 0 && (
                 <span key={key} className={`fstate fs-${key} ${key === 'waiting' ? 'attn' : ''}`}

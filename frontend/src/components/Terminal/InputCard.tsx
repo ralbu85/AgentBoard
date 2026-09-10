@@ -1,4 +1,5 @@
 import { useRef, useState, useEffect, type KeyboardEvent, type DragEvent } from 'react'
+import { useToasts } from '../../toasts'
 import { api } from '../../api'
 import { useStore } from '../../store'
 import { FilePanel } from '../FilePanel'
@@ -28,6 +29,7 @@ export function InputCard({ sessionId }: Props) {
   const [showFiles, setShowFiles] = useState(false)
   const [dragOver, setDragOver] = useState(false)
   const [uploading, setUploading] = useState(0)
+  const host = useStore(s => s.sessions[sessionId]?.host || 'local')
   const cwd = useStore((s) => s.sessions[sessionId]?.cwd || '~')
 
   // Close file panel on session switch
@@ -49,6 +51,7 @@ export function InputCard({ sessionId }: Props) {
     e.preventDefault()
     e.stopPropagation()
     setDragOver(false)
+    if (host !== 'local') { useToasts.getState().push('원격 파일 업로드는 아직 지원하지 않습니다.'); return }
     const files = e.dataTransfer.files
     if (!files || files.length === 0) return
     setUploading(files.length)
@@ -102,7 +105,7 @@ export function InputCard({ sessionId }: Props) {
   }
 
   // Mobile: full tab switch to file panel
-  if (isMobile() && showFiles) {
+  if (isMobile() && showFiles && host === 'local') {
     return <FilePanel initialPath={cwd} onClose={() => setShowFiles(false)} />
   }
 
@@ -117,7 +120,7 @@ export function InputCard({ sessionId }: Props) {
       {uploading > 0 && <div className="input-upload-status">업로드 중 {uploading}…</div>}
       <div className="input-row">
         {isMobile() && (
-          <button className="btn file-browse-btn" data-action="browse" onClick={() => setShowFiles(true)} title="Files">
+          <button className="btn file-browse-btn" data-action="browse" disabled={host !== 'local'} onClick={() => setShowFiles(true)} title={host === 'local' ? 'Files' : '원격 파일 탐색은 아직 지원하지 않습니다.'}>
             <svg width="18" height="18" viewBox="0 0 20 20" fill="none"><path d="M2 5C2 4 3 3 4 3H8L10 5H16C17 5 18 6 18 7V15C18 16 17 17 16 17H4C3 17 2 16 2 15V5Z" stroke="currentColor" strokeWidth="1.5"/></svg>
           </button>
         )}

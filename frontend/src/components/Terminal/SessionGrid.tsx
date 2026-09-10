@@ -50,12 +50,13 @@ export function SessionGrid() {
   const sessions = useStore((s) => s.sessions)
   const workspaceCwd = useStore((s) => s.workspaceCwd)
   const activeId = useStore((s) => s.activeId)
+  const host = useStore(s => s.workspaceHost)
   const activeCwd = activeId ? sessions[activeId]?.cwd : undefined
   const wsCwd = workspaceCwd || activeCwd || '~'
 
   const ids = Object.keys(sessions).filter((id) => {
     const s = sessions[id]
-    return s.cwd === wsCwd && s.status !== 'stopped' && s.status !== 'completed'
+    return (s.host || 'local') === host && s.cwd === wsCwd && s.status !== 'stopped' && s.status !== 'completed'
   })
   const key = ids.join(',')
 

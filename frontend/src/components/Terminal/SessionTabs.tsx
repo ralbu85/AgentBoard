@@ -25,11 +25,12 @@ export function SessionTabs({ wsCwd }: { wsCwd: string }) {
   const profiles = useStore((s) => s.profiles)
   const [menuOpen, setMenuOpen] = useState(false)
 
-  const ids = Object.keys(sessions).filter((id) => (sessions[id].cwd || '~') === wsCwd)
-  const host = ids.length ? (sessions[ids[0]].host || 'local') : 'local'
+  const workspaceHost = useStore(s => s.workspaceHost)
+  const ids = Object.keys(sessions).filter((id) => (sessions[id].cwd || '~') === wsCwd && (sessions[id].host || 'local') === workspaceHost)
+  const host = workspaceHost
   const defaultProfile = profiles.find((p) => p.default) || profiles[0]
 
-  const select = (id: string) => { setActive(id); setWorkspace(sessions[id]?.cwd || wsCwd); notifyActive(id) }
+  const select = (id: string) => { setActive(id); setWorkspace(sessions[id]?.cwd || wsCwd, sessions[id]?.host || 'local'); notifyActive(id) }
   const launch = (command: string) => { setMenuOpen(false); spawnAndFocus(wsCwd, host, command) }
   const addDefault = () => launch(defaultProfile?.command || 'claude')
 
@@ -37,8 +38,9 @@ export function SessionTabs({ wsCwd }: { wsCwd: string }) {
     e.stopPropagation()
     const s = sessions[id]
     if (s.status === 'stopped' || s.status === 'completed') {
-      await api.remove(id); removeSession(id)
+      const res = await api.remove(id); if (res.ok !== false) removeSession(id)
     } else {
+      if (!window.confirm('이 세션의 실행 중인 프로세스를 종료할까요?\n작업이 중단됩니다.')) return
       await api.kill(id)
     }
   }
@@ -56,7 +58,7 @@ export function SessionTabs({ wsCwd }: { wsCwd: string }) {
               title={hostTag ? `${title} · ${hostTag}` : title} onClick={() => select(id)}>
               <span className={`session-dot dot-${state}`} style={{ background: STATE_COLORS[state] || '#6e7681' }} />
               <span className="session-tab-title">{title}</span>
-              <button className="session-tab-close" onClick={(e) => close(e, id)} title="닫기">✕</button>
+              <button className="session-tab-close" onClick={(e) => close(e, id)} title={s.status === 'running' ? '프로세스 종료' : '목록에서 제거'}>{s.status === 'running' ? '■' : '✕'}</button>
             </div>
           )
         })}

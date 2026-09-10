@@ -22,6 +22,7 @@ export function WorkspaceModal() {
     setLoading(true)
     try {
       const r = await api.browse(p)
+      if (r.ok === false || r.isDir === false) return
       setPath(r.path || p)
       setDirs(Array.isArray(r.dirs) ? r.dirs : [])
     } catch { /* */ }
@@ -37,11 +38,15 @@ export function WorkspaceModal() {
     browse(path)
   }
 
-  const openFolder = () => {
-    const cwd = path
+  const openFolder = async () => {
+    setLoading(true)
+    let checked
+    try { checked = await api.browse(path) } catch { return } finally { setLoading(false) }
+    if (checked.ok === false || checked.isDir === false) return
+    const cwd = checked.path
     addWorkspaceFolder(cwd)
     setWorkspace(cwd)
-    const ids = Object.keys(sessions).filter((id) => (sessions[id].cwd || '~') === cwd)
+    const ids = Object.keys(sessions).filter((id) => (sessions[id].cwd || '~') === cwd && (sessions[id].host || 'local') === 'local')
     setActive(ids[0] || null)  // empty workspace → clear, user adds a session
     close()
   }
@@ -75,7 +80,7 @@ export function WorkspaceModal() {
         </div>
         <div className="spawn-footer">
           <button className="btn" onClick={close}>취소</button>
-          <button className="btn btn-primary" onClick={openFolder}>이 폴더 열기</button>
+          <button className="btn btn-primary" disabled={loading} onClick={openFolder}>이 폴더 열기</button>
         </div>
       </div>
     </div>

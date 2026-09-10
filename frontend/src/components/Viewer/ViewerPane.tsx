@@ -1,10 +1,13 @@
 import { useState, useRef, useCallback, useEffect, useMemo, Fragment } from 'react'
-import { useStore, type ViewerTab } from '../../store'
+import { useStore, viewerKey, type ViewerTab } from '../../store'
+import { useToasts } from '../../toasts'
 import { api } from '../../api'
 import { FileContent, type Memo, type SelectionInfo } from './FileContent'
 import { CodeEditor } from './CodeEditor'
 import { renderMarkdown, findTaskLines, toggleTaskLine } from '../../markdown'
 import { NotebookView } from './NotebookView'
+
+const EMPTY_TABS: ViewerTab[] = []
 
 type SplitDir = 'horizontal' | 'vertical'
 type DropZone = 'left' | 'right' | 'top' | 'bottom' | 'center'
@@ -98,23 +101,23 @@ function pruneTree(node: TreeNode, valid: Set<string>): TreeNode | null {
 
 // ── Component ──
 export function ViewerPane() {
-  const tabs = useStore(s => s._viewerState[s.activeId || '']?.tabs || [])
-  const activeTabId = useStore(s => s._viewerState[s.activeId || '']?.activeTabId || null)
+  const tabs = useStore(s => s._viewerState[viewerKey(s)]?.tabs || EMPTY_TABS)
+  const activeTabId = useStore(s => s._viewerState[viewerKey(s)]?.activeTabId || null)
   const setActiveTab = useStore(s => s.setActiveTab)
   const closeTab = useStore(s => s.closeTab)
-  const sessionId = useStore(s => s.activeId)
+  const workspaceKey = useStore(viewerKey)
 
   const [tree, setTree] = useState<TreeNode | null>(null)
   const dragRef = useRef<{ tabId: string; paneId: string } | null>(null)
-  const prevSessionRef = useRef(sessionId)
+  const prevWorkspaceRef = useRef(workspaceKey)
 
-  // Reset tree on session change
+  // Reset split panes on workspace change
   useEffect(() => {
-    if (sessionId !== prevSessionRef.current) {
+    if (workspaceKey !== prevWorkspaceRef.current) {
       setTree(null)
-      prevSessionRef.current = sessionId
+      prevWorkspaceRef.current = workspaceKey
     }
-  }, [sessionId])
+  }, [workspaceKey])
 
   // Sync tabs → tree
   useEffect(() => {
@@ -246,16 +249,6 @@ function LeafPane({ node, tabs, onDragStart, onDrop, onClose, onSelect }: {
     setMdEditMode(false)
   }, [activeTab?.id])
 
-  // Warn before leaving the page with unsaved edits.
-  useEffect(() => {
-    const anyDirty = tabs.some(t => t.dirty)
-    if (!anyDirty) return
-    const h = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = '' }
-    window.addEventListener('beforeunload', h)
-    return () => window.removeEventListener('beforeunload', h)
-  }, [tabs])
-
-
   // ── Right-click on selected text → context menu (used by CodeEditor) ──
   const handleCtxMenu = useCallback((info: SelectionInfo) => {
     pendingSelRef.current = { startLine: info.startLine, startCol: info.startCol, endLine: info.endLine, endCol: info.endCol, text: info.text }
@@ -274,22 +267,23 @@ function LeafPane({ node, tabs, onDragStart, onDrop, onClose, onSelect }: {
     updateTab(activeTab.id, value)
   }, [activeTab?.id])
 
+  const ownerKey = useStore(viewerKey)
   const saveFile = useCallback(async () => {
     if (!activeTab) return
     setSaving(true)
-    const res = await api.writeFile(activeTab.path, activeTab.content)
-    if (res?.ok !== false) markTabSaved(activeTab.id)
+    const res = await api.writeFile(activeTab.path, activeTab.content, activeTab.version)
+    if (res?.ok === true) markTabSaved(activeTab.id, activeTab.content, res.version, ownerKey)
     setSaving(false)
-  }, [activeTab])
+  }, [activeTab, ownerKey])
 
   // Checkbox toggled in the rendered markdown view → update the buffer and
   // persist immediately (the whole buffer, so any unsaved edits go with it).
   const saveMdEdit = useCallback(async (newContent: string) => {
     if (!activeTab) return
     updateTab(activeTab.id, newContent)
-    const res = await api.writeFile(activeTab.path, newContent)
-    if (res?.ok !== false) markTabSaved(activeTab.id)
-  }, [activeTab])
+    const res = await api.writeFile(activeTab.path, newContent, activeTab.version)
+    if (res?.ok === true) markTabSaved(activeTab.id, newContent, res.version, ownerKey)
+  }, [activeTab, ownerKey])
 
   // ── Memo CRUD ──
   const handleSaveMemo = useCallback((newMemo: Memo) => {
@@ -326,6 +320,7 @@ function LeafPane({ node, tabs, onDragStart, onDrop, onClose, onSelect }: {
 
   const refreshTab = async () => {
     if (!activeTab) return
+    if (activeTab.dirty && !window.confirm('저장하지 않은 변경을 버리고 파일을 다시 불러올까요?')) return
     if (activeTab.type === 'pdf' || activeTab.type === 'image') {
       updateTab(activeTab.id, activeTab.content.split('&_t=')[0] + '&_t=' + Date.now())
     } else {
@@ -333,8 +328,13 @@ function LeafPane({ node, tabs, onDragStart, onDrop, onClose, onSelect }: {
         const res = await api.readFile(activeTab.path)
         let content = res.content || ''
         if (activeTab.path.endsWith('.json')) try { content = JSON.stringify(JSON.parse(content), null, 2) } catch {}
-        updateTab(activeTab.id, content)
-        markTabSaved(activeTab.id)  // reloaded from disk → clean
+        const current = useStore.getState()._viewerState[ownerKey]?.tabs.find(t => t.id === activeTab.id)
+        if (!current || current.content !== activeTab.content) {
+          useToasts.getState().push('다시 불러오는 동안 편집 내용이 변경되어 새로고침을 취소했습니다.')
+          return
+        }
+        updateTab(activeTab.id, content, ownerKey)
+        markTabSaved(activeTab.id, content, res.version, ownerKey)  // reloaded from disk → clean
       } catch {}
     }
   }

@@ -5,6 +5,7 @@ import mimetypes
 import os
 import shutil
 import time
+import tempfile
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, Request, Query
@@ -46,9 +47,9 @@ async def browse(path: str = Query("~"), _=Depends(verify)):
     if p is None:
         return _forbidden()
     if not p.is_dir():
-        return {"path": str(p), "dirs": []}
+        return JSONResponse({"ok": False, "error": "폴더가 존재하지 않습니다."}, 404)
     dirs = sorted([d.name for d in p.iterdir() if d.is_dir() and not d.name.startswith(".")])
-    return {"path": str(p), "dirs": dirs}
+    return {"path": str(p), "dirs": dirs, "isDir": True}
 
 
 @router.get("/files")
@@ -85,10 +86,11 @@ async def read_file(path: str = Query(...), _=Depends(verify)):
     if p.stat().st_size > 10 * 1024 * 1024:
         return JSONResponse({"error": "File too large"}, 413)
     try:
-        content = p.read_text(errors="replace")
+        raw = p.read_bytes()
+        content = raw.decode("utf-8", errors="replace")
     except Exception as e:
         return JSONResponse({"error": str(e)}, 500)
-    return {"path": str(p), "content": content, "size": p.stat().st_size}
+    return {"path": str(p), "content": content, "size": len(raw), "version": hashlib.sha256(raw).hexdigest()}
 
 
 @router.get("/file-raw")
@@ -152,12 +154,20 @@ async def write_file(req: FileWriteRequest, _=Depends(verify)):
     p = _safe_path(req.path)
     if p is None:
         return _forbidden()
+    tmp = None
     try:
+        if req.expectedVersion is not None:
+            current = hashlib.sha256(p.read_bytes()).hexdigest() if p.is_file() else ''
+            if current != req.expectedVersion:
+                return JSONResponse({"ok": False, "error": "파일이 외부에서 변경되었습니다. 변경 내용을 보관한 뒤 새로고침하여 비교해 주세요."}, 409)
         p.parent.mkdir(parents=True, exist_ok=True)
         # Atomic write: a crash/concurrent write mid-way would otherwise leave a
         # truncated/corrupt file. Write to a sibling temp, then os.replace().
-        tmp = p.with_name(f".{p.name}.tmp-{os.getpid()}")
-        tmp.write_text(req.content)
+        with tempfile.NamedTemporaryFile(dir=p.parent, prefix=f".{p.name}.tmp-", delete=False) as f:
+            tmp = Path(f.name)
+            f.write(req.content.encode('utf-8'))
+        if p.exists():
+            tmp.chmod(p.stat().st_mode & 0o777)
         os.replace(tmp, p)
     except Exception as e:
         try:
@@ -165,7 +175,7 @@ async def write_file(req: FileWriteRequest, _=Depends(verify)):
         except Exception:
             pass
         return {"ok": False, "error": str(e)}
-    return {"ok": True, "path": str(p)}
+    return {"ok": True, "path": str(p), "version": hashlib.sha256(req.content.encode("utf-8")).hexdigest()}
 
 
 @router.post("/rename")
@@ -222,13 +232,31 @@ async def upload(
     target = _safe_path(str(target_dir / name))
     if target is None:
         return _forbidden()
+    if not name or Path(name).name != name or name in ('.', '..'):
+        return JSONResponse({"ok": False, "error": "Invalid filename"}, 400)
+    tmp = None
     try:
-        body = await request.body()
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_bytes(body)
+        # Stream into a temporary file, keeping partial uploads out of the tree.
+        with tempfile.NamedTemporaryFile(dir=target.parent, prefix='.upload-', delete=False) as f:
+            tmp = Path(f.name)
+            size = 0
+            async for chunk in request.stream():
+                size += len(chunk)
+                if size > 100 * 1024 * 1024:
+                    return JSONResponse({"ok": False, "error": "파일당 최대 100 MiB까지 업로드할 수 있습니다."}, 413)
+                f.write(chunk)
+        # Atomic creation without silently replacing existing user files.
+        os.link(tmp, target)
+    except FileExistsError:
+        return JSONResponse({"ok": False, "error": "같은 이름의 파일이 있습니다. 이름을 변경한 뒤 다시 업로드하세요."}, 409)
     except Exception as e:
         return {"ok": False, "error": str(e)}
+    finally:
+        if tmp is not None:
+            tmp.unlink(missing_ok=True)
     return {"ok": True, "path": str(target), "name": name}
+
 
 
 # ── Notes / Annotations ──

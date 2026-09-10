@@ -1,0 +1,22 @@
+# Workspace foundation — 2026-09-10
+
+Baseline checkpoint: `6a83e81`.
+
+Implemented:
+- Desktop explorer in the left sidebar; independent file tabs for each machine/path, including workspaces without sessions. Existing local session tab metadata is migrated when opening that workspace.
+- Workspace selection separates identical paths on different machines. Remote filesystem access is explicitly unavailable until a host-aware file transport exists.
+- Folder validation and removal of empty registered workspace entries (does not delete directories).
+- Explicit session termination with confirmation and a global session manager.
+- Failed writes remain unsaved; asynchronous saves update their original workspace and preserve newer edits. File hash preconditions detect external edits already present at save time. These checks do not lock out independent filesystem writers.
+- Upload progress, per-file results, cancellation, streamed temporary files, 100 MiB limit, and collision protection. Changing workspace or closing the explorer cancels its active upload.
+- Background agent detection now tracks stable output. Completion flashes no longer mask a new working/waiting state.
+- Global unsaved-change warning and manual explorer refresh.
+
+Still planned:
+- Server-persisted workspace metadata, names, favorites and cross-device layouts.
+- Remote file transport, folder/ZIP transfers, retries and resumable uploads.
+- Process resource/activity history and batch session actions.
+- Browser/development-server tabs and Jupyter kernel execution.
+- Real Codex output fixtures for the remaining heuristic status edge cases.
+
+Validation: frontend unit tests, backend unit tests, TypeScript/build, and isolated Chromium desktop/mobile checks with mocked sessions/files, including versioned saves, conflict handling and upload results (no live agent input or termination).
