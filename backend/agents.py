@@ -91,6 +91,7 @@ class AgentConn:
                 s["createdAt"] = msg.get("createdAt", s["createdAt"])
                 s["memKB"] = msg.get("memKB", s["memKB"])
                 s["altScreen"] = msg.get("altScreen", s.get("altScreen", False))
+                s["autoTitle"] = msg.get("autoTitle", s.get("autoTitle", ""))
 
 
 class AgentRegistry:

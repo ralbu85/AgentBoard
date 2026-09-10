@@ -1,10 +1,11 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { api } from './api'
 import { useStore, viewerKey, workspaceEntries, workspaceId, completionKey, type ViewerTab } from './store'
 
 const tab: ViewerTab = { id: '/project/a.py', path: '/project/a.py', name: 'a.py', type: 'code', lang: 'python', content: 'original', version: 'v1' }
 beforeEach(() => {
   localStorage.clear()
-  useStore.setState({ sessions: {}, activeId: null, workspaceCwd: '/project', workspaceHost: 'local', _viewerState: {}, _completedAt: {}, workspaceFolders: [], workspaceOrder: [], hiddenWorkspaces: [], unreadCompletions: [] })
+  useStore.setState({ sessions: {}, activeId: null, workspaceCwd: '/project', workspaceHost: 'local', _viewerState: {}, _restoredWorkspaces: {}, _completedAt: {}, workspaceFolders: [], workspaceOrder: [], hiddenWorkspaces: [], unreadCompletions: [] })
 })
 describe('workspace files', () => {
   it('opens and edits without an agent session', () => {
@@ -45,7 +46,7 @@ describe('workspace files', () => {
     const key = viewerKey(useStore.getState())
     useStore.setState({ _viewerState: {} })
     await s.restoreViewerTabs(key)
-    expect(useStore.getState()._viewerState[key]).toBeUndefined()
+    expect(useStore.getState()._viewerState[key]?.tabs || []).toEqual([])
   })
   it('does not flash completed over a new working state', () => {
     const s = useStore.getState()
@@ -77,7 +78,7 @@ describe('workspace navigation', () => {
     s.removeWorkspaceFolder('/project')
     expect(workspaceEntries(useStore.getState()).map(e => e.cwd)).toEqual(['/another'])
     expect(useStore.getState().sessions['1'].status).toBe('running')
-    expect(useStore.getState()._viewerState[workspaceId('/project')].tabs[0].content).toBe('unsaved')
+    expect(useStore.getState()._viewerState[workspaceId('/project')].tabs.find(t => t.id === tab.id)?.content).toBe('unsaved')
     expect(useStore.getState().workspaceCwd).toBe('/another')
     expect(useStore.getState().activeId).toBeNull()
     s.upsertSession({ id: '2', cwd: '/project', cmd: 'bash' })
@@ -135,4 +136,44 @@ describe('unreviewed completions', () => {
     s.removeSession('1')
     expect(useStore.getState().unreadCompletions).toEqual([])
   })
+})
+
+
+describe('workbench persistence', () => {
+  it('restores reordered file and terminal tabs, active file and reading position', async () => {
+    const s = useStore.getState()
+    s.upsertSession({id: '1', cwd: '/project', cmd: 'codex'})
+    s.setActive('1'); s.openTab(tab)
+    const key = viewerKey(useStore.getState())
+    s.updateTabView(tab.id, {editorScroll: 780, cursor: 6})
+    s.reorderTab(tab.id, 'terminal:1')
+    vi.spyOn(api, 'readFile').mockResolvedValue({content: 'fresh content', version: 'v2'} as any)
+    useStore.setState({_viewerState: {}, _restoredWorkspaces: {}})
+    await s.restoreViewerTabs(key)
+    const restored = useStore.getState()._viewerState[key]
+    expect(restored.tabs.map(t => t.id)).toEqual([tab.id, 'terminal:1'])
+    expect(restored.activeTabId).toBe(tab.id)
+    expect(restored.tabs[0]).toMatchObject({content: 'fresh content', viewState: {editorScroll: 780, cursor: 6}})
+    s.closeTab('terminal:1')
+    expect(useStore.getState().sessions['1']).toBeDefined()
+    vi.restoreAllMocks()
+  })
+  it('keeps PDF position isolated between workspaces and accepts drops after a target', () => {
+    const s = useStore.getState(); s.openTab({...tab, type: 'pdf'})
+    const key = viewerKey(useStore.getState())
+    s.setWorkspace('/other'); s.openTab(tab)
+    s.updateTabView(tab.id, {page: 12, zoom: 1.5}, key)
+    expect(useStore.getState()._viewerState[key].tabs[0].viewState).toEqual({page:12, zoom:1.5})
+    expect(useStore.getState()._viewerState[viewerKey(useStore.getState())].tabs[0].viewState).toBeUndefined()
+    s.addWorkspaceFolder('/alpha'); s.addWorkspaceFolder('/beta')
+    s.reorderWorkspace(workspaceId('/alpha'), workspaceId('/beta'), true)
+    expect(workspaceEntries(useStore.getState()).map(e => e.cwd)).toEqual(['/beta','/alpha'])
+  })
+})
+
+it('remembers file position after closing and reopening the tab', () => {
+  const s = useStore.getState()
+  s.openTab(tab); s.updateTabView(tab.id, {editorScroll: 900, cursor: 4}); s.closeTab(tab.id)
+  s.openTab(tab)
+  expect(useStore.getState()._viewerState[viewerKey(useStore.getState())].tabs[0].viewState).toEqual({editorScroll:900, cursor:4})
 })

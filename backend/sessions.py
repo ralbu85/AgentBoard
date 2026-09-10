@@ -24,6 +24,7 @@ class Session:
     cmd: str
     status: str = "running"      # running | stopped | completed
     ai_state: str | None = None  # idle | working | waiting
+    auto_title: str = ""
     process: str = ""
     created_at: int = 0
     mem_kb: int = 0
@@ -42,6 +43,7 @@ class Session:
             "status": self.status,
             "aiState": self.ai_state,
             "process": self.process,
+            "autoTitle": self.auto_title,
             "createdAt": self.created_at,
             "memKB": self.mem_kb,
             "altScreen": self.alt_screen,

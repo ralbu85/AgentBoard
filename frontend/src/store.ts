@@ -8,10 +8,12 @@ export interface ViewerTab {
   name: string
   path: string
   content: string
-  type: 'code' | 'markdown' | 'latex' | 'pdf' | 'image' | 'diff' | 'notebook'
+  type: 'code' | 'markdown' | 'latex' | 'pdf' | 'image' | 'diff' | 'notebook' | 'terminal'
   lang: string
   dirty?: boolean
   version?: string
+  sessionId?: string
+  viewState?: { scrollTop?: number; scrollLeft?: number; page?: number; zoom?: number; cursor?: number; editorScroll?: number }
 }
 
 interface AppState {
@@ -21,6 +23,9 @@ interface AppState {
   tunnelUrl: string | null
 
   // Viewer tabs per workspace (host + root path)
+  _restoredWorkspaces: Record<string, boolean>
+  updateTabView: (id: string, view: NonNullable<ViewerTab['viewState']>, key?: string) => void
+  reorderTab: (id: string, target: string, after?: boolean) => void
   _viewerState: Record<string, { tabs: ViewerTab[]; activeTabId: string | null }>
   viewerTabs: ViewerTab[]       // computed: current session's tabs
   activeTabId: string | null    // computed: current session's active tab
@@ -65,7 +70,7 @@ interface AppState {
   closeWorkspaceModal: () => void
   addWorkspaceFolder: (cwd: string) => void
   removeWorkspaceFolder: (cwd: string, host?: string) => void
-  reorderWorkspace: (key: string, before: string) => void
+  reorderWorkspace: (key: string, before: string, after?: boolean) => void
   restoreWorkspace: (key: string) => void
   openSpawn: (preset?: { cwd?: string; host?: string }) => void
   closeSpawn: () => void
@@ -98,7 +103,7 @@ function persistViewer(sessionId: string, vs: { tabs: ViewerTab[]; activeTabId: 
       // never restored from disk (their `path` isn't a real file).
       .filter((t) => t.type !== 'diff' && !t.id.startsWith('log:'))
       .map((t) => ({
-        id: t.id, path: t.path, name: t.name, type: t.type, lang: t.lang,
+        id: t.id, path: t.path, name: t.name, type: t.type, lang: t.lang, sessionId: t.sessionId, viewState: t.viewState,
         content: (t.type === 'pdf' || t.type === 'image') ? t.content : undefined,
       }))
     localStorage.setItem(`agentboard.viewer.${sessionId}`, JSON.stringify({ tabs: meta, activeTabId: vs.activeTabId }))
@@ -118,6 +123,10 @@ function readStringList(key: string): string[] {
 }
 function persistList(key: string, value: string[]) {
   try { localStorage.setItem(key, JSON.stringify(value)) } catch { /* storage disabled */ }
+}
+
+export function sessionLabel(session: Session, titles: Record<string, string>): string {
+  return titles[session.id] || session.autoTitle || `${session.cmd || session.process || 'Terminal'} · #${session.id}`
 }
 
 export const completionKey = (session: Session) => JSON.stringify([session.host || 'local', session.sessionName || session.id, session.cwd || '~'])
@@ -148,6 +157,7 @@ export const useStore = create<AppState>((set, get) => ({
   titles: {},
   tunnelUrl: null,
   _viewerState: {},
+  _restoredWorkspaces: {},
   _completedAt: {},
   unreadCompletions: readStringList('agentboard.unreadCompletions'),
   acknowledgeCompletion: (id) => set(state => {
@@ -180,7 +190,7 @@ export const useStore = create<AppState>((set, get) => ({
 
   openSpawn: (preset = {}) => set({ spawnOpen: true, spawnPreset: preset }),
   closeSpawn: () => set({ spawnOpen: false, spawnPreset: {} }),
-  setWorkspace: (cwd, host = 'local') => set({ workspaceCwd: cwd, workspaceHost: host }),
+  setWorkspace: (cwd, host = 'local') => { persistList('agentboard.lastWorkspace', [host, cwd]); set({ workspaceCwd: cwd, workspaceHost: host }) },
   setViewMode: (m) => { try { localStorage.setItem('agentboard.viewMode', m) } catch {} ; set({ viewMode: m }) },
   // Optimistic insert so a just-created session's tab appears instantly; the
   // ws `spawned` event reconciles it (same id). No-op if it already arrived.
@@ -218,11 +228,11 @@ export const useStore = create<AppState>((set, get) => ({
     }
     return updates
   }),
-  reorderWorkspace: (key, before) => set(state => {
+  reorderWorkspace: (key, before, after = false) => set(state => {
     const keys = workspaceEntries(state).map(e => e.key)
     if (key === before || !keys.includes(key) || !keys.includes(before)) return {}
     const next = keys.filter(k => k !== key)
-    next.splice(next.indexOf(before), 0, key)
+    next.splice(next.indexOf(before) + (after ? 1 : 0), 0, key)
     persistList('agentboard.workspaceOrder', next)
     return { workspaceOrder: next }
   }),
@@ -250,9 +260,16 @@ export const useStore = create<AppState>((set, get) => ({
     const session = id ? state.sessions[id] : undefined
     if (!session) return { activeId: id }
     const key = workspaceId(session.cwd || '~', session.host || 'local')
+    persistList('agentboard.lastWorkspace', [session.host || 'local', session.cwd || '~'])
     const hidden = state.hiddenWorkspaces.filter(k => k !== key)
     if (hidden.length !== state.hiddenWorkspaces.length) persistList('agentboard.hiddenWorkspaces', hidden)
-    return { activeId: id, workspaceCwd: session.cwd || '~', workspaceHost: session.host || 'local', hiddenWorkspaces: hidden }
+    const current = state._viewerState[key] || { tabs: [], activeTabId: null }
+    const tabId = `terminal:${id}`
+    const tab: ViewerTab = { id: tabId, path: tabId, name: sessionLabel(session, state.titles), content: '', type: 'terminal', lang: '', sessionId: id! }
+    const tabs = current.tabs.some(t => t.id === tabId) ? current.tabs : [...current.tabs, tab]
+    if (state._restoredWorkspaces[key]) persistViewer(key, { tabs, activeTabId: tabId })
+    return { activeId: id, workspaceCwd: session.cwd || '~', workspaceHost: session.host || 'local', hiddenWorkspaces: hidden,
+      _viewerState: { ...state._viewerState, [key]: { tabs, activeTabId: tabId } } }
   }),
 
   openTab: (tab, key) => {
@@ -260,6 +277,9 @@ export const useStore = create<AppState>((set, get) => ({
     const activeId = key || viewerKey(get())
     const cur = _viewerState[activeId] || { tabs: [], activeTabId: null }
     const existing = cur.tabs.find(t => t.path === tab.path)
+    if (!existing && tab.type !== 'terminal') {
+      try { tab = {...tab, viewState: JSON.parse(localStorage.getItem(`agentboard.fileView.${activeId}:${tab.path}`) || 'null') || tab.viewState} } catch {}
+    }
     const nextVs = existing
       ? { ...cur, activeTabId: existing.id }
       : { tabs: [...cur.tabs, tab], activeTabId: tab.id }
@@ -328,46 +348,70 @@ export const useStore = create<AppState>((set, get) => ({
     set({ _viewerState: { ..._viewerState, [activeId]: { tabs, activeTabId: id } } })
   },
 
-  restoreViewerTabs: async (sessionId) => {
-    const { _viewerState } = get()
-    if (_viewerState[sessionId]?.tabs?.length) return  // already populated
-    let saved: any
-    try { saved = JSON.parse(localStorage.getItem(`agentboard.viewer.${sessionId}`) || 'null') } catch { return }
+  restoreViewerTabs: async (key) => {
+    const state = get()
+    if (state._restoredWorkspaces[key]) return
+    const baseline = state._viewerState[key]
+    set({ _restoredWorkspaces: { ...state._restoredWorkspaces, [key]: true } })
+    let saved: {tabs?: ViewerTab[]; activeTabId?: string} | null = null
+    try { saved = JSON.parse(localStorage.getItem(`agentboard.viewer.${key}`) || 'null') } catch {}
     if (!saved) {
-      const state = get()
-      const oldTabs: ViewerTab[] = []
+      const legacyTabs: ViewerTab[] = []
       for (const session of Object.values(state.sessions)) {
-        if (JSON.stringify([session.host || 'local', session.cwd || '~']) !== sessionId || (session.host || 'local') !== 'local') continue
+        if (workspaceId(session.cwd || '~', session.host || 'local') !== key || session.host !== 'local') continue
         try {
           const legacy = JSON.parse(localStorage.getItem(`agentboard.viewer.${session.id}`) || 'null')
-          for (const tab of legacy?.tabs || []) if (!oldTabs.some(t => t.path === tab.path)) oldTabs.push(tab)
-        } catch { /* invalid legacy metadata */ }
+          for (const tab of legacy?.tabs || []) if (!legacyTabs.some(t => t.id === tab.id)) legacyTabs.push(tab)
+        } catch {}
       }
-      saved = { tabs: oldTabs, activeTabId: oldTabs[0]?.id }
+      saved = {tabs: legacyTabs, activeTabId: legacyTabs[0]?.id}
     }
-    if (!saved?.tabs?.length) return
-    // Remote file APIs are not implemented; never read remote paths on the hub.
-    try { if (JSON.parse(sessionId)[0] !== 'local') return } catch { return }
-    const tabs: ViewerTab[] = []
-    for (const m of saved.tabs) {
-      if (m.type === 'pdf' || m.type === 'image') {
-        tabs.push({ id: m.id, path: m.path, name: m.name, type: m.type, lang: m.lang, content: m.content || '' })
+    const restored: ViewerTab[] = []
+    for (const tab of saved.tabs || []) {
+      if (tab.type === 'terminal') {
+        const session = tab.sessionId ? get().sessions[tab.sessionId] : undefined
+        if (session && workspaceId(session.cwd || '~', session.host || 'local') === key) restored.push({...tab, content: ''})
         continue
       }
+      try { if (JSON.parse(key)[0] !== 'local') continue } catch { continue }
+      if (tab.type === 'pdf' || tab.type === 'image') { restored.push({...tab, content: tab.content || ''}); continue }
       try {
-        const res = await api.readFile(m.path)  // fresh from disk
-        if (res.ok === false) continue
-        let content = res.content || ''
-        if (m.path.endsWith('.json')) { try { content = JSON.stringify(JSON.parse(content), null, 2) } catch {} }
-        tabs.push({ id: m.id, path: m.path, name: m.name, type: m.type, lang: m.lang, content, version: res.version })
-      } catch { /* file gone — drop it */ }
+        const res = await api.readFile(tab.path)
+        restored.push({...tab, content: res.content || '', version: res.version})
+      } catch { /* file disappeared */ }
     }
-    if (!tabs.length) return
-    const activeTabId = tabs.find(t => t.id === saved.activeTabId)?.id || tabs[0].id
-    set((s) => (s._viewerState[sessionId]?.tabs?.length ? {} : {
-      _viewerState: { ...s._viewerState, [sessionId]: { tabs, activeTabId } },
-    }))
+    set(current => {
+      const latest = current._viewerState[key]
+      const latestTabs = latest?.tabs || []
+      const tabs = [...restored.map(t => latestTabs.find(n => n.id === t.id) || t), ...latestTabs.filter(t => !restored.some(r => r.id === t.id))]
+      const chosen = latest === baseline ? saved?.activeTabId : latest?.activeTabId
+      const activeTabId = tabs.some(t => t.id === chosen) ? chosen! : tabs[0]?.id || null
+      const active = tabs.find(t => t.id === activeTabId)
+      const vs = { tabs, activeTabId }
+      persistViewer(key, vs)
+      return { _viewerState: {...current._viewerState, [key]: vs},
+        ...(viewerKey(current) === key && active?.type === 'terminal' && active.sessionId ? {activeId: active.sessionId} : {}) }
+    })
   },
+
+  updateTabView: (id, view, key) => set(state => {
+    const owner = key || viewerKey(state), current = state._viewerState[owner]
+    if (!current?.tabs.some(t => t.id === id)) return {}
+    const next = {...current, tabs: current.tabs.map(t => t.id === id ? {...t, viewState: {...t.viewState, ...view}} : t)}
+    const updated = next.tabs.find(t => t.id === id)!
+    if (updated.type !== 'terminal') { try { localStorage.setItem(`agentboard.fileView.${owner}:${updated.path}`, JSON.stringify(updated.viewState)) } catch {} }
+    persistViewer(owner, next)
+    return {_viewerState: {...state._viewerState, [owner]: next}}
+  }),
+  reorderTab: (id, target, after = false) => set(state => {
+    const key = viewerKey(state), current = state._viewerState[key]
+    const item = current?.tabs.find(t => t.id === id)
+    if (!item || id === target || !current.tabs.some(t => t.id === target)) return {}
+    const tabs = current.tabs.filter(t => t.id !== id)
+    tabs.splice(tabs.findIndex(t => t.id === target) + (after ? 1 : 0), 0, item)
+    const next = {...current, tabs}; persistViewer(key, next)
+    return {_viewerState: {...state._viewerState, [key]: next}}
+  }),
 
   setActiveTab: (id) => {
     const { _viewerState } = get()
@@ -497,6 +541,7 @@ export const useStore = create<AppState>((set, get) => ({
             [msg.id]: {
               ...s, process: msg.process, createdAt: msg.createdAt, memKB: msg.memKB,
               altScreen: msg.altScreen ?? s.altScreen,
+              autoTitle: msg.autoTitle ?? s.autoTitle,
             },
           },
         })

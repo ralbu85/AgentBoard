@@ -102,11 +102,11 @@ async def handle_ws(ws: WebSocket):
                 await ws.send_text(json.dumps({"type": "aiState", "id": s.id, "state": s.ai_state}))
             if s.cwd:
                 await ws.send_text(json.dumps({"type": "cwd", "id": s.id, "cwd": s.cwd}))
-            if s.process or s.created_at or s.alt_screen:
+            if s.process or s.created_at or s.alt_screen or s.auto_title:
                 await ws.send_text(json.dumps({
                     "type": "info", "id": s.id,
                     "process": s.process, "createdAt": s.created_at,
-                    "memKB": s.mem_kb, "altScreen": s.alt_screen,
+                    "memKB": s.mem_kb, "altScreen": s.alt_screen, "autoTitle": s.auto_title,
                 }))
 
         titles = store.titles
@@ -132,7 +132,7 @@ async def handle_ws(ws: WebSocket):
                 await ws.send_text(json.dumps({
                     "type": "info", "id": d["id"],
                     "process": d["process"], "createdAt": d["createdAt"],
-                    "memKB": d["memKB"], "altScreen": d.get("altScreen", False),
+                    "memKB": d["memKB"], "altScreen": d.get("altScreen", False), "autoTitle": d.get("autoTitle", ""),
                 }))
         remote_titles = registry.mirror_titles()
         if remote_titles:

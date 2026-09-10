@@ -2,6 +2,7 @@ import { Terminal } from '@xterm/xterm'
 import { SearchAddon } from '@xterm/addon-search'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import { Unicode11Addon } from '@xterm/addon-unicode11'
+import { loadTerminalPreferences, terminalGeometry, type TerminalPreferences } from './readability'
 import { send } from '../../ws'
 import { useStore } from '../../store'
 
@@ -33,6 +34,7 @@ function _sendPage(id: string, up: boolean) {
 const CANONICAL_COLS = 80
 const CANONICAL_ROWS = 40
 
+let preferences = loadTerminalPreferences()
 const isMobile = window.innerWidth <= 768
 
 interface TermInstance {
@@ -90,7 +92,9 @@ export function create(id: string): TermInstance {
     cursorStyle: 'bar',
     disableStdin: isMobile,
     scrollback: 10000,
-    fontSize: 12,
+    fontSize: preferences.fontSize,
+    lineHeight: preferences.lineHeight,
+    minimumContrastRatio: 4.5,
     letterSpacing: 0,
     // Lead with the bundled D2Coding so BOTH Latin and Hangul come from one
     // font where Hangul = exactly 2 Latin cells — no gaps in the fixed grid.
@@ -100,9 +104,9 @@ export function create(id: string): TermInstance {
     theme: {
       background: '#101014', foreground: '#ececf1', cursor: '#ececf1',
       selectionBackground: 'rgba(124, 108, 240, 0.25)',
-      black: '#3b3b4f', red: '#ef6b6b', green: '#45d483', yellow: '#e5a63e',
+      black: '#7c8495', red: '#ef6b6b', green: '#45d483', yellow: '#e5a63e',
       blue: '#7c9df0', magenta: '#b89cf0', cyan: '#4dd4c0', white: '#ececf1',
-      brightBlack: '#5c5c6e', brightRed: '#f09090', brightGreen: '#6ee6a0',
+      brightBlack: '#9ca3af', brightRed: '#f09090', brightGreen: '#6ee6a0',
       brightYellow: '#efc060', brightBlue: '#9db8f0', brightMagenta: '#d0b4f0',
       brightCyan: '#60e8d0', brightWhite: '#f5f5fa',
     },
@@ -163,12 +167,19 @@ export function open(id: string, container: HTMLElement) {
   }
 }
 
-// Desktop: fixed 80 cols; font shrinks to fit the pane width, height → rows.
-// Mobile: fixed readable font; the pane WIDTH (cols) shrinks to fit the phone
-// so content reflows — no horizontal scroll, no 8px text (fitting 80 cols to a
-// phone forced ~8px; overflowing at a big font forced horizontal panning).
-const TARGET_FONT = 12
-const MIN_FONT = 8
+// Readable 12–22px text on all screens; adaptive 30–80 columns or explicit fixed 80-column mode.
+export function setReadability(patch: Partial<TerminalPreferences>) {
+  preferences = { ...preferences, ...patch }
+  preferences.fontSize = Math.max(12, Math.min(22, preferences.fontSize))
+  preferences.lineHeight = Math.max(1, Math.min(1.5, preferences.lineHeight))
+  try { localStorage.setItem('agentboard.terminalPreferences', JSON.stringify(preferences)) } catch {}
+  for (const [id, instance] of terminals) {
+    instance.term.options.fontSize = preferences.fontSize
+    instance.term.options.lineHeight = preferences.lineHeight
+    requestAnimationFrame(() => refit(id))
+  }
+}
+export function getReadability() { return { ...preferences } }
 const _lastSentRows = new Map<string, number>()
 const _lastSentCols = new Map<string, number>()
 
@@ -187,26 +198,11 @@ export function refit(id: string) {
   const cellW = core?._renderService?.dimensions?.css?.cell?.width
   if (!cellH || !cellW) return
 
-  const curFont = (t.term.options.fontSize as number) || TARGET_FONT
-  const cellWPerFont = cellW / curFont
-  const cellHPerFont = cellH / curFont
-  // Mobile keeps the readable font and NARROWS the pane (cols) to fit; desktop
-  // keeps 80 cols and shrinks the font to fit the pane width.
-  const fontByWidth = Math.floor(cW / (CANONICAL_COLS * cellWPerFont))
-  const newFont = isMobile ? TARGET_FONT : Math.max(MIN_FONT, Math.min(TARGET_FONT, fontByWidth))
-
-  if (newFont !== curFont) {
-    t.term.options.fontSize = newFont
-  }
-  // Project cell size from the (font-independent) ratio so we don't read a
-  // stale dimension before xterm has applied the new fontSize.
-  const projectedCellH = cellHPerFont * newFont
-  const projectedCellW = cellWPerFont * newFont
-
-  const fitCols = isMobile
-    ? Math.max(30, Math.min(CANONICAL_COLS, Math.floor(cW / projectedCellW)))
-    : CANONICAL_COLS
-  const fitRows = Math.max(CANONICAL_ROWS, Math.min(200, Math.floor(cH / projectedCellH)))
+  // Preserve readable text size. Narrow the TUI instead of shrinking its font.
+  const curFont = (t.term.options.fontSize as number) || preferences.fontSize
+  const projectedCellW = cellW / curFont * preferences.fontSize
+  const projectedCellH = cellH / curFont * preferences.fontSize
+  const { cols: fitCols, rows: fitRows } = terminalGeometry(cW, cH, projectedCellW, projectedCellH, preferences.adaptiveColumns)
 
   if (t.term.rows !== fitRows || t.term.cols !== fitCols) {
     t.term.resize(fitCols, fitRows)

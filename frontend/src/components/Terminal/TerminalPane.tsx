@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { useStore, completionKey } from '../../store'
+import { useStore } from '../../store'
 import { api } from '../../api'
 import { useToasts } from '../../toasts'
 import { notifyActive } from '../../ws'
@@ -26,12 +26,13 @@ const STATE_DISPLAY: Record<string, { label: string; icon: string }> = {
   stopped:   { label: 'Stopped',  icon: '■' },
 }
 
-export function TerminalPane() {
+export function TerminalPane({ sessionId }: { sessionId?: string }) {
   const containerRef = useRef<HTMLDivElement>(null)
-  const activeId = useStore((s) => s.activeId)
-  const unread = useStore(s => !!s.activeId && !!s.sessions[s.activeId] && s.unreadCompletions.includes(completionKey(s.sessions[s.activeId])))
+  const activeId = useStore((s) => sessionId || s.activeId)
   const effectiveState = useStore((s) => s.effectiveState)
-  const altScreen = useStore((s) => (s.activeId ? s.sessions[s.activeId]?.altScreen : false))
+  const altScreen = useStore((s) => ((sessionId || s.activeId) ? s.sessions[(sessionId || s.activeId)!]?.altScreen : false))
+  const [readability, setReadability] = useState(TM.getReadability)
+  const changeReadability = (patch: Partial<ReturnType<typeof TM.getReadability>>) => { TM.setReadability(patch); setReadability(TM.getReadability()) }
   const [showScrollBtn, setShowScrollBtn] = useState(false)
   // Mobile "select text": snapshot the terminal into plain selectable text so
   // the OS's own long-press range-select + copy works (native, no custom copy).
@@ -61,7 +62,7 @@ export function TerminalPane() {
   // Poll scroll state for button visibility
   useEffect(() => {
     const interval = setInterval(() => {
-      const id = useStore.getState().activeId
+      const id = sessionId || useStore.getState().activeId
       // If a snapshot was held back while the user was scrolled up, apply it
       // now that they're back at the bottom (idle sessions send no further
       // frames, so writeScreen alone can't flush it).
@@ -69,7 +70,7 @@ export function TerminalPane() {
       setShowScrollBtn(TM.isScrolledUp(id || undefined))
     }, 300)
     return () => clearInterval(interval)
-  }, [])
+  }, [sessionId])
 
   // Refit on container size changes. Debounced so keyboard show/hide animation
   // (many ResizeObserver fires) collapses into one resize round-trip.
@@ -78,7 +79,7 @@ export function TerminalPane() {
     const doRefit = () => {
       window.clearTimeout(timer)
       timer = window.setTimeout(() => {
-        const id = useStore.getState().activeId
+        const id = sessionId || useStore.getState().activeId
         if (id) TM.refit(id)
       }, 150)
     }
@@ -90,7 +91,7 @@ export function TerminalPane() {
       window.removeEventListener('resize', doRefit)
       ro.disconnect()
     }
-  }, [])
+  }, [sessionId])
 
   // Full scrollback beyond the ~2000-line streamed snapshot. Opens in the viewer
   // as a searchable text tab (desktop split only; the viewer isn't mounted on
@@ -121,15 +122,18 @@ export function TerminalPane() {
   return (
     <div className="terminal-pane-shell">
       <div className="terminal-toolbar">
+        <div className="terminal-font-controls" aria-label="터미널 가독성 설정">
+          <button onClick={() => changeReadability({fontSize: readability.fontSize - 1})} disabled={readability.fontSize <= 12} title="터미널 글씨 작게">A−</button>
+          <button onClick={() => changeReadability({fontSize: 15, lineHeight: 1.25})} title="기본 글씨 크기와 행간으로">{readability.fontSize}px</button>
+          <button onClick={() => changeReadability({fontSize: readability.fontSize + 1})} disabled={readability.fontSize >= 22} title="터미널 글씨 크게">A+</button>
+          <button aria-pressed={readability.adaptiveColumns} onClick={() => changeReadability({adaptiveColumns: !readability.adaptiveColumns})} title="폭에 맞춰 줄바꿈 / 80열 고정">{readability.adaptiveColumns ? '자동 폭' : '80열'}</button>
+        </div>
       {activeId && (
         <div className={`terminal-state-badge tsb-${currentState || 'idle'}`}>
           <span className="state-icon">{stateInfo.icon}</span>
           {stateInfo.label}
         </div>
       )}
-      {activeId && unread && <button className="completion-review" onClick={() => useStore.getState().acknowledgeCompletion(activeId)} title="완료 결과를 확인했음으로 표시">
-        ✓ 완료 · 확인
-      </button>}
       {canFullLog && (
         <button className="full-log-btn" onClick={openFullLog} title="전체 스크롤백을 뷰어에서 열기">
           📜 전체 로그

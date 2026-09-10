@@ -72,15 +72,17 @@ interface Props {
   lang: string
   memos?: Memo[]
   onChange: (value: string) => void
+  viewState?: { editorScroll?: number; cursor?: number }
+  onViewChange?: (view: {editorScroll: number; cursor: number}) => void
   onSave: () => void
   onContextMenu: (info: SelectionInfo) => void
 }
 
-export function CodeEditor({ content, lang, memos, onChange, onSave, onContextMenu }: Props) {
+export function CodeEditor({ content, lang, memos, onChange, onSave, onContextMenu, viewState, onViewChange }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const viewRef = useRef<EditorView | null>(null)
-  const cbRef = useRef({ onChange, onSave, onContextMenu })
-  cbRef.current = { onChange, onSave, onContextMenu }
+  const cbRef = useRef({ onChange, onSave, onContextMenu, onViewChange })
+  cbRef.current = { onChange, onSave, onContextMenu, onViewChange }
 
   // Recreate editor when lang changes (tab switch)
   useEffect(() => {
@@ -115,6 +117,7 @@ export function CodeEditor({ content, lang, memos, onChange, onSave, onContextMe
       ]),
       EditorView.updateListener.of(update => {
         if (update.docChanged) cbRef.current.onChange(update.state.doc.toString())
+        if (update.selectionSet) cbRef.current.onViewChange?.({editorScroll: update.view.scrollDOM.scrollTop, cursor: update.state.selection.main.head})
       }),
       oneDark,
       EditorView.lineWrapping,
@@ -123,10 +126,13 @@ export function CodeEditor({ content, lang, memos, onChange, onSave, onContextMe
     ]
 
     const view = new EditorView({
-      state: EditorState.create({ doc: content, extensions }),
+      state: EditorState.create({ doc: content, extensions, selection: {anchor: Math.min(content.length, viewState?.cursor || 0)} }),
       parent: containerRef.current,
     })
     viewRef.current = view
+    const scroll = () => cbRef.current.onViewChange?.({editorScroll: view.scrollDOM.scrollTop, cursor: view.state.selection.main.head})
+    const frame = requestAnimationFrame(() => { view.scrollDOM.scrollTop = viewState?.editorScroll || 0 })
+    view.scrollDOM.addEventListener('scroll', scroll)
 
     const handleCtx = (e: MouseEvent) => {
       const sel = view.state.selection.main
@@ -144,6 +150,8 @@ export function CodeEditor({ content, lang, memos, onChange, onSave, onContextMe
     view.dom.addEventListener('contextmenu', handleCtx)
 
     return () => {
+      cancelAnimationFrame(frame)
+      view.scrollDOM.removeEventListener('scroll', scroll)
       view.dom.removeEventListener('contextmenu', handleCtx)
       view.destroy()
       viewRef.current = null

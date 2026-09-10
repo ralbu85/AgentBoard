@@ -5,11 +5,11 @@
   --bg-secondary: #18181c;
   --bg-tertiary: #1f1f24;
   --bg-hover: #26262c;
-  --border: rgba(255, 255, 255, 0.07);
+  --border: #343b49;
   --border-subtle: rgba(255, 255, 255, 0.04);
   --text-primary: #ececf1;
-  --text-secondary: #9a9aab;
-  --text-muted: #5c5c6e;
+  --text-secondary: #b1b9c9;
+  --text-muted: #929aab;
   --accent: #7c6cf0;
   --accent-soft: rgba(124, 108, 240, 0.12);
   --accent-glow: rgba(124, 108, 240, 0.25);
@@ -1593,3 +1593,55 @@ tr.ln-memo:hover .fv-line-content::after { opacity: 1; }
 .workspace-status-legend { display: flex; align-items: center; gap: 10px; padding: 3px 8px 10px; color: var(--text-muted); font-size: 10px; }
 .workspace-status-legend .fs-working { color: #a78bfa; }
 .workspace-status-legend .fs-waiting { color: #fbbf24; }
+
+/* One work surface, with terminal and document tabs sharing the available width. */
+.workbench { display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; overflow: hidden; }
+.workbench .viewer-inner { min-height: 0; }
+.workbench .vtab-bar { min-height: 38px; }
+.workbench .vtab-name { max-width: 220px; font-size: 12px; }
+.tab-kind { font-size: 10px; color: var(--text-muted); flex-shrink: 0; }
+.tab-kind-terminal { color: #a78bfa; font-family: var(--font-mono); }
+.tab-kind-pdf { color: #fda4af; }
+.terminal-tab-content { display: flex; flex-direction: column; overflow: hidden; min-height: 0; }
+.terminal-font-controls { display: flex; align-items: center; gap: 3px; }
+.terminal-font-controls button { border: 1px solid var(--border); border-radius: 4px; padding: 4px 6px; background: var(--bg-primary); color: var(--text-secondary); font-size: 11px; cursor: pointer; white-space: nowrap; }
+.terminal-toolbar { flex-wrap: wrap; }
+.workspace-sessions { padding: 0 3px 8px 22px; }
+.workspace-session { display: flex; align-items: center; gap: 6px; width: 100%; padding: 8px 5px; border: none; border-radius: 4px; background: transparent; color: var(--text-secondary); cursor: pointer; text-align: left; }
+.workspace-session:hover, .workspace-session.selected { background: var(--bg-hover); color: var(--text-primary); }
+.workspace-session.has-unread { background: #0c4a6e33; }
+.workspace-session-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+.workspace-session-status { font-size: 10px; flex-shrink: 0; color: var(--text-muted); }
+.workspace-session.has-unread .workspace-session-status { color: #7dd3fc; }
+.workspace-session .session-dot { background: #6e7681; }
+.workspace-session .dot-working { background: #a78bfa; }
+.workspace-session .dot-waiting { background: #fbbf24; }
+.workspace-session .dot-completed { background: #34d399; }
+.workspace-session .dot-stopped { background: #f87171; }
+.pdf-pages { position: relative; min-height: 0; overflow: auto; }
+.pdf-page { position: relative; margin: 0 auto 8px; background: white; }
+.pdf-toolbar { flex-wrap: wrap; flex-shrink: 0; }
+.pdf-page-slider { flex: 1; min-width: 100px; accent-color: var(--accent); }
+.pdf-page-info { white-space: nowrap; min-width: 90px; }
+.pdf-zoom-label { background: transparent; border: 0; color: var(--text-secondary); cursor: pointer; }
+
+.vtab[draggable] { cursor: grab; }
+.vtab.tab-drop-target { box-shadow: inset 3px 0 var(--accent); }
+.viewer-content > .pdf-container { height: 100%; min-height: 0; }
+
+.mobile-files-toggle { position: fixed; bottom: 12px; left: 8px; z-index: 30; border: 1px solid var(--border); border-radius: 6px; padding: 6px 10px; background: var(--bg-secondary); color: var(--text-primary); }
+@media (max-width: 768px) { .explorer-column { position: fixed; top: 48px; bottom: 0; left: 0; z-index: 35; } }
+
+/* Workspace boundaries and selection stay dark; status colors remain accents. */
+.workspace-session-group { margin: 8px 5px 12px; border: 1px solid #343b49; border-radius: 8px; background: #171b23; overflow: hidden; }
+.workspace-session-group.active-workspace { border-color: #626c9e; }
+.workspace-session-group .workspace-picker-row { margin: 0; border-radius: 0; background: #202632; border-bottom: 1px solid #343b49; }
+.workspace-session-group .workspace-picker-row.active { background: #282d40; box-shadow: inset 3px 0 #a49af4; }
+.workspace-session-group .workspace-sessions { padding: 5px 6px 7px 15px; }
+.workspace-session { background: transparent; color: #c5ccda; }
+.workspace-session:hover { background: #282f3e; }
+.workspace-session.selected { background: #30374a; color: #edf0f7; box-shadow: inset 2px 0 #a49af4; }
+.workspace-session.has-unread { background: #163044; }
+.workspace-picker-name { font-size: 13px; color: #e3e7f0; }
+.workspace-picker-path, .workspace-session-status { font-size: 11px; }
+.workspace-picker-row.drop-target { outline: 2px solid #a49af4; outline-offset: -2px; }

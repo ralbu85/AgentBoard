@@ -15,7 +15,7 @@ function TreeDir({ dirPath, name, depth, onFileClick, refresh, bump }: {
   onFileClick: (path: string, entry: FileEntry) => void
   refresh: number; bump: () => void
 }) {
-  const [open, setOpen] = useState(depth === 0)
+  const [open, setOpen] = useState(() => depth === 0 || localStorage.getItem('agentboard.tree:' + dirPath) === 'open')
   const [entries, setEntries] = useState<FileEntry[]>([])
   const [loaded, setLoaded] = useState(false)
 
@@ -33,7 +33,7 @@ function TreeDir({ dirPath, name, depth, onFileClick, refresh, bump }: {
   // Reload when a file op elsewhere bumps the shared refresh token.
   useEffect(() => { if (loaded) reload() }, [refresh])
 
-  const toggle = () => { setOpen(v => !v); if (!loaded) reload() }
+  const toggle = () => { localStorage.setItem('agentboard.tree:' + dirPath, open ? 'closed' : 'open'); setOpen(!open); if (!loaded) reload() }
 
   return (
     <>
@@ -206,6 +206,28 @@ export function FilePanel({ initialPath, onClose }: Props) {
   const [entries, setEntries] = useState<FileEntry[]>([])
   const [preview, setPreview] = useState<{name: string; content: string; type: PreviewType; lang: string; path?: string} | null>(null)
   const [loading, setLoading] = useState(false)
+  const listRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const el = listRef.current
+    if (!el) return
+    const key = 'agentboard.treeScroll:' + initialPath
+    let desired = Number(localStorage.getItem(key)) || 0
+    let restoring = true
+    const restore = () => {
+      if (!restoring) return
+      el.scrollTop = desired
+      if (el.scrollHeight - el.clientHeight >= desired) restoring = false
+    }
+    const observer = new MutationObserver(restore)
+    observer.observe(el, {childList: true, subtree: true})
+    const save = () => { if (!restoring) localStorage.setItem(key, String(el.scrollTop)) }
+    const interact = () => { restoring = false }
+    el.addEventListener('scroll', save)
+    el.addEventListener('wheel', interact)
+    el.addEventListener('touchstart', interact)
+    restore()
+    return () => { observer.disconnect(); el.removeEventListener('scroll', save); el.removeEventListener('wheel', interact); el.removeEventListener('touchstart', interact) }
+  }, [initialPath])
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => { setPath(initialPath); setPathInput(initialPath); setPreview(null) }, [initialPath])
@@ -233,9 +255,9 @@ export function FilePanel({ initialPath, onClose }: Props) {
   }
 
   const ownerKey = useStore(viewerKey)
-  const openTab = (tab: import('../store').ViewerTab) => useStore.getState().openTab(tab, ownerKey)
+  const openTab = (tab: import('../store').ViewerTab) => { useStore.getState().openTab(tab, ownerKey); if (window.innerWidth <= 768) onClose() }
   const openDiffTab = useStore(s => s.openDiffTab)
-  const isDesktop = window.innerWidth > 768
+  const isDesktop = true // All file previews open in the workspace workbench.
 
   async function newFile() {
     const name = window.prompt('새 파일 이름')?.trim()
@@ -457,7 +479,7 @@ export function FilePanel({ initialPath, onClose }: Props) {
         {transfers.map((t, i) => <div key={i} title={t.name}>{t.name} · {t.status}{t.status === '전송 중' ? ` ${t.progress}%` : ''}</div>)}
       </div>}
       {dragOver && <div className="fp-drop-overlay">파일을 놓아 업로드</div>}
-      <div className="file-list">
+      <div ref={listRef} className="file-list">
         <TreeDir dirPath={initialPath} name={folder} depth={0} refresh={refresh} bump={bump} onFileClick={(fullPath, entry) => {
           // Reuse existing handleClick logic but with full path
           const e = getExt(entry.name)

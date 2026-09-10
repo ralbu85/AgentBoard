@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useStore, completionKey, workspaceEntries, type WorkspaceEntry } from '../../store'
+import { useStore, completionKey, sessionLabel, workspaceEntries, type WorkspaceEntry } from '../../store'
 
 interface Props { onSelect?: () => void }
 
@@ -19,7 +19,9 @@ export function FolderList({ onSelect }: Props) {
     state.setWorkspace(entry.cwd, entry.host)
     const id = entry.ids.includes(state.activeId || '') ? state.activeId
       : entry.ids.find(id => state.sessions[id].status === 'running') || entry.ids[0] || null
-    state.setActive(id)
+    const existing = state._viewerState[entry.key]
+    if (existing?.tabs.length || localStorage.getItem(`agentboard.viewer.${entry.key}`)) useStore.setState({activeId: id})
+    else state.setActive(id)
     onSelect?.()
   }
   const remove = (entry: WorkspaceEntry) => {
@@ -44,36 +46,45 @@ export function FolderList({ onSelect }: Props) {
       <input className="folder-filter" type="search" placeholder="이름·경로·머신 검색…" aria-label="워크스페이스 검색"
         value={filter} onChange={e => setFilter(e.target.value)} />
     </div>
-    <div className="workspace-picker-hint">⠿ 드래그 또는 화살표로 순서 변경</div>
-    <div className="workspace-status-legend"><span className="fs-working">● 작업</span><span className="fs-waiting">● 입력 대기</span><span className="unread-chip">✓ 미확인</span></div>
+    <div className="workspace-picker-hint">⠿ 드래그하여 순서 변경</div>
+    <div className="workspace-status-legend"><span className="fs-working">● 작업</span><span className="fs-waiting">● 입력 대기</span></div>
     {visible.map(entry => {
       const name = entry.cwd.split('/').filter(Boolean).pop() || entry.cwd
       const active = state.workspaceCwd === entry.cwd && state.workspaceHost === entry.host
-      const index = entries.findIndex(e => e.key === entry.key)
       const unread = entry.ids.filter(id => state.unreadCompletions.includes(completionKey(state.sessions[id]))).length
       const counts = { working: 0, waiting: 0, idle: 0 }
       for (const id of entry.ids) {
         const status = state.effectiveState(id)
         if (status === 'working' || status === 'waiting' || status === 'idle') counts[status]++
       }
-      return <div key={entry.key} className={`workspace-picker-row ${active ? 'active' : ''} ${unread ? 'has-unread' : ''} ${dropTarget === entry.key ? 'drop-target' : ''}`}
+      return <div key={entry.key} className={`workspace-session-group ${active ? 'active-workspace' : ''}`}><div className={`workspace-picker-row ${active ? 'active' : ''} ${unread ? 'has-unread' : ''} ${dropTarget === entry.key ? 'drop-target' : ''}`}
         onDragOver={e => { if (dragged && dragged !== entry.key) { e.preventDefault(); setDropTarget(entry.key) } }}
-        onDrop={e => { e.preventDefault(); if (dragged) state.reorderWorkspace(dragged, entry.key); setDragged(null); setDropTarget(null) }}>
-        <span className="workspace-drag" draggable title="드래그하여 순서 변경"
+        onDrop={e => { e.preventDefault(); if (dragged) { const rect = e.currentTarget.getBoundingClientRect(); const after = e.clientY > rect.top + rect.height / 2; state.reorderWorkspace(dragged, entry.key, after) }; setDragged(null); setDropTarget(null) }}>
+        <span className="workspace-drag" draggable tabIndex={0} role="button" aria-label={`${name} 순서 변경`} title="드래그하여 순서 변경 (키보드: Alt+↑↓)"
+          onKeyDown={e => { if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) { e.preventDefault(); move(entry, e.key === 'ArrowUp' ? -1 : 1) } }}
           onDragStart={e => { e.dataTransfer.setData('text/plain', entry.key); e.dataTransfer.effectAllowed = 'move'; setDragged(entry.key) }}
           onDragEnd={() => { setDragged(null); setDropTarget(null) }}>⠿</span>
         <button className="workspace-picker-select" onClick={() => select(entry)} title={`${entry.host}: ${entry.cwd}`} aria-current={active ? 'page' : undefined}>
           <span className="workspace-picker-name">{name}</span>
           <span className="workspace-picker-path">{entry.host === 'local' ? entry.cwd : `${entry.host} · ${entry.cwd}`}</span>
           <span className="folder-states">{Object.entries(counts).map(([status, count]) => count > 0 &&
-            <span key={status} className={`fstate fs-${status}`} title={`${({working: '작업 중', waiting: '입력 대기', idle: '대기'} as Record<string, string>)[status]}: ${count}`}><i className="fs-dot" />{count}</span>)}{unread > 0 && <span className="unread-chip" title="완료 후 미확인 세션">✓ {unread}</span>}</span>
+            <span key={status} className={`fstate fs-${status}`} title={`${({working: '작업 중', waiting: '입력 대기', idle: '대기'} as Record<string, string>)[status]}: ${count}`}><i className="fs-dot" />{count}</span>)}{unread > 0 && <span className="unread-chip" title="클릭하여 미확인 표시 해제" onClick={e => { e.stopPropagation(); entry.ids.forEach(id => state.acknowledgeCompletion(id)) }}>✓ {unread}</span>}</span>
         </button>
         <div className="workspace-picker-actions">
-          <button disabled={index === 0} title={`${name} 위로 이동`} onClick={() => move(entry, -1)}>↑</button>
-          <button disabled={index === entries.length - 1} title={`${name} 아래로 이동`} onClick={() => move(entry, 1)}>↓</button>
           <button title={`${name} 목록에서 제거`} onClick={() => remove(entry)}>×</button>
         </div>
       </div>
+      <div className="workspace-sessions">{entry.ids.map(id => {
+        const session = state.sessions[id]
+        const status = state.effectiveState(id) || 'idle'
+        const pending = state.unreadCompletions.includes(completionKey(session))
+        return <button key={id} className={`workspace-session ${state.activeId === id && active ? 'selected' : ''} ${pending ? 'has-unread' : ''}`}
+          title={`${sessionLabel(session, state.titles)} · #${id}`} onClick={() => { state.setActive(id); state.acknowledgeCompletion(id); onSelect?.() }}>
+          <span className={`session-dot dot-${status}`} />
+          <span className="workspace-session-name">{sessionLabel(session, state.titles)}</span>
+          <span className="workspace-session-status">{pending ? '✓ 미확인' : ({working:'작업 중',waiting:'입력 대기',idle:'대기',completed:'완료',stopped:'종료'} as Record<string,string>)[status] || status}</span>
+        </button>
+      })}</div></div>
     })}
     {!visible.length && <div className="folder-empty">{q ? '검색 결과가 없습니다.' : '워크스페이스를 추가해 주세요.'}</div>}
     {removed.length > 0 && <div className="workspace-removed">

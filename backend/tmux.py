@@ -111,9 +111,9 @@ async def resize_window_height(session_name: str, rows: int) -> None:
 async def display_info(session_name: str) -> dict:
     raw = await tmux_run([
         "display-message", "-t", session_name, "-p",
-        "#{pane_current_path}|#{pane_current_command}|#{session_created}|#{pane_pid}|#{alternate_on}"
+        "#{pane_current_path}|#{pane_current_command}|#{session_created}|#{pane_pid}|#{alternate_on}|#{pane_title}"
     ])
-    parts = raw.strip().split("|")
+    parts = raw.strip().split("|", 5)
     return {
         "cwd": parts[0] if len(parts) > 0 else "",
         "process": parts[1] if len(parts) > 1 else "",
@@ -122,6 +122,7 @@ async def display_info(session_name: str) -> dict:
         # 1 while a full-screen app (vim/less/TUI) holds the alternate screen —
         # that buffer has no scrollback, so the client can't scroll it.
         "alt_screen": parts[4] == "1" if len(parts) > 4 else False,
+        "auto_title": parts[5].strip()[:256] if len(parts) > 5 else "",
     }
 
 

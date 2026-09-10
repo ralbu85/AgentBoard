@@ -516,6 +516,7 @@ def _update_info(id: str, s, info: dict):
     process = info.get("process", "")
     created_at = info.get("created_at", 0)
     alt_screen = info.get("alt_screen", False)
+    auto_title = info.get("auto_title", "")
 
     # NOTE: cwd is intentionally NOT updated from the live pane. It's frozen at
     # spawn/recover time so a session stays grouped under the folder it was
@@ -537,13 +538,14 @@ def _update_info(id: str, s, info: dict):
 
     # Re-broadcast info when process/uptime OR alt-screen state changes (the
     # latter drives the "full-screen — no scrollback" badge).
-    if process != s.process or created_at != s.created_at or alt_screen != s.alt_screen:
+    if process != s.process or created_at != s.created_at or alt_screen != s.alt_screen or auto_title != getattr(s, "auto_title", ""):
+        s.auto_title = auto_title
         s.process = process
         s.created_at = created_at
         s.alt_screen = alt_screen
         broadcast({
             "type": "info", "id": id, "process": process,
-            "createdAt": created_at, "memKB": s.mem_kb, "altScreen": alt_screen,
+            "createdAt": created_at, "memKB": s.mem_kb, "altScreen": alt_screen, "autoTitle": auto_title,
         })
 
 

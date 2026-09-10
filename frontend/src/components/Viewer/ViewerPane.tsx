@@ -1,230 +1,47 @@
-import { useState, useRef, useCallback, useEffect, useMemo, Fragment } from 'react'
-import { useStore, viewerKey, type ViewerTab } from '../../store'
+import { useState, useRef, useCallback, useEffect, useMemo, useLayoutEffect, Fragment } from 'react'
+import { useStore, viewerKey, sessionLabel, type ViewerTab } from '../../store'
 import { useToasts } from '../../toasts'
 import { api } from '../../api'
 import { FileContent, type Memo, type SelectionInfo } from './FileContent'
+import { PdfViewer } from '../PdfViewer'
 import { CodeEditor } from './CodeEditor'
 import { renderMarkdown, findTaskLines, toggleTaskLine } from '../../markdown'
+import { TerminalPane } from '../Terminal/TerminalPane'
+import { InputCard } from '../Terminal/InputCard'
 import { NotebookView } from './NotebookView'
 
 const EMPTY_TABS: ViewerTab[] = []
 
-type SplitDir = 'horizontal' | 'vertical'
-type DropZone = 'left' | 'right' | 'top' | 'bottom' | 'center'
+interface PaneNode { type: 'leaf'; id: string; tabIds: string[]; activeTabId: string | null }
 
-interface PaneNode {
-  type: 'leaf'
-  id: string
-  tabIds: string[]
-  activeTabId: string | null
-}
-
-interface SplitNode {
-  type: 'split'
-  direction: SplitDir
-  children: TreeNode[]
-  sizes: number[]
-}
-
-type TreeNode = PaneNode | SplitNode
-
-let _pc = 0
-function newLeaf(tabIds: string[], active: string | null): PaneNode {
-  return { type: 'leaf', id: `p${++_pc}`, tabIds, activeTabId: active }
-}
-
-// ── Tree helpers ──
-function collectTabIds(node: TreeNode): string[] {
-  if (node.type === 'leaf') return [...node.tabIds]
-  return node.children.flatMap(collectTabIds)
-}
-
-function findFirstLeaf(node: TreeNode): PaneNode | null {
-  if (node.type === 'leaf') return node
-  for (const c of node.children) { const r = findFirstLeaf(c); if (r) return r }
-  return null
-}
-
-function mapLeaves(node: TreeNode, fn: (leaf: PaneNode) => PaneNode): TreeNode {
-  if (node.type === 'leaf') return fn(node)
-  return { ...node, children: node.children.map(c => mapLeaves(c, fn)) }
-}
-
-function removeTabFromTree(node: TreeNode, paneId: string, tabId: string): TreeNode | null {
-  if (node.type === 'leaf') {
-    if (node.id !== paneId) return node
-    const rest = node.tabIds.filter(id => id !== tabId)
-    if (rest.length === 0) return null
-    return { ...node, tabIds: rest, activeTabId: node.activeTabId === tabId ? rest[0] : node.activeTabId }
-  }
-  const kids = node.children.map(c => removeTabFromTree(c, paneId, tabId)).filter(Boolean) as TreeNode[]
-  if (kids.length === 0) return null
-  if (kids.length === 1) return kids[0]
-  const sizes = node.sizes.length === kids.length ? node.sizes : kids.map(() => 1)
-  return { ...node, children: kids, sizes }
-}
-
-function addTabToLeaf(node: TreeNode, paneId: string, tabId: string): TreeNode {
-  if (node.type === 'leaf') {
-    if (node.id !== paneId) return node
-    if (node.tabIds.includes(tabId)) return { ...node, activeTabId: tabId }
-    return { ...node, tabIds: [...node.tabIds, tabId], activeTabId: tabId }
-  }
-  return { ...node, children: node.children.map(c => addTabToLeaf(c, paneId, tabId)) }
-}
-
-function splitLeaf(node: TreeNode, paneId: string, tabId: string, dir: SplitDir, first: boolean): TreeNode {
-  if (node.type === 'leaf') {
-    if (node.id !== paneId) return node
-    const nw = newLeaf([tabId], tabId)
-    return { type: 'split', direction: dir, children: first ? [nw, node] : [node, nw], sizes: [1, 1] }
-  }
-  return { ...node, children: node.children.map(c => splitLeaf(c, paneId, tabId, dir, first)) }
-}
-
-function setLeafActive(node: TreeNode, paneId: string, tabId: string): TreeNode {
-  if (node.type === 'leaf') return node.id === paneId ? { ...node, activeTabId: tabId } : node
-  return { ...node, children: node.children.map(c => setLeafActive(c, paneId, tabId)) }
-}
-
-function pruneTree(node: TreeNode, valid: Set<string>): TreeNode | null {
-  if (node.type === 'leaf') {
-    const v = node.tabIds.filter(id => valid.has(id))
-    if (v.length === 0) return null
-    return { ...node, tabIds: v, activeTabId: v.includes(node.activeTabId || '') ? node.activeTabId : v[0] }
-  }
-  const kids = node.children.map(c => pruneTree(c, valid)).filter(Boolean) as TreeNode[]
-  if (kids.length === 0) return null
-  if (kids.length === 1) return kids[0]
-  return { ...node, children: kids, sizes: node.sizes.slice(0, kids.length) }
-}
-
-// ── Component ──
 export function ViewerPane() {
   const tabs = useStore(s => s._viewerState[viewerKey(s)]?.tabs || EMPTY_TABS)
   const activeTabId = useStore(s => s._viewerState[viewerKey(s)]?.activeTabId || null)
-  const setActiveTab = useStore(s => s.setActiveTab)
-  const closeTab = useStore(s => s.closeTab)
-  const workspaceKey = useStore(viewerKey)
-
-  const [tree, setTree] = useState<TreeNode | null>(null)
-  const dragRef = useRef<{ tabId: string; paneId: string } | null>(null)
-  const prevWorkspaceRef = useRef(workspaceKey)
-
-  // Reset split panes on workspace change
-  useEffect(() => {
-    if (workspaceKey !== prevWorkspaceRef.current) {
-      setTree(null)
-      prevWorkspaceRef.current = workspaceKey
-    }
-  }, [workspaceKey])
-
-  // Sync tabs → tree
-  useEffect(() => {
-    const allIds = tabs.map(t => t.id)
-    const validSet = new Set(allIds)
-
-    setTree(prev => {
-      if (!prev) {
-        if (allIds.length === 0) return null
-        return newLeaf(allIds, activeTabId)
-      }
-      // Prune removed tabs
-      let t = pruneTree(prev, validSet)
-      // Add new tabs to first leaf
-      const tracked = t ? new Set(collectTabIds(t)) : new Set<string>()
-      const newIds = allIds.filter(id => !tracked.has(id))
-      if (newIds.length > 0) {
-        if (!t) return newLeaf(allIds, activeTabId)
-        const first = findFirstLeaf(t)
-        if (first) {
-          t = mapLeaves(t, leaf => leaf.id === first.id
-            ? { ...leaf, tabIds: [...leaf.tabIds, ...newIds], activeTabId: activeTabId || leaf.activeTabId }
-            : leaf)
-        }
-      }
-      return t
-    })
-  }, [tabs, activeTabId])
-
-  function onDragStart(tabId: string, paneId: string) {
-    dragRef.current = { tabId, paneId }
+  const key = useStore(viewerKey)
+  const select = (_pane: string, id: string) => {
+    const state = useStore.getState()
+    const tab = tabs.find(t => t.id === id)
+    if (tab?.type === 'terminal' && tab.sessionId) {
+      state.setActive(tab.sessionId)
+      state.acknowledgeCompletion(tab.sessionId)
+    } else state.setActiveTab(id)
   }
-
-  function onDrop(targetPaneId: string, zone: DropZone) {
-    const d = dragRef.current
-    if (!d) return
-    dragRef.current = null
-
-    setTree(prev => {
-      if (!prev) return prev
-      let t = removeTabFromTree(prev, d.paneId, d.tabId)
-      if (!t) t = newLeaf([], null) // shouldn't happen
-
-      if (zone === 'center') {
-        t = addTabToLeaf(t, targetPaneId, d.tabId)
-      } else {
-        const dir: SplitDir = (zone === 'left' || zone === 'right') ? 'horizontal' : 'vertical'
-        t = splitLeaf(t, targetPaneId, d.tabId, dir, zone === 'left' || zone === 'top')
-      }
-      return pruneTree(t, new Set(tabs.map(tt => tt.id)))
-    })
-  }
-
-  function onCloseTab(paneId: string, tabId: string) {
-    closeTab(tabId)
-  }
-
-  function onSelectTab(paneId: string, tabId: string) {
-    setActiveTab(tabId)
-    setTree(prev => prev ? setLeafActive(prev, paneId, tabId) : prev)
-  }
-
-  if (!tree) return <div className="viewer-inner"><div className="viewer-empty">No files open</div></div>
-
-  return (
-    <div className="viewer-inner">
-      <RenderNode node={tree} tabs={tabs} onDragStart={onDragStart} onDrop={onDrop} onClose={onCloseTab} onSelect={onSelectTab} />
-    </div>
-  )
+  if (!tabs.length) return <div className="viewer-empty">왼쪽에서 에이전트 세션이나 파일을 선택하세요.</div>
+  return <div className="viewer-inner"><LeafPane key={key} node={{type: 'leaf', id: key, tabIds: tabs.map(t => t.id), activeTabId}}
+    tabs={tabs} onSelect={select} onClose={(_pane, id) => useStore.getState().closeTab(id)} /></div>
 }
 
-// ── Render tree ──
-function RenderNode({ node, tabs, onDragStart, onDrop, onClose, onSelect }: {
-  node: TreeNode; tabs: ViewerTab[]
-  onDragStart: (t: string, p: string) => void
-  onDrop: (p: string, z: DropZone) => void
-  onClose: (p: string, t: string) => void
-  onSelect: (p: string, t: string) => void
-}) {
-  if (node.type === 'leaf') return <LeafPane node={node} tabs={tabs} onDragStart={onDragStart} onDrop={onDrop} onClose={onClose} onSelect={onSelect} />
-
-  const isH = node.direction === 'horizontal'
-  return (
-    <div style={{ display: 'flex', flexDirection: isH ? 'row' : 'column', flex: 1, overflow: 'hidden' }}>
-      {node.children.map((child, i) => (
-        <Fragment key={i}>
-          {i > 0 && <div className={`viewer-split-resizer ${isH ? 'vsr-h' : 'vsr-v'}`} />}
-          <div style={{ flex: node.sizes[i] || 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0 }}>
-            <RenderNode node={child} tabs={tabs} onDragStart={onDragStart} onDrop={onDrop} onClose={onClose} onSelect={onSelect} />
-          </div>
-        </Fragment>
-      ))}
-    </div>
-  )
-}
-
-function LeafPane({ node, tabs, onDragStart, onDrop, onClose, onSelect }: {
+function LeafPane({ node, tabs, onClose, onSelect }: {
   node: PaneNode; tabs: ViewerTab[]
-  onDragStart: (t: string, p: string) => void
-  onDrop: (p: string, z: DropZone) => void
   onClose: (p: string, t: string) => void
   onSelect: (p: string, t: string) => void
 }) {
-  const [dropZone, setDropZone] = useState<DropZone | null>(null)
-  const ref = useRef<HTMLDivElement>(null)
+  const [dragTarget, setDragTarget] = useState<string | null>(null)
+  const contentRef = useRef<HTMLDivElement>(null)
   const updateTab = useStore(s => s.updateTab)
   const markTabSaved = useStore(s => s.markTabSaved)
+  const sessionState = useStore(s => s.sessions)
+  const titles = useStore(s => s.titles)
   const activeSessionId = useStore(s => s.activeId)
   const activeTab = tabs.find(t => t.id === node.activeTabId) || tabs.find(t => node.tabIds.includes(t.id))
 
@@ -243,7 +60,7 @@ function LeafPane({ node, tabs, onDragStart, onDrop, onClose, onSelect }: {
   const pendingSelRef = useRef<{ startLine: number; startCol: number; endLine: number; endCol: number; text: string } | null>(null)
 
   useEffect(() => {
-    if (!activeTab || activeTab.type === 'pdf' || activeTab.type === 'image') { setMemos([]); return }
+    if (!activeTab || activeTab.type === 'terminal' || activeTab.type === 'pdf' || activeTab.type === 'image') { setMemos([]); return }
     api.loadNotes(activeTab.path).then(res => setMemos(res.notes || [])).catch(() => {})
     setSelInfo(null)
     setMdEditMode(false)
@@ -268,6 +85,18 @@ function LeafPane({ node, tabs, onDragStart, onDrop, onClose, onSelect }: {
   }, [activeTab?.id])
 
   const ownerKey = useStore(viewerKey)
+  const rememberView = useCallback((view: NonNullable<ViewerTab['viewState']>) => {
+    if (activeTab) useStore.getState().updateTabView(activeTab.id, view, ownerKey)
+  }, [activeTab?.id, ownerKey])
+  useLayoutEffect(() => {
+    const el = contentRef.current
+    if (!el || !activeTab) return
+    el.scrollTop = activeTab.viewState?.scrollTop || 0
+    el.scrollLeft = activeTab.viewState?.scrollLeft || 0
+    const save = () => rememberView({scrollTop: el.scrollTop, scrollLeft: el.scrollLeft})
+    el.addEventListener('scroll', save)
+    return () => { el.removeEventListener('scroll', save) }
+  }, [activeTab?.id, mdEditMode])
   const saveFile = useCallback(async () => {
     if (!activeTab) return
     setSaving(true)
@@ -351,40 +180,29 @@ function LeafPane({ node, tabs, onDragStart, onDrop, onClose, onSelect }: {
 
   const [copied, setCopied] = useState(false)
   const copyContent = async () => {
-    if (!activeTab || activeTab.type === 'pdf' || activeTab.type === 'image') return
+    if (!activeTab || activeTab.type === 'terminal' || activeTab.type === 'pdf' || activeTab.type === 'image') return
     try { await navigator.clipboard.writeText(activeTab.content); setCopied(true); setTimeout(() => setCopied(false), 1500) } catch {}
   }
 
-  const onDragOver = useCallback((e: React.DragEvent) => {
-    e.preventDefault()
-    const r = ref.current?.getBoundingClientRect()
-    if (!r) return
-    const x = (e.clientX - r.left) / r.width
-    const y = (e.clientY - r.top) / r.height
-    if (x < 0.2) setDropZone('left')
-    else if (x > 0.8) setDropZone('right')
-    else if (y < 0.25) setDropZone('top')
-    else if (y > 0.75) setDropZone('bottom')
-    else setDropZone('center')
-  }, [])
-
   return (
-    <div ref={ref} className="leaf-pane"
-      onDragOver={onDragOver}
-      onDragLeave={() => setDropZone(null)}
-      onDrop={e => { e.preventDefault(); setDropZone(null); onDrop(node.id, dropZone || 'center') }}
-    >
+    <div className="leaf-pane">
       <div className="vtab-bar">
         {node.tabIds.map(tid => {
           const t = tabs.find(tt => tt.id === tid)
           if (!t) return null
           return (
-            <div key={t.id} className={`vtab ${t.id === node.activeTabId ? 'active' : ''}`}
-              draggable onDragStart={e => { e.dataTransfer.setData('text/plain', t.id); onDragStart(t.id, node.id) }}
+            <div key={t.id} className={`vtab ${t.id === node.activeTabId ? 'active' : ''} ${dragTarget === t.id ? 'tab-drop-target' : ''}`}
+              draggable
+              onDragStart={e => { e.dataTransfer.setData('application/agentboard-tab', t.id); e.dataTransfer.effectAllowed = 'move' }}
+              onDragOver={e => { if (e.dataTransfer.types.includes('application/agentboard-tab')) { e.preventDefault(); setDragTarget(t.id) } }}
+              onDragLeave={() => setDragTarget(null)}
+              onDragEnd={() => setDragTarget(null)}
+              onDrop={e => { e.preventDefault(); const id = e.dataTransfer.getData('application/agentboard-tab'); const r = e.currentTarget.getBoundingClientRect(); if (id) useStore.getState().reorderTab(id, t.id, e.clientX > r.left + r.width / 2); setDragTarget(null) }}
               onClick={() => onSelect(node.id, t.id)}
             >
-              <span className="vtab-name">{t.name}</span>
-              <span className="vtab-close vtab-x" onClick={e => { e.stopPropagation(); onClose(node.id, t.id) }}>&times;</span>
+              <span className={`tab-kind tab-kind-${t.type}`}>{t.type === 'terminal' ? '›_' : t.type === 'pdf' ? 'PDF' : '▤'}</span>
+              <span className="vtab-name" title={t.type === 'terminal' && t.sessionId && sessionState[t.sessionId] ? sessionLabel(sessionState[t.sessionId], titles) : t.path}>{t.type === 'terminal' && t.sessionId && sessionState[t.sessionId] ? sessionLabel(sessionState[t.sessionId], titles) : t.name}</span>
+              <span title={t.type === 'terminal' ? '탭 닫기 (세션 유지)' : '탭 닫기'} className="vtab-close vtab-x" onClick={e => { e.stopPropagation(); onClose(node.id, t.id) }}>&times;</span>
             </div>
           )
         })}
@@ -392,8 +210,8 @@ function LeafPane({ node, tabs, onDragStart, onDrop, onClose, onSelect }: {
           {isTextTab && <button className="vtab-action" onClick={copyContent} title="Copy">{copied ? '✓' : '⎘'}</button>}
           {isRendered && <button className="vtab-action" onClick={() => setMdEditMode(v => !v)} title={mdEditMode ? 'Preview' : 'Edit'}>{mdEditMode ? '👁' : '✎'}</button>}
           {dirty && <button className="vtab-action vtab-send" onClick={saveFile} title="Save (Ctrl+S)" disabled={saving}>{saving ? '...' : '💾'}</button>}
-          <button className="vtab-action" onClick={downloadTab} title="Download">↓</button>
-          <button className="vtab-action" onClick={refreshTab} title="Refresh">↻</button>
+          {activeTab?.type !== 'terminal' && <button className="vtab-action" onClick={downloadTab} title="Download">↓</button>}
+          {activeTab?.type !== 'terminal' && <button className="vtab-action" onClick={refreshTab} title="Refresh">↻</button>}
           {isTextTab && memos.length > 0 && (
             <button className="vtab-action vtab-send" onClick={sendMemosToAgent} title="Send notes to agent">
               ▶ {memos.length}
@@ -401,15 +219,18 @@ function LeafPane({ node, tabs, onDragStart, onDrop, onClose, onSelect }: {
           )}
         </div>
       </div>
-      <div className="viewer-content" onClick={() => setCtxMenu(null)}>
+      <div ref={contentRef} className={`viewer-content ${activeTab?.type === 'terminal' ? 'terminal-tab-content' : ''}`} onClick={() => setCtxMenu(null)}>
         {!activeTab ? <div className="viewer-empty">Drop here</div>
+          : activeTab.type === 'terminal' ? <TerminalTab key={activeTab.sessionId} sessionId={activeTab.sessionId!} />
           : activeTab.type === 'diff' ? <DiffView diff={activeTab.content} />
-          : activeTab.type === 'pdf' ? <FileContent content={activeTab.content} type="pdf" lang="" />
+          : activeTab.type === 'pdf' ? <PdfViewer key={activeTab.id} url={activeTab.content} viewState={activeTab.viewState} onViewChange={rememberView} />
           : activeTab.type === 'image' ? <FileContent content={activeTab.content} type="image" lang="" />
           : (isNb && !mdEditMode) ? <NotebookView content={activeTab.content} />
           : (isMd && !mdEditMode) ? <MarkdownView content={activeTab.content} filePath={activeTab.path} onContextMenu={handleCtxMenu} onEdit={saveMdEdit} />
           : (
-            <CodeEditor
+            <CodeEditor key={activeTab.id}
+              viewState={activeTab.viewState}
+              onViewChange={rememberView}
               content={activeTab.content}
               lang={activeTab.lang}
               memos={memos}
@@ -439,7 +260,6 @@ function LeafPane({ node, tabs, onDragStart, onDrop, onClose, onSelect }: {
           ))}
         </div>
       )}
-      {dropZone && <div className={`drop-indicator drop-${dropZone}`} />}
     </div>
   )
 }
@@ -585,3 +405,12 @@ function MarkdownView({ content, filePath, onContextMenu, onEdit }: { content: s
   )
 }
 
+
+function TerminalTab({ sessionId }: { sessionId: string }) {
+  const session = useStore(s => s.sessions[sessionId])
+  useEffect(() => {
+    if (session && useStore.getState().activeId !== sessionId) useStore.getState().setActive(sessionId)
+  }, [sessionId, !!session])
+  if (!session) return <div className="viewer-empty">종료되거나 제거된 세션입니다. 이 탭을 닫아 주세요.</div>
+  return <><TerminalPane sessionId={sessionId} /><InputCard key={sessionId} sessionId={sessionId} /></>
+}

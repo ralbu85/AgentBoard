@@ -7,7 +7,6 @@ import { Toaster } from './components/Toaster'
 import { Header } from './components/Header'
 import { ExplorerColumn } from './components/Sidebar/ExplorerColumn'
 import { Sidebar } from './components/Sidebar/Sidebar'
-import { TerminalArea } from './components/Terminal/TerminalArea'
 import { DesktopSplitLayout } from './components/Viewer/DesktopSplitLayout'
 import * as TM from './components/Terminal/TerminalManager'
 
@@ -19,11 +18,17 @@ export function App() {
   const [sidebarOpen, setSidebarOpen] = useState(window.innerWidth > 768)
   const [sidebarWidth, setSidebarWidth] = useState(280)
   const [explorerWidth, setExplorerWidth] = useState(240)
-  const [explorerOpen, setExplorerOpen] = useState(true)
+  const [explorerOpen, setExplorerOpen] = useState(isDesktop)
   const [desktop, setDesktop] = useState(isDesktop)
   const workspaceKey = useStore(viewerKey)
   useEffect(() => {
-    const resize = () => setDesktop(isDesktop())
+    let previousDesktop = isDesktop()
+    const resize = () => {
+      const next = isDesktop()
+      if (previousDesktop && !next) { setSidebarOpen(false); setExplorerOpen(false) }
+      previousDesktop = next
+      setDesktop(next)
+    }
     window.addEventListener('resize', resize)
     return () => window.removeEventListener('resize', resize)
   }, [])
@@ -62,7 +67,13 @@ export function App() {
     const state = useStore.getState()
     const entries = workspaceEntries(state)
     const ids = entries.flatMap(e => e.ids)
-    if (!state.activeId && ids.length > 0) {
+    let remembered: string[] = []
+    try { remembered = JSON.parse(localStorage.getItem('agentboard.lastWorkspace') || '[]') } catch {}
+    const previous = entries.find(e => e.host === remembered[0] && e.cwd === remembered[1])
+    if (previous) {
+      state.setWorkspace(previous.cwd, previous.host)
+      useStore.setState({activeId: previous.ids[0] || null})
+    } else if (!state.activeId && ids.length > 0) {
       state.setActive(ids[0])  // TerminalPane's effect notifies + snapshots
     } else if (!state.workspaceCwd && entries.length) {
       state.setWorkspace(entries[0].cwd, entries[0].host)
@@ -156,12 +167,12 @@ export function App() {
             document.addEventListener('mousemove', move); document.addEventListener('mouseup', up)
           }} />
         </> : <button className="explorer-reopen" onClick={() => setExplorerOpen(true)} title="파일 탐색기 열기">파일 ›</button>)}
+        {!desktop && <>
+          <button className="mobile-files-toggle" onClick={() => setExplorerOpen(v => !v)}>파일</button>
+          {explorerOpen && <ExplorerColumn width={Math.min(320, window.innerWidth - 40)} onClose={() => setExplorerOpen(false)} />}
+        </>}
         <main className="main-area">
-          {desktop ? (
-            <DesktopSplitLayout />
-          ) : (
-            <TerminalArea mobile />
-          )}
+          <DesktopSplitLayout />
         </main>
       </div>
     </div>

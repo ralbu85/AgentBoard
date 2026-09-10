@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useStore, completionKey } from '../store'
+import { useStore } from '../store'
 import { api } from '../api'
 import { SpawnModal } from './SpawnModal/SpawnModal'
 import { ProfileEditor } from './SpawnModal/ProfileEditor'
@@ -20,7 +20,6 @@ const ACTIVE_STATE_DISPLAY: Record<string, { label: string; icon: string; cls: s
 }
 
 export function Header({ onToggleSidebar }: Props) {
-  const unread = useStore(s => Object.values(s.sessions).filter(session => s.unreadCompletions.includes(completionKey(session))).length)
   const sessions = useStore((s) => s.sessions)
   const activeId = useStore((s) => s.activeId)
   const effectiveState = useStore((s) => s.effectiveState)
@@ -103,7 +102,6 @@ export function Header({ onToggleSidebar }: Props) {
         <span className="logo">AgentBoard</span>
       </div>
       <div className="header-center">
-        {unread > 0 && <span className="badge unread-chip">✓ {unread} 미확인</span>}
         {counts.working > 0 && <span className="badge badge-working">● {counts.working} Thinking</span>}
         {counts.waiting > 0 && <span className="badge badge-waiting">◆ {counts.waiting} Asking</span>}
         {counts.idle > 0 && <span className="badge badge-idle">○ {counts.idle} Idle</span>}
