@@ -25,7 +25,7 @@ export function Login({ onLogin }: Props) {
           value={pw}
           onChange={(e) => { setPw(e.target.value); setError(false) }}
           placeholder="Password"
-          autoFocus
+          autoFocus={window.innerWidth > 768}
         />
         <button type="submit" className="btn btn-primary">Login</button>
         {error && <p className="error">Invalid password</p>}

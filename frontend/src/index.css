@@ -1716,7 +1716,8 @@ html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
   .input-row { gap: 5px; }
   .quick-key { font-size: 12px; padding: 5px 9px; }
   .workbench .vtab-name { max-width: 130px; font-size: 11px; }
-  .browser-toolbar input, input, textarea, select { font-size: 16px; }
+  .login-form input, .browser-toolbar input, input, textarea, select { font-size: 16px; }
+  .login-form { min-width: 0; width: min(340px, calc(100% - 32px)); padding: 24px; }
   .mobile-files-toggle { bottom: auto; top: 51px; left: auto; right: 4px; padding: 4px 7px; }
   .workbench .vtab-bar { padding-right: 46px; }
 }
