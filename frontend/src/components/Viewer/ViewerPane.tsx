@@ -26,6 +26,13 @@ export function ViewerPane() {
 }
 
 function WorkspaceViewer({workspaceKey, tabs, activeTabId}: {workspaceKey:string; tabs:ViewerTab[]; activeTabId:string|null}) {
+  const [compact, setCompact] = useState(() => window.matchMedia('(max-width: 768px)').matches)
+  useEffect(() => {
+    const media = window.matchMedia('(max-width: 768px)')
+    const update = () => setCompact(media.matches)
+    media.addEventListener('change', update)
+    return () => media.removeEventListener('change', update)
+  }, [])
   const [tree, setTree] = useState(() => readLayout(workspaceKey, tabs.map(t=>t.id), activeTabId))
   const hiddenSessionKeys = useStore(s=>s.hiddenSessions.join('\0'))
   const workspaceSessionIds = useStore(s=>Object.values(s.sessions).filter(session=>JSON.stringify([session.host||'local',session.cwd||'~'])===workspaceKey).map(session=>session.id).join('\0'))
@@ -43,6 +50,7 @@ function WorkspaceViewer({workspaceKey, tabs, activeTabId}: {workspaceKey:string
   useEffect(() => { saveLayout(workspaceKey, tree) }, [workspaceKey, tree])
 
   const select = (pane:string, id:string) => {
+    if (compact) pane = leaves(displayedTree).find(p => p.tabIds.includes(id))?.id || pane
     focused.current = pane
     const state = useStore.getState(), tab = tabs.find(t=>t.id===id)
     if (tab?.type==='terminal' && tab.sessionId) {
@@ -52,6 +60,7 @@ function WorkspaceViewer({workspaceKey, tabs, activeTabId}: {workspaceKey:string
     setTree(prev => leaves(prev).find(p=>p.id===pane)?.activeTabId===id ? prev : mapTree(prev, n=>n.type==='leaf'&&n.id===pane ? {...n,activeTabId:id} : n))
   }
   const move = (id:string, pane:string, zone:DropZone) => {
+    if (compact) return // Mobile tab reordering must not rewrite desktop pane membership.
     setTree(prev => {
       const next=moveTab(prev,id,pane,zone)
       focused.current=leaves(next).find(p=>p.tabIds.includes(id))?.id || pane
@@ -63,7 +72,10 @@ function WorkspaceViewer({workspaceKey, tabs, activeTabId}: {workspaceKey:string
   const resize = (id:string, ratio:number) => setTree(prev=>mapTree(prev,n=>n.type==='split'&&n.id===id ? {...n,ratio:Math.max(.15,Math.min(.85,ratio))}:n))
   const merge = () => setTree(newLeaf(tabs.map(t=>t.id),activeTabId))
   if (!tabs.length) return <div className="viewer-empty">왼쪽에서 에이전트 세션이나 파일을 선택하세요.</div>
-  return <div className="viewer-inner"><RenderNode node={displayedTree} tabs={tabs} activeTabId={activeTabId} onSelect={select} onClose={(_pane,id)=>useStore.getState().closeTab(id)} onMove={move} onResize={resize} onMerge={merge} split={displayedTree.type==='split'} /></div>
+  // Present all tabs in one full-width pane on phones. Only the original tree
+  // is persisted, so rotating/resizing back restores the desktop split layout.
+  const visibleTree:TreeNode = compact ? {type:'leaf',id:'mobile-view',tabIds:tabs.map(t=>t.id),activeTabId:activeTabId||tabs[0].id} : displayedTree
+  return <div className={`viewer-inner${compact?' compact-viewer':''}`}><RenderNode node={visibleTree} tabs={tabs} activeTabId={activeTabId} onSelect={select} onClose={(_pane,id)=>useStore.getState().closeTab(id)} onMove={move} onResize={resize} onMerge={merge} split={!compact&&displayedTree.type==='split'} /></div>
 }
 
 interface PaneActions {
@@ -270,9 +282,9 @@ function LeafPane({ node, tabs, activeTabId, split, onClose, onSelect, onMove, o
           )
         })}
         <div className="vtab-actions">
-          <button className="vtab-action" title="좌우 분할 (선택한 탭을 오른쪽으로)" disabled={node.tabIds.length<2} onClick={()=>activeTab&&onMove(activeTab.id,node.id,'right')}>◫</button>
-          <button className="vtab-action" title="상하 분할 (선택한 탭을 아래로)" disabled={node.tabIds.length<2} onClick={()=>activeTab&&onMove(activeTab.id,node.id,'bottom')}>⬒</button>
-          {split&&<button className="vtab-action" title="분할 합치기" onClick={onMerge}>▣</button>}
+          <button className="vtab-action vtab-action-split" title="좌우 분할 (선택한 탭을 오른쪽으로)" disabled={node.tabIds.length<2} onClick={()=>activeTab&&onMove(activeTab.id,node.id,'right')}>◫</button>
+          <button className="vtab-action vtab-action-split" title="상하 분할 (선택한 탭을 아래로)" disabled={node.tabIds.length<2} onClick={()=>activeTab&&onMove(activeTab.id,node.id,'bottom')}>⬒</button>
+          {split&&<button className="vtab-action vtab-action-split" title="분할 합치기" onClick={onMerge}>▣</button>}
           {isTextTab && <button className="vtab-action" onClick={copyContent} title="Copy">{copied ? '✓' : '⎘'}</button>}
           {isRendered && <button className="vtab-action" onClick={() => setMdEditMode(v => !v)} title={mdEditMode ? 'Preview' : 'Edit'}>{mdEditMode ? '👁' : '✎'}</button>}
           {dirty && <button className="vtab-action vtab-send" onClick={saveFile} title="Save (Ctrl+S)" disabled={saving}>{saving ? '...' : '💾'}</button>}
