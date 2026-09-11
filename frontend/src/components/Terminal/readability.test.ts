@@ -12,3 +12,10 @@ it('adapts columns within the server protocol limits without shrinking the font'
   expect(terminalGeometry(2000,9000,9,19,true)).toEqual({cols:80,rows:200})
   expect(terminalGeometry(450,800,9,19,false).cols).toBe(80)
 })
+it('uses a compact phone font without inheriting desktop zoom preferences', () => {
+  localStorage.setItem('agentboard.terminalPreferences', JSON.stringify({fontSize:22}))
+  expect(loadTerminalPreferences(true).fontSize).toBe(12)
+  expect(loadTerminalPreferences(false).fontSize).toBe(22)
+  localStorage.setItem('agentboard.terminalPreferences.mobile', JSON.stringify({fontSize:14}))
+  expect(loadTerminalPreferences(true).fontSize).toBe(14)
+})

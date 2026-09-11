@@ -2,7 +2,7 @@ import { Terminal } from '@xterm/xterm'
 import { SearchAddon } from '@xterm/addon-search'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import { Unicode11Addon } from '@xterm/addon-unicode11'
-import { loadTerminalPreferences, terminalGeometry, type TerminalPreferences } from './readability'
+import { loadTerminalPreferences, terminalPreferenceKey, terminalGeometry, type TerminalPreferences } from './readability'
 import { send } from '../../ws'
 import { useStore, workspaceId } from '../../store'
 
@@ -177,7 +177,7 @@ export function setReadability(patch: Partial<TerminalPreferences>) {
   preferences = { ...preferences, ...patch }
   preferences.fontSize = Math.max(12, Math.min(22, preferences.fontSize))
   preferences.lineHeight = Math.max(1, Math.min(1.5, preferences.lineHeight))
-  try { localStorage.setItem('agentboard.terminalPreferences', JSON.stringify(preferences)) } catch {}
+  try { localStorage.setItem(terminalPreferenceKey(isMobile), JSON.stringify(preferences)) } catch {}
   for (const [id, instance] of terminals) {
     instance.term.options.fontSize = preferences.fontSize
     instance.term.options.lineHeight = preferences.lineHeight

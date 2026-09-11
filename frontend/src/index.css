@@ -1700,3 +1700,23 @@ tr.ln-memo:hover .fv-line-content::after { opacity: 1; }
 .tab-kind-browser { color:#8cbfbd; }
 
 .dragging-viewer-tab .browser-surface { pointer-events:none; }
+
+/* Phone layout: fit controls to the viewport instead of clipping a desktop row.
+   Keep editable text at 16px to avoid Safari's focus zoom. */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+.main-area, .input-textarea { min-width: 0; }
+@media (max-width: 768px) {
+  .header { padding: 0 6px; gap: 4px; }
+  .header-left { gap: 4px; min-width: 0; }
+  .header .logo { font-size: 12px; }
+  .header-right { gap: 3px; flex-shrink: 0; }
+  .header-right .btn { font-size: 11px; padding: 5px; }
+  .header-active-state { display: none; } /* State remains in terminal toolbar. */
+  .input-card { padding: 6px; }
+  .input-row { gap: 5px; }
+  .quick-key { font-size: 12px; padding: 5px 9px; }
+  .workbench .vtab-name { max-width: 130px; font-size: 11px; }
+  .browser-toolbar input, input, textarea, select { font-size: 16px; }
+  .mobile-files-toggle { bottom: auto; top: 51px; left: auto; right: 4px; padding: 4px 7px; }
+  .workbench .vtab-bar { padding-right: 46px; }
+}
