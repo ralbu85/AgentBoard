@@ -5,7 +5,7 @@ import { useStore, viewerKey, workspaceEntries, workspaceId, completionKey, sess
 const tab: ViewerTab = { id: '/project/a.py', path: '/project/a.py', name: 'a.py', type: 'code', lang: 'python', content: 'original', version: 'v1' }
 beforeEach(() => {
   localStorage.clear()
-  useStore.setState({ sessions: {}, activeId: null, workspaceCwd: '/project', workspaceHost: 'local', _viewerState: {}, _restoredWorkspaces: {}, _completedAt: {}, workspaceFolders: [], workspaceOrder: [], hiddenWorkspaces: [], unreadCompletions: [] })
+  useStore.setState({ connection: 'online', hiddenSessions: [], sessions: {}, activeId: null, workspaceCwd: '/project', workspaceHost: 'local', _viewerState: {}, _restoredWorkspaces: {}, _completedAt: {}, workspaceFolders: [], workspaceOrder: [], hiddenWorkspaces: [], unreadCompletions: [] })
 })
 describe('workspace files', () => {
   it('opens and edits without an agent session', () => {
@@ -243,4 +243,54 @@ it('keeps browser navigation and tabs isolated from files and other workspaces',
 it('never opens a browser tab for executable URLs',()=>{
   const s=useStore.getState();s.openBrowser('javascript:alert(1)')
   expect(useStore.getState()._viewerState[viewerKey(useStore.getState())]).toBeUndefined()
+})
+
+describe('session lifecycle reliability', () => {
+  it('deduplicates acknowledged events across reconnect and old event replay', () => {
+    const s=useStore.getState();s.upsertSession({id:'1',cwd:'/project',cmd:'codex'})
+    s.handleMessage({type:'aiState',id:'1',state:'idle',completionId:'turn-a'})
+    expect(useStore.getState().unreadCompletions).toHaveLength(1)
+    s.acknowledgeCompletion('1')
+    s.handleMessage({type:'spawned',id:'1',sessionName:'',cwd:'/project',cmd:'codex',status:'running'})
+    for(let i=0;i<100;i++) {
+      s.handleMessage({type:'aiState',id:'1',state:'working',completionId:'turn-a'})
+      s.handleMessage({type:'aiState',id:'1',state:'idle',completionId:'turn-a'})
+    }
+    expect(useStore.getState().unreadCompletions).toEqual([])
+    s.handleMessage({type:'aiState',id:'1',state:'idle',completionId:'turn-b'})
+    expect(useStore.getState().unreadCompletions).toHaveLength(1)
+    s.acknowledgeCompletion('1')
+    s.handleMessage({type:'aiState',id:'1',state:'idle',completionId:'turn-a'})
+    expect(useStore.getState().unreadCompletions).toEqual([])
+  })
+  it('finds completion missed while disconnected without creating first-load alerts', () => {
+    const s=useStore.getState();s.upsertSession({id:'1',cwd:'/project',cmd:'codex'})
+    const session={...useStore.getState().sessions['1'],completionId:'old',aiState:'idle'}
+    s.setSessions([session]);expect(useStore.getState().unreadCompletions).toEqual([])
+    s.setSessions([{...session,completionId:'new'}]);expect(useStore.getState().unreadCompletions).toHaveLength(1)
+    s.acknowledgeCompletion('1');s.setSessions([{...session,completionId:'new'}])
+    expect(useStore.getState().unreadCompletions).toEqual([])
+  })
+  it('keeps connection loss distinct from process exit and preserves working state', () => {
+    const s=useStore.getState();s.upsertSession({id:'remote:1',host:'remote',cwd:'/project',cmd:'codex'})
+    s.handleMessage({type:'aiState',id:'remote:1',state:'working'})
+    s.handleMessage({type:'host-connection',host:'remote',online:false})
+    expect(s.effectiveState('remote:1')).toBe('disconnected')
+    expect(useStore.getState().sessions['remote:1'].status).toBe('running')
+    expect(useStore.getState().unreadCompletions).toEqual([])
+    s.handleMessage({type:'host-connection',host:'remote',online:true})
+    expect(s.effectiveState('remote:1')).toBe('working')
+    useStore.setState({connection:'offline'});expect(s.effectiveState('remote:1')).toBe('disconnected')
+    useStore.setState({connection:'online'});expect(s.effectiveState('remote:1')).toBe('working')
+  })
+  it('hides and restores sessions without removing them or deleting document tabs', () => {
+    const s=useStore.getState();s.upsertSession({id:'1',cwd:'/project',cmd:'codex'});s.setActive('1');s.openTab(tab)
+    s.setSessionHidden('1',true);s.ensureSessionTabs(viewerKey(useStore.getState()))
+    expect(workspaceEntries(useStore.getState()).flatMap(e=>e.ids)).not.toContain('1')
+    expect(useStore.getState().sessions['1']).toBeDefined()
+    expect(useStore.getState()._viewerState[viewerKey(useStore.getState())].tabs.map(t=>t.id)).toEqual([tab.id])
+    s.setActive('1');expect(workspaceEntries(useStore.getState()).flatMap(e=>e.ids)).toContain('1')
+    s.removeSession('1');s.ensureSessionTabs(viewerKey(useStore.getState()))
+    expect(useStore.getState()._viewerState[viewerKey(useStore.getState())].tabs.map(t=>t.id)).toEqual([tab.id])
+  })
 })

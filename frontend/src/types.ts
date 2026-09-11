@@ -8,6 +8,8 @@ export interface Session {
   process: string
   createdAt: number
   memKB: number
+  online?: boolean
+  lastActivityAt?: number
   completionId?: string
   autoTitle?: string
   altScreen?: boolean     // full-screen app (vim/TUI) active → no scrollback
@@ -39,6 +41,9 @@ export interface FileEntry {
 // WebSocket messages server → client.
 // Remote (agent) messages additionally carry host/hostLabel, added by the hub.
 export type WsMessage =
+  | { type: 'sessions'; sessions: Session[] }
+  | { type: 'host-connection'; host: string; online: boolean }
+  | { type: 'activity'; id: string; lastActivityAt: number }
   | { type: 'spawned'; id: string; cwd: string; cmd: string; status: string; sessionName: string; host?: string; hostLabel?: string; reqId?: string }
   | { type: 'snapshot'; id: string; data: string }
   | { type: 'screen'; id: string; data: string }

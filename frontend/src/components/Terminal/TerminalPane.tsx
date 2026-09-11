@@ -23,6 +23,8 @@ const STATE_DISPLAY: Record<string, { label: string; icon: string }> = {
   waiting:   { label: 'Asking',   icon: '◆' },
   completed: { label: 'Done',     icon: '✓' },
   idle:      { label: 'Idle',     icon: '○' },
+  disconnected: {label: '연결 끊김', icon: '○'},
+  running: {label: '상태 확인 중', icon: '○'},
   stopped:   { label: 'Stopped',  icon: '■' },
 }
 

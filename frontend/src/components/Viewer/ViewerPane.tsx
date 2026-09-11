@@ -27,8 +27,9 @@ export function ViewerPane() {
 
 function WorkspaceViewer({workspaceKey, tabs, activeTabId}: {workspaceKey:string; tabs:ViewerTab[]; activeTabId:string|null}) {
   const [tree, setTree] = useState(() => readLayout(workspaceKey, tabs.map(t=>t.id), activeTabId))
+  const hiddenSessionKeys = useStore(s=>s.hiddenSessions.join('\0'))
   const workspaceSessionIds = useStore(s=>Object.values(s.sessions).filter(session=>JSON.stringify([session.host||'local',session.cwd||'~'])===workspaceKey).map(session=>session.id).join('\0'))
-  useEffect(()=>{ useStore.getState().ensureSessionTabs(workspaceKey) },[workspaceKey,workspaceSessionIds])
+  useEffect(()=>{ useStore.getState().ensureSessionTabs(workspaceKey) },[workspaceKey,workspaceSessionIds,hiddenSessionKeys])
   const focused = useRef(leaves(tree).find(p=>p.tabIds.includes(activeTabId||''))?.id || leaves(tree)[0].id)
   const ids = tabs.map(t=>t.id).join('\0')
   const displayedTree = useMemo(()=>syncTree(tree,tabs.map(t=>t.id),activeTabId,focused.current),[tree,ids,activeTabId])

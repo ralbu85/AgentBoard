@@ -77,7 +77,7 @@ export function FolderList({ onSelect }: Props) {
           title={sessionLabel(session, state.titles)} onClick={() => { state.setActive(id); state.acknowledgeCompletion(id); onSelect?.() }}>
           <span className={`session-dot dot-${status}`} />
           <span className="workspace-session-details"><span className="workspace-session-name">{sessionLabel(session, state.titles)}</span><span className="workspace-session-meta">{session.cmd || session.process || '터미널'}{session.createdAt ? ` · ${new Date(session.createdAt * 1000).toLocaleString('ko-KR', {month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})}` : ''}</span></span>
-          <span className="workspace-session-status">{pending ? '완료 · 새 소식' : ({working:'작업 중',waiting:'입력 대기',idle:'대기',completed:'완료',stopped:'종료'} as Record<string,string>)[status] || status}</span>
+          <span className="workspace-session-status">{pending && status !== 'disconnected' ? '완료 · 새 소식' : ({working:'작업 중',waiting:'입력 대기',idle:'대기',completed:'완료',stopped:'종료',disconnected:'연결 끊김',running:'상태 확인 중'} as Record<string,string>)[status] || status}</span>
         </button>
       })}</div></div>
     })}

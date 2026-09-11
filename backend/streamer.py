@@ -562,6 +562,11 @@ def _detect_state(id: str, s, output: str, stable_seconds: float = -1.0):
     previous, changed_at = _state_samples.get(id, (None, now))
     if signature != previous:
         changed_at = now
+        if previous is not None:
+            s.last_activity_at = _time.time()
+            if now - getattr(s, "_activity_sent", 0) >= 5:
+                s._activity_sent = now
+                broadcast({"type": "activity", "id": id, "lastActivityAt": s.last_activity_at})
     _state_samples[id] = (signature, changed_at)
     new_state = detect_state(output, s.process, now - changed_at)
     # A newly observed stable pane must not produce a synthetic working→done

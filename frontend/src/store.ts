@@ -1,3 +1,4 @@
+import {observeCompletion} from './completions'
 import {uiId} from './uiId'
 import { create } from 'zustand'
 import type { Session, WsMessage, SpawnProfile } from './types'
@@ -20,6 +21,9 @@ export interface ViewerTab {
 }
 
 interface AppState {
+  connection: 'connecting' | 'online' | 'offline'
+  hiddenSessions: string[]
+  setSessionHidden: (id: string, hidden: boolean) => void
   sessions: Record<string, Session>
   activeId: string | null
   titles: Record<string, string>
@@ -143,7 +147,7 @@ export const completionKey = (session: Session) => JSON.stringify([session.host 
 
 export const workspaceId = (cwd: string, host = 'local') => JSON.stringify([host, cwd])
 export interface WorkspaceEntry { key: string; cwd: string; host: string; ids: string[] }
-export function workspaceEntries(state: Pick<AppState, 'sessions' | 'workspaceFolders' | 'workspaceOrder' | 'hiddenWorkspaces'>, includeHidden = false): WorkspaceEntry[] {
+export function workspaceEntries(state: Pick<AppState, 'sessions' | 'workspaceFolders' | 'workspaceOrder' | 'hiddenWorkspaces' | 'hiddenSessions'>, includeHidden = false): WorkspaceEntry[] {
   const entries = new Map<string, WorkspaceEntry>()
   const add = (cwd: string, host = 'local', id?: string) => {
     const key = workspaceId(cwd, host)
@@ -151,7 +155,10 @@ export function workspaceEntries(state: Pick<AppState, 'sessions' | 'workspaceFo
     if (id) entries.get(key)!.ids.push(id)
   }
   for (const cwd of state.workspaceFolders) add(cwd)
-  for (const session of Object.values(state.sessions)) add(session.cwd || '~', session.host || 'local', session.id)
+  for (const session of Object.values(state.sessions)) {
+    if (!includeHidden && state.hiddenSessions.includes(completionKey(session))) continue
+    add(session.cwd || '~', session.host || 'local', session.id)
+  }
   // Keep removed empty/remote workspaces available for restoration as well.
   for (const key of [...state.workspaceOrder, ...state.hiddenWorkspaces]) {
     try { const [host, cwd] = JSON.parse(key); if (typeof host === 'string' && typeof cwd === 'string') add(cwd, host) } catch {}
@@ -164,6 +171,23 @@ export function workspaceEntries(state: Pick<AppState, 'sessions' | 'workspaceFo
 const restoringViewers = new Set<string>()
 
 export const useStore = create<AppState>((set, get) => ({
+  connection: 'online',
+  hiddenSessions: readStringList('agentboard.hiddenSessions'),
+  setSessionHidden: (id, hidden) => {
+    const state = get(), session = state.sessions[id]
+    if (!session) return
+    const key = completionKey(session)
+    const next = hidden ? [...new Set([...state.hiddenSessions, key])] : state.hiddenSessions.filter(k => k !== key)
+    persistList('agentboard.hiddenSessions', next)
+    const viewers = {...state._viewerState}
+    if (hidden) for (const [owner, view] of Object.entries(viewers)) {
+      const tabs = view.tabs.filter(t => t.sessionId !== id)
+      if (tabs.length === view.tabs.length) continue
+      viewers[owner] = {tabs, activeTabId: tabs.some(t => t.id === view.activeTabId) ? view.activeTabId : tabs[0]?.id || null}
+      persistViewer(owner, viewers[owner])
+    }
+    set({hiddenSessions: next, _viewerState: viewers, ...(hidden && state.activeId === id ? {activeId: null} : {})})
+  },
   sessions: {},
   activeId: null,
   titles: {},
@@ -271,6 +295,8 @@ export const useStore = create<AppState>((set, get) => ({
   setActive: (id) => set((state) => {
     const session = id ? state.sessions[id] : undefined
     if (!session) return { activeId: id }
+    const hiddenSessions = state.hiddenSessions.filter(k => k !== completionKey(session))
+    persistList('agentboard.hiddenSessions', hiddenSessions)
     const key = workspaceId(session.cwd || '~', session.host || 'local')
     persistList('agentboard.lastWorkspace', [session.host || 'local', session.cwd || '~'])
     const hidden = state.hiddenWorkspaces.filter(k => k !== key)
@@ -280,7 +306,7 @@ export const useStore = create<AppState>((set, get) => ({
     const tab: ViewerTab = { id: tabId, path: tabId, name: sessionLabel(session, state.titles), content: '', type: 'terminal', lang: '', sessionId: id! }
     const tabs = current.tabs.some(t => t.id === tabId) ? current.tabs : [...current.tabs, tab]
     if (state._restoredWorkspaces[key]) persistViewer(key, { tabs, activeTabId: tabId })
-    return { activeId: id, workspaceCwd: session.cwd || '~', workspaceHost: session.host || 'local', hiddenWorkspaces: hidden,
+    return { hiddenSessions, activeId: id, workspaceCwd: session.cwd || '~', workspaceHost: session.host || 'local', hiddenWorkspaces: hidden,
       _viewerState: { ...state._viewerState, [key]: { tabs, activeTabId: tabId } } }
   }),
 
@@ -423,7 +449,7 @@ export const useStore = create<AppState>((set, get) => ({
       }
       if (tab.type === 'terminal') {
         const session = tab.sessionId ? get().sessions[tab.sessionId] : undefined
-        if (session && workspaceId(session.cwd || '~', session.host || 'local') === key) restored.push({...tab, content: ''})
+        if (session && !get().hiddenSessions.includes(completionKey(session)) && workspaceId(session.cwd || '~', session.host || 'local') === key) restored.push({...tab, content: ''})
         continue
       }
       try { if (JSON.parse(key)[0] !== 'local') continue } catch { continue }
@@ -450,10 +476,12 @@ export const useStore = create<AppState>((set, get) => ({
 
   ensureSessionTabs: (key) => set(state => {
     const current = state._viewerState[key] || {tabs:[],activeTabId:null}
-    const missing = Object.values(state.sessions).filter(session => workspaceId(session.cwd || '~', session.host || 'local') === key && !current.tabs.some(tab => tab.sessionId === session.id))
-    if (!missing.length) return {}
+    const tabs = current.tabs.filter(tab => !tab.sessionId || (state.sessions[tab.sessionId] && !state.hiddenSessions.includes(completionKey(state.sessions[tab.sessionId]))))
+    const missing = Object.values(state.sessions).filter(session => !state.hiddenSessions.includes(completionKey(session)) && workspaceId(session.cwd || '~', session.host || 'local') === key && !tabs.some(tab => tab.sessionId === session.id))
+    if (!missing.length && tabs.length === current.tabs.length) return {}
     const added: ViewerTab[] = missing.map(session => ({id:`terminal:${session.id}`,path:`terminal:${session.id}`,name:sessionLabel(session,state.titles),type:'terminal',content:'',lang:'',sessionId:session.id}))
-    const next = {tabs:[...current.tabs,...added],activeTabId:current.activeTabId || added[0].id}
+    const nextTabs = [...tabs,...added]
+    const next = {tabs:nextTabs,activeTabId:nextTabs.some(t=>t.id===current.activeTabId)?current.activeTabId:nextTabs[0]?.id||null}
     persistViewer(key,next)
     return {_viewerState:{...state._viewerState,[key]:next}}
   }),
@@ -500,15 +528,28 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   setSessions: (sessions) => {
+    const state = get(), unread = new Set(state.unreadCompletions)
     const map: Record<string, Session> = {}
-    for (const s of sessions) map[s.id] = { ...s, host: s.host || 'local' }
-    set({ sessions: map })
+    for (const s of sessions) {
+      map[s.id] = { ...s, host: s.host || 'local', online: s.online !== false }
+      if (s.completionId && observeCompletion(map[s.id], s.completionId, true)) unread.add(completionKey(map[s.id]))
+    }
+    // A missing remote host is disconnected, not a terminated process.
+    for (const s of Object.values(state.sessions)) if (s.host !== 'local' && !map[s.id]) map[s.id] = {...s, online:false}
+    persistList('agentboard.unreadCompletions', [...unread])
+    set({ sessions: map, unreadCompletions: [...unread], ...(state.activeId && !map[state.activeId] ? {activeId: Object.values(map).find(s=>s.cwd===state.workspaceCwd && s.host===state.workspaceHost && !state.hiddenSessions.includes(completionKey(s)))?.id || null} : {}) })
   },
 
   handleMessage: (msg) => {
     const state = get()
 
     switch (msg.type) {
+      case 'sessions':
+        state.setSessions(msg.sessions)
+        break
+      case 'host-connection':
+        set({sessions: Object.fromEntries(Object.entries(state.sessions).map(([id,s]) => [id, s.host === msg.host ? {...s,online:msg.online} : s]))})
+        break
       case 'spawned':
         set({
           sessions: {
@@ -519,10 +560,14 @@ export const useStore = create<AppState>((set, get) => ({
               cwd: msg.cwd,
               cmd: msg.cmd,
               status: msg.status as Session['status'],
-              aiState: null,
-              process: '',
-              createdAt: 0,
-              memKB: 0,
+              aiState: state.sessions[msg.id]?.aiState || null,
+              process: state.sessions[msg.id]?.process || '',
+              createdAt: state.sessions[msg.id]?.createdAt || 0,
+              memKB: state.sessions[msg.id]?.memKB || 0,
+              completionId: state.sessions[msg.id]?.completionId,
+              autoTitle: state.sessions[msg.id]?.autoTitle,
+              lastActivityAt: state.sessions[msg.id]?.lastActivityAt,
+              online: true,
               host: msg.host || 'local',
               hostLabel: msg.hostLabel,
             },
@@ -584,8 +629,8 @@ export const useStore = create<AppState>((set, get) => ({
         if (!s) break
         const ca = { ...state._completedAt }
         const unread = new Set(state.unreadCompletions)
-        const newCompletion = msg.completionId == null || (!!msg.completionId && msg.completionId !== s.completionId)
-        if (s.aiState === 'working' && msg.state === 'idle' && newCompletion) {
+        const newCompletion = msg.state === 'idle' && (msg.completionId ? observeCompletion(s, msg.completionId) : msg.completionId == null && s.aiState === 'working')
+        if (newCompletion) {
           ca[msg.id] = Date.now()
           unread.add(completionKey(s))
           persistList('agentboard.unreadCompletions', [...unread])
@@ -595,6 +640,12 @@ export const useStore = create<AppState>((set, get) => ({
           _completedAt: ca,
           unreadCompletions: [...unread],
         })
+        break
+      }
+
+      case 'activity': {
+        const s = state.sessions[msg.id]
+        if (s) set({sessions: {...state.sessions, [msg.id]: {...s, lastActivityAt: msg.lastActivityAt}}})
         break
       }
 
@@ -631,6 +682,7 @@ export const useStore = create<AppState>((set, get) => ({
     const state = get()
     const s = state.sessions[id]
     if (!s) return null
+    if (state.connection !== 'online' || s.online === false) return 'disconnected'
     if (s.status === 'stopped') return 'stopped'
     if (s.status === 'completed') return 'completed'
 

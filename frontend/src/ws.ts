@@ -18,10 +18,12 @@ window.__wsDebug = { screenCount: 0, lastScreenId: '', lastScreenLen: 0, snapsho
 
 export function initWs() {
   if (ws && (ws.readyState === WebSocket.CONNECTING || ws.readyState === WebSocket.OPEN)) return
+  useStore.setState({connection: 'connecting'})
   const proto = location.protocol === 'https:' ? 'wss' : 'ws'
   ws = new WebSocket(`${proto}://${location.host}/ws`)
 
   ws.onopen = () => {
+    useStore.setState({connection: 'online'})
     document.getElementById('status-dot')?.classList.remove('off')
     _retryDelay = 1000  // reset backoff on successful connect
     // Always re-send current active session on (re)connect
@@ -38,6 +40,7 @@ export function initWs() {
   }
 
   ws.onclose = (e) => {
+    useStore.setState({connection: 'offline'})
     document.getElementById('status-dot')?.classList.add('off')
     ws = null
     if (e.code === 4401) {

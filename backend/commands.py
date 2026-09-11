@@ -61,12 +61,15 @@ async def apply_command(store, streamer, tmux, msg: dict,
 
     if mtype == "kill":
         s = store.get(mid)
-        if s:
+        ok = await store.kill(mid)
+        if ok and s:
             await streamer.stop_stream(mid, s.session_name)
-        return await store.kill(mid)
+        return ok
 
     if mtype == "remove":
         s = store.get(mid)
+        if s and getattr(s, "status", "running") == "running":
+            return False  # Hide a live session in the UI; do not orphan its process.
         if s:
             await streamer.stop_stream(mid, s.session_name)
         store.remove(mid)

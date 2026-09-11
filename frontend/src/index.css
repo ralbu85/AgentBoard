@@ -1704,6 +1704,22 @@ tr.ln-memo:hover .fv-line-content::after { opacity: 1; }
 /* Phone layout: fit controls to the viewport instead of clipping a desktop row.
    Keep editable text at 16px to avoid Safari's focus zoom. */
 html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+.dot-disconnected { background: #929aab; box-shadow: none; }
+.tsb-disconnected, .badge-offline { color: #b1b9c9; }
+.session-manager-backdrop { position:fixed; inset:0; z-index:200; background:#0009; display:flex; align-items:center; justify-content:center; padding:16px; }
+.session-manager { width:min(820px,100%); max-height:calc(100dvh - 32px); max-height:calc(var(--vvh, 100dvh) - 32px); display:flex; flex-direction:column; gap:12px; padding:16px; border:1px solid var(--border); border-radius:10px; background:var(--bg-secondary); overflow:hidden; color:var(--text-primary); font-size:13px; }
+.session-manager-head { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.session-manager-head strong { flex:1; }
+.session-manager p { color:var(--text-secondary); line-height:1.5; }
+.session-manager input { min-width:0; padding:8px; background:var(--bg-primary); color:var(--text-primary); border:1px solid var(--border); border-radius:5px; }
+.session-manager-filters { display:flex; gap:6px; flex-wrap:wrap; }
+.session-manager-filters [aria-pressed=true] { border-color:var(--accent); background:var(--accent-soft); color:var(--text-primary); }
+.session-manager-list { overflow:auto; min-height:0; }
+.session-manager-row { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px 0; border-top:1px solid var(--border); flex-wrap:wrap; }
+.session-manager-detail { min-width:0; display:flex; flex-direction:column; gap:5px; flex:1 1 260px; }
+.session-manager-detail strong, .session-manager-path { overflow-wrap:anywhere; }
+.session-manager-detail span, .session-manager-detail small { color:var(--text-secondary); }
+.session-manager-actions { display:flex; gap:6px; }
 .main-area, .input-textarea { min-width: 0; }
 @media (max-width: 768px) {
   .header { padding: 0 6px; gap: 4px; }

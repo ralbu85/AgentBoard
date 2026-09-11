@@ -80,7 +80,9 @@ class AgentConn:
                         self.titles[str(k)] = v
         elif mid in self.sessions:
             s = self.sessions[mid]
-            if mtype == "status":
+            if mtype == "activity":
+                s["lastActivityAt"] = msg.get("lastActivityAt", 0)
+            elif mtype == "status":
                 s["status"] = msg.get("status", s["status"])
             elif mtype == "cwd":
                 s["cwd"] = msg.get("cwd", s["cwd"])

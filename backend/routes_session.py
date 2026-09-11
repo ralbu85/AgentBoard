@@ -53,8 +53,8 @@ async def login(req: LoginRequest, request: Request, response: Response):
 @router.get("/workers")
 async def workers(_=Depends(verify)):
     # Local sessions carry no host field; the frontend defaults them to "local".
-    # Remote sessions reach the browser over the WebSocket mirror, not here.
-    return [s.to_dict() for s in store.all()]
+    # Include the remote mirror so initial HTTP and WS snapshots agree.
+    return [s.to_dict() for s in store.all()] + registry.mirror()
 
 
 @router.get("/hosts")
@@ -88,8 +88,8 @@ async def remove(req: SessionIdRequest, _=Depends(verify)):
     if host != LOCAL:
         ok = await registry.send(host, {"type": "remove", "id": local_id})
         return {"ok": ok}
-    await commands.apply_command(store, streamer, tmux, {"type": "remove", "id": local_id})
-    return {"ok": True}
+    ok = await commands.apply_command(store, streamer, tmux, {"type": "remove", "id": local_id})
+    return {"ok": ok is not False}
 
 
 @router.post("/reconnect")
@@ -107,7 +107,15 @@ async def attach(req: AttachRequest, _=Depends(verify)):
     alive = await tmux.is_alive(req.sessionName)
     if not alive:
         return {"ok": False, "error": "Session not found"}
-    s = store.add(req.sessionName, req.cwd, config.DEFAULT_COMMAND)
+    # Recheck after the await: simultaneous attach requests share one record.
+    existing = next((s for s in store.all() if s.session_name == req.sessionName), None)
+    if existing:
+        return {"ok": True, "id": existing.id}
+    info = await tmux.display_info(req.sessionName)
+    existing = next((s for s in store.all() if s.session_name == req.sessionName), None)
+    if existing:
+        return {"ok": True, "id": existing.id}
+    s = store.add(req.sessionName, info.get("cwd") or req.cwd, info.get("process") or config.DEFAULT_COMMAND)
     await streamer.start_stream(s.id, s.session_name)
     store.broadcast({
         "type": "spawned",

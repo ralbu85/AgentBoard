@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
-import { useStore, sessionLabel } from '../store'
-import { api } from '../api'
+import { useStore } from '../store'
+import { SessionManager } from './SessionManager'
 import { SpawnModal } from './SpawnModal/SpawnModal'
 import { ProfileEditor } from './SpawnModal/ProfileEditor'
 import { WorkspaceModal } from './Sidebar/WorkspaceModal'
@@ -16,15 +16,16 @@ const ACTIVE_STATE_DISPLAY: Record<string, { label: string; icon: string; cls: s
   waiting:   { label: 'Asking',   icon: '◆', cls: 'badge-waiting' },
   completed: { label: 'Done',     icon: '✓', cls: 'badge-done' },
   idle:      { label: 'Idle',     icon: '○', cls: 'badge-idle' },
+  disconnected: { label: '연결 끊김', icon: '○', cls: 'badge-offline' },
+  running: { label: '확인 중', icon: '○', cls: 'badge-idle' },
   stopped:   { label: 'Stopped',  icon: '■', cls: 'badge-stopped' },
 }
 
 export function Header({ onToggleSidebar }: Props) {
-  const titles = useStore(s => s.titles)
+  const connection = useStore(s => s.connection)
   const sessions = useStore((s) => s.sessions)
   const activeId = useStore((s) => s.activeId)
   const effectiveState = useStore((s) => s.effectiveState)
-  const [unmanaged, setUnmanaged] = useState<any[]>([])
   const [showScan, setShowScan] = useState(false)
   const spawnOpen = useStore((s) => s.spawnOpen)
   const openSpawn = useStore((s) => s.openSpawn)
@@ -80,26 +81,13 @@ export function Header({ onToggleSidebar }: Props) {
     openSpawn({ cwd, host })
   }
 
-  const handleScan = async () => {
-    const list = await api.scan()
-    setUnmanaged(Array.isArray(list) ? list : [])
-    setShowScan(true)
-  }
-
-  const handleAttach = async (sessionName: string, cwd: string) => {
-    const result = await api.attach(sessionName, cwd)
-    if (result.ok === false) return
-    setUnmanaged(prev => prev.filter(s => s.sessionName !== sessionName))
-    if (unmanaged.length <= 1) setShowScan(false)
-  }
-
   return (
     <header className="header">
       <div className="header-left">
         <button className="btn btn-icon" onClick={onToggleSidebar} title="Toggle sidebar (Ctrl+B)">
           ☰
         </button>
-        <span id="status-dot" className="status-dot" />
+        <span id="status-dot" className={`status-dot ${connection==='online'?'':'off'}`} title={connection==='online'?'서버 연결됨':'서버 재연결 중'} />
         <span className="logo">AgentBoard</span>
       </div>
       <div className="header-center">
@@ -124,7 +112,7 @@ export function Header({ onToggleSidebar }: Props) {
             {notif ? '🔔' : '🔕'}
           </button>
         )}
-        <button className="btn" onClick={handleScan} title="전체 세션 관리 및 외부 tmux 세션 찾기">세션 관리</button>
+        <button className="btn" onClick={() => setShowScan(true)} title="전체 세션 관리 및 외부 tmux 세션 찾기">세션 관리</button>
         <button className="btn btn-primary" onClick={handleSpawn}>+ New</button>
       </div>
 
@@ -132,43 +120,7 @@ export function Header({ onToggleSidebar }: Props) {
       <ProfileEditor />
       <WorkspaceModal />
 
-      {showScan && (
-        <div className="scan-popup">
-          <div className="scan-header">
-            <span>세션 관리 · {Object.keys(sessions).length}개</span>
-            <button className="btn btn-xs" onClick={() => setShowScan(false)}>&times;</button>
-          </div>
-          <div className="managed-session-list">
-            {Object.values(sessions).map(s => <div key={s.id} className="scan-item">
-              <span className="scan-name">{sessionLabel(s, titles)}</span>
-              <span className="scan-cwd" title={s.cwd}>{s.hostLabel || s.host || 'local'} · {s.cwd}</span>
-              <span>{effectiveState(s.id)}</span>
-              <button className="btn btn-xs" onClick={() => { useStore.getState().setActive(s.id); useStore.getState().acknowledgeCompletion(s.id); setShowScan(false) }}>열기</button>
-              <button className="btn btn-xs" onClick={async () => {
-                if (s.status === 'running') {
-                  if (!window.confirm(`#${s.id} 프로세스를 종료할까요? 실행 중인 작업이 중단됩니다.`)) return
-                  await api.kill(s.id)
-                } else {
-                  const r = await api.remove(s.id)
-                  if (r.ok !== false) useStore.getState().removeSession(s.id)
-                }
-              }}>{s.status === 'running' ? '종료' : '제거'}</button>
-            </div>)}
-          </div>
-          <div className="scan-header">관리되지 않은 로컬 tmux 세션</div>
-          {unmanaged.length === 0 ? (
-            <div className="scan-empty">No unmanaged sessions found</div>
-          ) : (
-            unmanaged.map(s => (
-              <div key={s.sessionName} className="scan-item">
-                <span className="scan-name">{s.sessionName}</span>
-                <span className="scan-cwd">{s.cwd}</span>
-                <button className="btn btn-xs btn-primary" onClick={() => handleAttach(s.sessionName, s.cwd)}>Attach</button>
-              </div>
-            ))
-          )}
-        </div>
-      )}
+      {showScan && <SessionManager onClose={() => setShowScan(false)} />}
     </header>
   )
 }

@@ -104,11 +104,5 @@ async def handle_agent_ws(ws: WebSocket):
         # newer re-register may have already replaced us (see eviction above).
         if registry.get(host) is conn:
             registry.unregister(host)
-            for local_id in list(conn.sessions.keys()):
-                broadcast({
-                    "type": "status",
-                    "id": prefix_id(host, local_id),
-                    "status": "stopped",
-                    "host": host, "hostLabel": label,
-                })
+            broadcast({"type": "host-connection", "host": host, "online": False})
             log.info("agent disconnected: host=%s", host)

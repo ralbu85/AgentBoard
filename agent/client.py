@@ -126,14 +126,17 @@ class AgentClient:
             if s.status != "stopped":
                 await ws.send(json.dumps({"type": "status", "id": s.id, "status": s.status}))
             if s.ai_state:
-                await ws.send(json.dumps({"type": "aiState", "id": s.id, "state": s.ai_state}))
+                await ws.send(json.dumps({"type": "aiState", "id": s.id, "state": s.ai_state, "completionId": s.completion_id}))
             if s.cwd:
                 await ws.send(json.dumps({"type": "cwd", "id": s.id, "cwd": s.cwd}))
             if s.process or s.created_at:
                 await ws.send(json.dumps({
                     "type": "info", "id": s.id,
                     "process": s.process, "createdAt": s.created_at, "memKB": s.mem_kb,
+                    "altScreen": s.alt_screen, "autoTitle": s.auto_title,
                 }))
+            if s.last_activity_at:
+                await ws.send(json.dumps({"type": "activity", "id": s.id, "lastActivityAt": s.last_activity_at}))
         titles = store.titles
         if titles:
             await ws.send(json.dumps({"type": "titles", "titles": titles}))

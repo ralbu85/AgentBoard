@@ -104,7 +104,7 @@ def test_spawn_failure_broadcasts_error_with_reqid():
 
 # ── kill / remove ──
 
-def test_kill_stops_stream_first():
+def test_kill_stops_stream_on_success():
     s = make_session("1")
     result, store, streamer, _ = run({"type": "kill", "id": "1"}, {"1": s})
     assert result is True
@@ -113,6 +113,7 @@ def test_kill_stops_stream_first():
 
 def test_remove_broadcasts_removed():
     s = make_session("1")
+    s.status = "stopped"
     _, store, streamer, _ = run({"type": "remove", "id": "1"}, {"1": s})
     assert store.removed_ids == ["1"]
     assert {"type": "removed", "id": "1"} in streamer.broadcasts
@@ -220,3 +221,11 @@ def test_unknown_type_is_noop():
 def test_missing_session_is_noop():
     _, _, _, tmux = run({"type": "key", "id": "404", "key": "Enter"})
     assert tmux.sent == []
+
+
+def test_remove_running_session_is_rejected_without_stopping_stream():
+    s = make_session('1')
+    s.status = 'running'
+    result, store, streamer, _ = run({'type':'remove','id':'1'}, {'1':s})
+    assert result is False
+    assert not store.removed_ids and not streamer.stopped and not streamer.broadcasts

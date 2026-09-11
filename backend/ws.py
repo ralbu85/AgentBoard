@@ -90,24 +90,10 @@ async def handle_ws(ws: WebSocket):
 
     # Send current state
     try:
-        for s in store.all():
-            await ws.send_text(json.dumps({
-                "type": "spawned",
-                "id": s.id, "cwd": s.cwd, "cmd": s.cmd,
-                "status": s.status, "sessionName": s.session_name,
-            }))
-            if s.status != "stopped":
-                await ws.send_text(json.dumps({"type": "status", "id": s.id, "status": s.status}))
-            if s.ai_state:
-                await ws.send_text(json.dumps({"type": "aiState", "id": s.id, "state": s.ai_state, "completionId": s.completion_id}))
-            if s.cwd:
-                await ws.send_text(json.dumps({"type": "cwd", "id": s.id, "cwd": s.cwd}))
-            if s.process or s.created_at or s.alt_screen or s.auto_title:
-                await ws.send_text(json.dumps({
-                    "type": "info", "id": s.id,
-                    "process": s.process, "createdAt": s.created_at,
-                    "memKB": s.mem_kb, "altScreen": s.alt_screen, "autoTitle": s.auto_title,
-                }))
+        await ws.send_text(json.dumps({
+            "type": "sessions",
+            "sessions": [s.to_dict() for s in store.all()] + registry.mirror(),
+        }))
 
         titles = store.titles
         if titles:
@@ -115,25 +101,6 @@ async def handle_ws(ws: WebSocket):
 
         # Replay remote sessions from connected agents (mirror) so a browser
         # connecting after an agent sees its sessions. ids are already prefixed.
-        for d in registry.mirror():
-            await ws.send_text(json.dumps({
-                "type": "spawned",
-                "id": d["id"], "cwd": d["cwd"], "cmd": d["cmd"],
-                "status": d["status"], "sessionName": d["sessionName"],
-                "host": d["host"], "hostLabel": d["hostLabel"],
-            }))
-            if d["status"] != "stopped":
-                await ws.send_text(json.dumps({"type": "status", "id": d["id"], "status": d["status"]}))
-            if d.get("aiState"):
-                await ws.send_text(json.dumps({"type": "aiState", "id": d["id"], "state": d["aiState"], "completionId": d.get("completionId")}))
-            if d.get("cwd"):
-                await ws.send_text(json.dumps({"type": "cwd", "id": d["id"], "cwd": d["cwd"]}))
-            if d.get("process") or d.get("createdAt") or d.get("altScreen"):
-                await ws.send_text(json.dumps({
-                    "type": "info", "id": d["id"],
-                    "process": d["process"], "createdAt": d["createdAt"],
-                    "memKB": d["memKB"], "altScreen": d.get("altScreen", False), "autoTitle": d.get("autoTitle", ""),
-                }))
         remote_titles = registry.mirror_titles()
         if remote_titles:
             await ws.send_text(json.dumps({"type": "titles", "titles": remote_titles}))

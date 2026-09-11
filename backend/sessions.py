@@ -27,6 +27,7 @@ class Session:
     auto_title: str = ""
     completion_id: str = ""
     submission_id: str = ""
+    last_activity_at: float = 0
     process: str = ""
     created_at: int = 0
     mem_kb: int = 0
@@ -45,6 +46,8 @@ class Session:
             "status": self.status,
             "aiState": self.ai_state,
             "completionId": self.completion_id,
+            "lastActivityAt": self.last_activity_at,
+            "online": True,
             "process": self.process,
             "autoTitle": self.auto_title,
             "createdAt": self.created_at,
@@ -184,6 +187,8 @@ class SessionStore:
         if not s:
             return False
         await tmux.kill_session(s.session_name)
+        if await tmux.is_alive(s.session_name):
+            return False
         s.status = "stopped"
         s.ai_state = None
         self.broadcast({"type": "status", "id": id, "status": "stopped"})

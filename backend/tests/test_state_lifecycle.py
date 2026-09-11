@@ -40,7 +40,7 @@ def test_same_completion_is_identified_once_and_new_submission_is_distinct(monke
     observe(8, 'esc to interrupt'); observe(8.7, 'esc to interrupt')
     observe(9, 'Answer\n›'); observe(11.1, 'Answer\n›')
     assert session.completion_id != first
-    assert [e['state'] for e in events] == ['working','idle','working','idle','working','idle']
+    assert [e['state'] for e in events if e['type'] == 'aiState'] == ['working','idle','working','idle','working','idle']
 
 
 def test_plain_streaming_requires_sustained_activity_and_completion_requires_quiet(monkeypatch):
@@ -62,8 +62,18 @@ def test_initial_stable_capture_does_not_generate_completion(monkeypatch):
     observe(3, 'Existing completed output')
     assert session.ai_state == 'idle'
     assert not session.completion_id
-    assert [e['state'] for e in events] == ['idle']
+    assert [e['state'] for e in events if e['type'] == 'aiState'] == ['idle']
 
 
 def test_color_cursor_and_rewrap_are_not_new_activity():
     assert activity_signature('\x1b[32mAnswer\x1b[0m\ntext\x1b[2;3H') == activity_signature('Answer text')
+
+
+def test_long_idle_redraw_never_creates_a_new_completion(monkeypatch):
+    session, events, observe = machine(monkeypatch)
+    session.completion_id = 'acknowledged-turn'
+    for i in range(7200):
+        observe(float(i), '\x1b[32mAnswer\x1b[0m\n›' if i % 2 else 'Answer\n›')
+    assert session.ai_state == 'idle'
+    assert session.completion_id == 'acknowledged-turn'
+    assert not [e for e in events if e['type'] == 'aiState']
