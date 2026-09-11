@@ -8,7 +8,7 @@ export function loadTerminalPreferences(mobile = window.innerWidth <= 768): Term
     return {
       fontSize: Number.isFinite(saved?.fontSize) ? Math.min(22, Math.max(12, saved.fontSize)) : fallback.fontSize,
       lineHeight: 1, // Compact spacing also replaces the previous persisted 1.25 default.
-      adaptiveColumns: typeof saved?.adaptiveColumns === 'boolean' ? saved.adaptiveColumns : true,
+      adaptiveColumns: mobile || (typeof saved?.adaptiveColumns === 'boolean' ? saved.adaptiveColumns : true),
     }
   } catch { return { ...fallback } }
 }

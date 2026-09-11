@@ -175,6 +175,7 @@ export function open(id: string, container: HTMLElement) {
 // Readable 12–22px text on all screens; adaptive 30–80 columns or explicit fixed 80-column mode.
 export function setReadability(patch: Partial<TerminalPreferences>) {
   preferences = { ...preferences, ...patch }
+  if (isMobile) preferences.adaptiveColumns = true
   preferences.fontSize = Math.max(12, Math.min(22, preferences.fontSize))
   preferences.lineHeight = Math.max(1, Math.min(1.5, preferences.lineHeight))
   try { localStorage.setItem(terminalPreferenceKey(isMobile), JSON.stringify(preferences)) } catch {}

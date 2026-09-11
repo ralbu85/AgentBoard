@@ -19,3 +19,9 @@ it('uses a compact phone font without inheriting desktop zoom preferences', () =
   localStorage.setItem('agentboard.terminalPreferences.mobile', JSON.stringify({fontSize:14}))
   expect(loadTerminalPreferences(true).fontSize).toBe(14)
 })
+it('fits phone terminals even when an old fixed-width preference was saved', () => {
+  localStorage.setItem('agentboard.terminalPreferences.mobile', JSON.stringify({fontSize:14,adaptiveColumns:false}))
+  localStorage.setItem('agentboard.terminalPreferences', JSON.stringify({fontSize:15,adaptiveColumns:false}))
+  expect(loadTerminalPreferences(true)).toMatchObject({fontSize:14,adaptiveColumns:true})
+  expect(loadTerminalPreferences(false).adaptiveColumns).toBe(false)
+})

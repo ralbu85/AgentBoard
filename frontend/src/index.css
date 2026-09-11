@@ -1729,6 +1729,7 @@ html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
   .header-right .btn { font-size: 11px; padding: 5px; }
   .header-active-state { display: none; } /* State remains in terminal toolbar. */
   .input-card { padding: 6px; }
+  .terminal-container { margin-inline: 12px; min-width: 0; }
   .input-row { gap: 5px; }
   .quick-key { font-size: 12px; padding: 5px 9px; }
   .workbench .vtab-name { max-width: 130px; font-size: 11px; }
