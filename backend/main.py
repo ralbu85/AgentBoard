@@ -10,6 +10,8 @@ from . import config, streamer, tunnel, push
 from .logger import log
 from .sessions import store
 from .routes_session import router as session_router
+from .routes_browser import router as browser_router
+from .browser import manager as browser_manager
 from .routes_file import router as file_router
 from .ws import handle_ws, broadcast
 from .agent_ws import handle_agent_ws
@@ -43,6 +45,7 @@ async def lifespan(app: FastAPI):
     log.info("AgentBoard running on http://localhost:%s", config.PORT)
     yield
 
+    await browser_manager.shutdown()
     await streamer.stop_all()
     await tunnel.stop()
 
@@ -50,6 +53,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None)
 
 app.include_router(session_router)
+app.include_router(browser_router)
 app.include_router(file_router)
 app.add_api_websocket_route("/ws", handle_ws)
 app.add_api_websocket_route("/agent-ws", handle_agent_ws)

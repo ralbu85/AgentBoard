@@ -17,3 +17,5 @@ yarn.lock
 .vapid_private.pem
 .push-subs.json
 .spawn-profiles.json
+
+.browser-state/

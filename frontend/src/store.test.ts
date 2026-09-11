@@ -294,3 +294,13 @@ describe('session lifecycle reliability', () => {
     expect(useStore.getState()._viewerState[viewerKey(useStore.getState())].tabs.map(t=>t.id)).toEqual([tab.id])
   })
 })
+
+it('persists the actual Chromium location in its owning workspace', () => {
+  const s=useStore.getState();s.setWorkspace('/alpha');s.openBrowser('https://example.com/start')
+  const key=viewerKey(useStore.getState()), id=useStore.getState()._viewerState[key].activeTabId!
+  s.setWorkspace('/beta')
+  s.syncBrowserLocation(id,'https://example.com/internal','Internal page',key)
+  const saved=JSON.parse(localStorage.getItem(`agentboard.viewer.${key}`)!)
+  expect(saved.tabs[0]).toMatchObject({id,name:'Internal page',browser:{history:['https://example.com/internal'],index:0}})
+  expect(useStore.getState().workspaceCwd).toBe('/beta')
+})

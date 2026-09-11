@@ -1694,12 +1694,8 @@ tr.ln-memo:hover .fv-line-content::after { opacity: 1; }
 .browser-toolbar button:disabled { opacity:.3; cursor:default; }
 .browser-help { color:var(--text-muted); font-size:11px; line-height:1.5; padding:4px 8px; background:var(--bg-secondary); }
 .browser-error { color:var(--red); padding:6px; font-size:12px; }
-.browser-slot { flex:1; min-height:0; min-width:0; }
-.browser-surface { position:fixed; z-index:8; background:white; }
-.browser-surface iframe { display:block; width:100%; height:100%; border:0; }
 .tab-kind-browser { color:#8cbfbd; }
 
-.dragging-viewer-tab .browser-surface { pointer-events:none; }
 
 /* Phone layout: fit controls to the viewport instead of clipping a desktop row.
    Keep editable text at 16px to avoid Safari's focus zoom. */
@@ -1737,3 +1733,23 @@ html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
   .mobile-files-toggle { bottom: auto; top: 51px; left: auto; right: 4px; padding: 4px 7px; }
   .workbench .vtab-bar { padding-right: 46px; }
 }
+
+/* Server-rendered Chromium: the page stays on the server across pane changes. */
+.chromium-status { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.chromium-status span { margin-right:auto; }
+.chromium-pane button { cursor:pointer; color:var(--text-secondary); background:var(--bg-tertiary); border:1px solid var(--border); border-radius:4px; padding:4px 7px; }
+.chromium-pane button:disabled { opacity:.45; cursor:default; }
+.chromium-viewport { flex:1; min-height:0; min-width:0; position:relative; overflow:hidden; background:#fff; touch-action:none; outline:none; }
+.chromium-viewport:focus-visible { box-shadow:inset 0 0 0 2px var(--accent); }
+.chromium-viewport img { display:block; width:100%; height:100%; object-fit:fill; user-select:none; pointer-events:none; }
+.chromium-placeholder { position:absolute; inset:0; display:grid; place-items:center; color:#444; font-size:13px; padding:16px; }
+.chromium-input { display:flex; gap:5px; padding:6px; flex-shrink:0; background:var(--bg-secondary); }
+.chromium-input textarea { flex:1; min-width:0; resize:vertical; max-height:100px; padding:6px; color:var(--text-primary); background:var(--bg-primary); border:1px solid var(--border); border-radius:4px; font:16px var(--font-mono); }
+.chromium-running, .chromium-transfer, .chromium-dialog { padding:8px; background:var(--bg-secondary); font-size:12px; max-height:180px; overflow:auto; flex-shrink:0; }
+.chromium-running>div, .chromium-transfer>div { display:flex; gap:6px; align-items:center; padding:5px 0; }
+.chromium-running span, .chromium-transfer span { flex:1; min-width:0; overflow-wrap:anywhere; }
+.chromium-running small { display:block; color:var(--text-muted); overflow-wrap:anywhere; }
+.chromium-transfer a { color:var(--accent); white-space:nowrap; }
+.chromium-transfer textarea { width:100%; font-size:16px; }
+.chromium-dialog input { width:100%; font-size:16px; }
+.chromium-pane .browser-error { max-height:80px; overflow:auto; overflow-wrap:anywhere; flex-shrink:0; }

@@ -89,6 +89,7 @@ interface AppState {
   saveProfiles: (profiles: SpawnProfile[]) => Promise<void>
   setActive: (id: string | null) => void
   removeSession: (id: string) => void
+  syncBrowserLocation: (id: string, url: string, title: string, key: string) => void
   openBrowser: (url?: string, key?: string) => void
   navigateBrowser: (id: string, url: string, key: string) => void
   stepBrowser: (id: string, delta: number, key: string) => void
@@ -308,6 +309,16 @@ export const useStore = create<AppState>((set, get) => ({
     if (state._restoredWorkspaces[key]) persistViewer(key, { tabs, activeTabId: tabId })
     return { hiddenSessions, activeId: id, workspaceCwd: session.cwd || '~', workspaceHost: session.host || 'local', hiddenWorkspaces: hidden,
       _viewerState: { ...state._viewerState, [key]: { tabs, activeTabId: tabId } } }
+  }),
+
+  syncBrowserLocation: (id, url, title, key) => set(state => {
+    const view = state._viewerState[key], tab = view?.tabs.find(t=>t.id===id)
+    if (!view || !tab || !browserUrl(url)) return {}
+    const name = title?.slice(0,128) || new URL(url).host
+    if (tab.name === name && tab.browser?.history[tab.browser.index] === url) return {}
+    const next = {...view, tabs:view.tabs.map(t=>t.id===id?{...t,name,browser:{history:[url],index:0}}:t)}
+    persistViewer(key,next)
+    return {_viewerState:{...state._viewerState,[key]:next}}
   }),
 
   openBrowser: (input = '', owner) => {

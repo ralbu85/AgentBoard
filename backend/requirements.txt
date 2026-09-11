@@ -5,3 +5,5 @@ python-multipart>=0.0.20
 python-dotenv>=1.1
 websockets>=13.0
 pywebpush>=2.0
+
+playwright==1.58.0
