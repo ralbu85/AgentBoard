@@ -120,6 +120,8 @@ echo "DASHBOARD_PASSWORD=비밀번호설정" > .env
 ```
 
 브라우저에서 `http://localhost:3002` 접속 → 로그인 → **+ New** 클릭하면 에이전트가 뜹니다.
+
+데스크톱에서 화면 중계 없는 인앱 Chromium을 사용하려면 [AgentBoard Desktop](desktop/README.md)을 실행하세요. 기존 서버에 연결하며, 에이전트가 화면에 보이는 같은 웹 탭을 조작할 수 있습니다.
 서버는 기본으로 루프백에만 바인드됩니다 — LAN에서 접속하려면 `.env`에
 `AGENTBOARD_HOST=0.0.0.0`을 넣거나, HTTPS가 필요하면 앞단에 리버스 프록시(nginx/Caddy)를 두세요.
 

@@ -3,6 +3,7 @@ import {useStore, type ViewerTab} from '../../store'
 import {useDrafts} from '../Terminal/drafts'
 import {browserUrl} from './browserUrl'
 import {useToasts} from '../../toasts'
+import {NativeBrowserPane,NativeBrowserEvents} from './NativeBrowserPane'
 
 type RemoteState={url:string;title:string;back:boolean;forward:boolean;width:number;height:number;error?:string;fileChooser?:boolean;dialog?:{type:string;message:string}|null;downloads?:{id:string;name:string;size:number}[]}
 type RunningTab={id:string;workspace:string;url:string;title:string;viewers:number}
@@ -10,6 +11,10 @@ const endpoint=(id:string)=>`/api/browser/tabs/${encodeURIComponent(id)}`
 async function stopTab(id:string){const r=await fetch(endpoint(id),{method:'DELETE'});if(!r.ok)throw new Error('종료하지 못했습니다.')}
 
 export function BrowserPane({tab,ownerKey}:{tab:ViewerTab;ownerKey:string}) {
+  return window.agentboardDesktop ? <NativeBrowserPane tab={tab} ownerKey={ownerKey}/> : <RemoteBrowserPane tab={tab} ownerKey={ownerKey}/>
+}
+
+function RemoteBrowserPane({tab,ownerKey}:{tab:ViewerTab;ownerKey:string}) {
   const initialUrl=tab.browser?.history[tab.browser.index]||''
   const restoreUrl=useRef(initialUrl);restoreUrl.current=initialUrl
   const [address,setAddress]=useState(initialUrl)
@@ -155,6 +160,9 @@ export function BrowserPane({tab,ownerKey}:{tab:ViewerTab;ownerKey:string}) {
 export function BrowserSurfaces(){
   const ids=useStore(s=>Object.values(s._viewerState).flatMap(v=>v.tabs).filter(t=>t.type==='browser').map(t=>t.id).sort().join('\0'))
   const previous=useRef<string[]>([])
-  useEffect(()=>{const next=ids?ids.split('\0'):[];for(const id of previous.current)if(!next.includes(id))void stopTab(id).catch(()=>useToasts.getState().push('서버 웹 탭을 종료하지 못했습니다. 실행 목록에서 확인해 주세요.'));previous.current=next},[ids])
-  return null
+  useEffect(()=>{const next=ids?ids.split('\0'):[];for(const id of previous.current)if(!next.includes(id)){
+    const close=window.agentboardDesktop?window.agentboardDesktop.invoke({action:'close',id}):stopTab(id)
+    void close.catch(()=>useToasts.getState().push('웹 탭을 종료하지 못했습니다.'))
+  }previous.current=next},[ids])
+  return window.agentboardDesktop?<NativeBrowserEvents/>:null
 }

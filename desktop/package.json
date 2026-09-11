@@ -1,0 +1,55 @@
+{
+  "name": "agentboard-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AgentBoard desktop with local Chromium tabs",
+  "author": "AgentBoard contributors",
+  "main": "main.cjs",
+  "scripts": {
+    "start": "electron .",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder",
+    "test": "node --test test/*.test.cjs",
+    "test:integration": "node test/integration.cjs"
+  },
+  "dependencies": {
+    "ws": "8.21.3"
+  },
+  "devDependencies": {
+    "electron": "44.3.0",
+    "electron-builder": "26.15.3",
+    "playwright-core": "1.58.0"
+  },
+  "build": {
+    "appId": "dev.agentboard.desktop",
+    "productName": "AgentBoard",
+    "files": [
+      "*.cjs",
+      "*.html",
+      "package.json"
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "category": "public.app-category.developer-tools"
+    },
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "tar.gz"
+      ],
+      "category": "Development"
+    }
+  }
+}

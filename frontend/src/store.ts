@@ -94,7 +94,7 @@ interface AppState {
   navigateBrowser: (id: string, url: string, key: string) => void
   stepBrowser: (id: string, delta: number, key: string) => void
   openTab: (tab: ViewerTab, key?: string) => void
-  closeTab: (id: string) => void
+  closeTab: (id: string, key?: string) => void
   updateTab: (tabId: string, content: string, key?: string) => void
   markTabSaved: (tabId: string, content?: string, version?: string, key?: string) => void
   openDiffTab: (path: string, name: string, diff: string) => void
@@ -372,9 +372,9 @@ export const useStore = create<AppState>((set, get) => ({
     persistViewer(activeId, nextVs)
   },
 
-  closeTab: (id) => {
+  closeTab: (id, key) => {
     const { _viewerState } = get()
-    const activeId = viewerKey(get())
+    const activeId = key || viewerKey(get())
     const cur = _viewerState[activeId] || { tabs: [], activeTabId: null }
     const tab = cur.tabs.find(t => t.id === id)
     if (tab?.dirty && !window.confirm(`저장하지 않은 변경이 있습니다: ${tab.name}\n닫을까요?`)) return

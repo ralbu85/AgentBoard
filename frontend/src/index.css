@@ -1753,3 +1753,7 @@ html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 .chromium-transfer textarea { width:100%; font-size:16px; }
 .chromium-dialog input { width:100%; font-size:16px; }
 .chromium-pane .browser-error { max-height:80px; overflow:auto; overflow-wrap:anywhere; flex-shrink:0; }
+.native-browser-slot { flex:1; min-height:0; position:relative; background:var(--bg-primary); display:grid; place-items:center; color:var(--text-muted); font-size:13px; }
+.native-browser-status { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.native-browser-status label { display:flex; align-items:center; gap:4px; cursor:pointer; }
+.native-browser-pane .browser-error { flex-shrink:0; max-height:80px; overflow:auto; }

@@ -1,0 +1,9 @@
+<!doctype html>
+<html lang="ko"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'self'">
+<title>AgentBoard 연결</title>
+<style>
+body{margin:0;background:#171b22;color:#e0e5ed;font:15px system-ui;display:grid;place-items:center;height:100vh}main{width:min(500px,85vw)}h1{font-size:25px}p{color:#adb7c6;line-height:1.7}input,button{box-sizing:border-box;font:inherit;border-radius:6px;padding:12px;border:1px solid #414c5c}input{width:100%;background:#222934;color:#eee;margin:8px 0 16px}button{background:#334c62;color:#fff;cursor:pointer}#error{color:#ffab9c}
+</style>
+<main><h1>AgentBoard Desktop</h1><p>사용 중인 AgentBoard 서버에 연결하세요.<br>웹 탭은 이 컴퓨터에서 직접 실행됩니다.</p><form id="connect"><label for="server">서버 주소</label><input id="server" placeholder="http://localhost:3002" required><button>연결</button></form><p id="error" role="alert"></p></main>
+<script src="connect.cjs"></script></html>
