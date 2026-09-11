@@ -1,8 +1,9 @@
+import {uiId} from '../../uiId'
 export interface PaneNode {type:'leaf'; id:string; tabIds:string[]; activeTabId:string|null}
 export interface SplitNode {type:'split'; id:string; direction:'horizontal'|'vertical'; ratio:number; children:[TreeNode,TreeNode]}
 export type TreeNode = PaneNode | SplitNode
 export type DropZone = 'left'|'right'|'top'|'bottom'|'center'
-export const newLeaf = (tabIds:string[], activeTabId:string|null=tabIds[0]||null):PaneNode => ({type:'leaf',id:crypto.randomUUID(),tabIds,activeTabId})
+export const newLeaf = (tabIds:string[], activeTabId:string|null=tabIds[0]||null):PaneNode => ({type:'leaf',id:uiId(),tabIds,activeTabId})
 export const leaves = (tree:TreeNode):PaneNode[] => tree.type==='leaf' ? [tree] : tree.children.flatMap(leaves)
 export function mapTree(tree:TreeNode, fn:(node:TreeNode)=>TreeNode):TreeNode {
   const next=tree.type==='split' ? {...tree,children:tree.children.map(child=>mapTree(child,fn)) as [TreeNode,TreeNode]} : tree
@@ -35,7 +36,7 @@ export function moveTab(tree:TreeNode, tab:string, targetId:string, zone:DropZon
     if(n.type!=='leaf'||n.id!==targetId)return n
     if(zone==='center')return {...n,tabIds:[...n.tabIds,tab],activeTabId:tab}
     const added=newLeaf([tab]), first=zone==='left'||zone==='top'
-    return {type:'split',id:crypto.randomUUID(),direction:zone==='left'||zone==='right'?'horizontal':'vertical',ratio:.5,children:first?[added,n]:[n,added]}
+    return {type:'split',id:uiId(),direction:zone==='left'||zone==='right'?'horizontal':'vertical',ratio:.5,children:first?[added,n]:[n,added]}
   })
   return prune(next)||newLeaf([tab])
 }

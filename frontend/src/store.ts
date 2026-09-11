@@ -1,3 +1,4 @@
+import {uiId} from './uiId'
 import { create } from 'zustand'
 import type { Session, WsMessage, SpawnProfile } from './types'
 import { useToasts } from './toasts'
@@ -292,7 +293,7 @@ export const useStore = create<AppState>((set, get) => ({
       const current=state._viewerState[key], next={...current,activeTabId:existing.id}
       set({_viewerState:{...state._viewerState,[key]:next}});persistViewer(key,next);return
     }
-    const id = `browser:${crypto.randomUUID()}`
+    const id = `browser:${uiId()}`
     state.openTab({id,path:id,name:url?new URL(url).host:'새 웹 탭',type:'browser',content:'',lang:'',browser:{history:url?[url]:[],index:url?0:-1}},key)
   },
   navigateBrowser: (id, input, key) => set(state => {
