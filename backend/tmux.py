@@ -95,6 +95,8 @@ async def send_keys(session_name: str, keys: str, literal: bool = False) -> None
     args = ["send-keys", "-t", session_name]
     if literal:
         args.append("-l")
+    # End tmux options: literal '--' must be sent, and '--help' is text.
+    args.append("--")
     args.append(keys)
     await tmux_run(args)
 

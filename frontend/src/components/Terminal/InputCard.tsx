@@ -108,6 +108,18 @@ export function InputCard({ sessionId }: Props) {
     api.key(sessionId, key)
   }
 
+  const insertDoubleHyphen = () => {
+    const el = textareaRef.current
+    if (!el) return
+    const start = el.selectionStart, end = el.selectionEnd
+    const value = el.value.slice(0, start) + '--' + el.value.slice(end)
+    setText(value)
+    // Update before focusing so the software keyboard sees the new caret.
+    el.value = value
+    el.focus()
+    el.setSelectionRange(start + 2, start + 2)
+  }
+
   // Mobile: full tab switch to file panel
   if (isMobile() && showFiles && host === 'local') {
     return <FilePanel initialPath={cwd} onClose={() => setShowFiles(false)} />
@@ -136,10 +148,15 @@ export function InputCard({ sessionId }: Props) {
           onKeyDown={onKeyDown}
           placeholder="Type command..."
           rows={1}
+          autoCorrect="off"
+          autoCapitalize="none"
+          autoComplete="off"
+          spellCheck={false}
         />
         <button className="btn send-btn" disabled={sending} onClick={doSend}>Send</button>
       </div>
       <div className="quick-keys">
+        <button className="btn quick-key" title="입력창에 하이픈 두 개 삽입" onPointerDown={e => e.preventDefault()} onClick={insertDoubleHyphen}>--</button>
         {QUICK_KEYS.map((k) => (
           <button key={k.key} className="btn quick-key" onClick={() => onQuickKey(k.key)}>
             {k.label}
