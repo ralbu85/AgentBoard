@@ -251,6 +251,10 @@ function _setupMobileScroll(id: string, t: TermInstance) {
   if (screen) screen.style.pointerEvents = 'none'
 
   let lastY = 0
+  let lastX = 0
+  let startX = 0
+  let startY = 0
+  let axis: 'x' | 'y' | null = null
   let velocity = 0
   let ts = 0
   let raf = 0
@@ -260,6 +264,10 @@ function _setupMobileScroll(id: string, t: TermInstance) {
   wrap.addEventListener('touchstart', (e) => {
     e.stopPropagation()
     cancelAnimationFrame(raf)
+    axis = null
+    if (e.touches.length !== 1) return
+    startX = lastX = e.touches[0].clientX
+    startY = e.touches[0].clientY
     lastY = e.touches[0].clientY
     velocity = 0
     pageAccum = 0
@@ -268,7 +276,21 @@ function _setupMobileScroll(id: string, t: TermInstance) {
 
   wrap.addEventListener('touchmove', (e) => {
     e.stopPropagation()
+    if (e.touches.length !== 1) { axis = null; return }
+    // Own single-finger panning: native pan-x can hand gestures to the page on
+    // iOS even when this terminal has no horizontal overflow.
+    if (e.cancelable) e.preventDefault()
+    const x = e.touches[0].clientX
     const y = e.touches[0].clientY
+    if (!axis) {
+      if (Math.max(Math.abs(x-startX), Math.abs(y-startY)) < 8) return
+      axis = Math.abs(x-startX) > Math.abs(y-startY) ? 'x' : 'y'
+    }
+    if (axis === 'x') {
+      wrap.scrollLeft = Math.max(0, Math.min(wrap.scrollWidth-wrap.clientWidth, wrap.scrollLeft+lastX-x))
+      lastX = x
+      return
+    }
     const dy = lastY - y
     const now = Date.now()
     const dt = now - ts
@@ -287,10 +309,11 @@ function _setupMobileScroll(id: string, t: TermInstance) {
     }
     lastY = y
     ts = now
-  }, { capture: true, passive: true })
+  }, { capture: true, passive: false })
 
   wrap.addEventListener('touchend', (e) => {
     e.stopPropagation()
+    if (axis !== 'y') return
     if (_isAltScreen(id)) return  // page-key scroll has no momentum
     if (Math.abs(velocity) < 0.05) return
     let v = velocity
@@ -302,6 +325,7 @@ function _setupMobileScroll(id: string, t: TermInstance) {
     }
     raf = requestAnimationFrame(tick)
   }, { capture: true, passive: true })
+  wrap.addEventListener('touchcancel', () => { axis = null; velocity = 0; cancelAnimationFrame(raf) }, {passive:true})
 }
 
 // Page the terminal VIEW up/down. Normal sessions keep history in xterm's

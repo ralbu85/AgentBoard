@@ -828,7 +828,7 @@ body {
 }
 
 @media (max-width: 768px) {
-  .xterm-wrap { touch-action: pan-x; }
+  .xterm-wrap { touch-action: pinch-zoom; overscroll-behavior: none; }
 }
 
 /* ── Input Card ── */
@@ -1497,7 +1497,9 @@ tr.ln-memo:hover .fv-line-content::after { opacity: 1; }
   /* Pin body to the visual viewport so iOS can't scroll the document when an
      input is focused. Layout shrinks via --vvh; the flex chain forwards that
      shrink to terminal-container only — header + input-card stay put. */
-  body { position: fixed; top: 0; left: 0; right: 0; }
+  body { position: fixed; top: 0; left: 0; right: 0; overscroll-behavior: none; }
+  #root, .app { overflow: hidden; overscroll-behavior: none; }
+  .app * { overscroll-behavior-x: none; }
   .workspace, .main-area, .pane-terminal, .terminal-container { min-height: 0; }
   .sidebar {
     position: fixed; top: 48px; left: 0; bottom: 0;
