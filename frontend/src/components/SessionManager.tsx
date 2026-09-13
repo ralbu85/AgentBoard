@@ -2,6 +2,7 @@ import {useEffect, useState} from 'react'
 import {api} from '../api'
 import {completionKey, sessionLabel, useStore} from '../store'
 import {useToasts} from '../toasts'
+import {AgentIcon} from './AgentIcon'
 
 const labels: Record<string,string> = {working:'작업 중',waiting:'입력 대기',idle:'대기',running:'상태 확인 중',completed:'완료',stopped:'종료',disconnected:'연결 끊김'}
 type Unmanaged = {sessionName:string;cwd:string;createdAt?:number|string}
@@ -41,7 +42,7 @@ export function SessionManager({onClose}:{onClose:()=>void}) {
       {filter!=='unmanaged'&&selected.map(s=>{
         const status=state.effectiveState(s.id)||'running', name=sessionLabel(s,state.titles), offline=status==='disconnected'
         return <article className="session-manager-row" key={s.id}>
-          <div className="session-manager-detail"><strong>{name}</strong><span>{s.hostLabel||s.host} · {s.sessionName}</span><span className="session-manager-path">{s.cwd}</span><small>{s.process||s.cmd||'프로세스 확인 중'} · {labels[status]||status}{hidden(s.id)?' · 숨김':''}</small><small>마지막 출력 변화: {s.lastActivityAt?new Date(s.lastActivityAt*1000).toLocaleString('ko-KR'):'아직 관측 없음'}</small></div>
+          <div className="session-manager-detail"><strong><AgentIcon session={s}/>{name}</strong><span>{s.hostLabel||s.host} · {s.sessionName}</span><span className="session-manager-path">{s.cwd}</span><small>{s.process||s.cmd||'프로세스 확인 중'} · {labels[status]||status}{hidden(s.id)?' · 숨김':''}</small><small>마지막 출력 변화: {s.lastActivityAt?new Date(s.lastActivityAt*1000).toLocaleString('ko-KR'):'아직 관측 없음'}</small></div>
           <div className="session-manager-actions">
             <button className="btn" onClick={()=>{state.setActive(s.id);state.acknowledgeCompletion(s.id);onClose()}}>열기</button>
             <button className="btn" onClick={()=>state.setSessionHidden(s.id,!hidden(s.id))}>{hidden(s.id)?'숨김 해제':'숨김'}</button>

@@ -4,6 +4,7 @@ import { api } from '../../api'
 import { useToasts } from '../../toasts'
 import { notifyActive } from '../../ws'
 import * as TM from './TerminalManager'
+import { AgentIcon } from '../AgentIcon'
 
 import '@xterm/xterm/css/xterm.css'
 
@@ -40,6 +41,7 @@ export function TerminalPane({ sessionId }: { sessionId?: string }) {
   const [selectText, setSelectText] = useState<string | null>(null)
   const isMobile = window.innerWidth <= 768
   const currentState = useStore(s => activeId ? s.effectiveState(activeId) : null)
+  const agentSession = useStore(s => activeId ? s.sessions[activeId] : undefined)
   const stateInfo = STATE_DISPLAY[currentState || ''] || STATE_DISPLAY.idle
   // Full-screen apps scroll via the app (PageUp forwarded), so xterm's own
   // scroll state can't tell us — always offer the jump-to-bottom button there.
@@ -132,6 +134,7 @@ export function TerminalPane({ sessionId }: { sessionId?: string }) {
         </div>
       {activeId && (
         <div className={`terminal-state-badge tsb-${currentState || 'idle'}`}>
+          <AgentIcon session={agentSession} />
           <span className="state-icon">{stateInfo.icon}</span>
           {stateInfo.label}
         </div>

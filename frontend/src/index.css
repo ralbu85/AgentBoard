@@ -1762,3 +1762,8 @@ html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 .native-browser-status { display:flex; align-items:center; justify-content:space-between; gap:12px; }
 .native-browser-status label { display:flex; align-items:center; gap:4px; cursor:pointer; }
 .native-browser-pane .browser-error { flex-shrink:0; max-height:80px; overflow:auto; }
+.agent-icon { display:inline-flex; width:19px; height:19px; flex-shrink:0; align-items:center; justify-content:center; vertical-align:middle; border-radius:4px; }
+.agent-icon svg { width:16px; height:16px; }
+.agent-icon-codex { color:#a7ddcc; background:#213b33; }
+.agent-icon-claude { color:#e8b299; background:#3c2c27; }
+.session-manager-detail strong .agent-icon { margin-right:6px; }
