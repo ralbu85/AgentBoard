@@ -93,7 +93,7 @@ export function NotebookView({tab,ownerKey}:{tab:ViewerTab;ownerKey:string}) {
         {operation&&state.state==='starting'&&<span>Python 커널을 시작하고 있습니다.</span>}
         {(error||record.error||record.server.error)&&<span className="nb-status-error">{error||record.error||record.server.error}</span>}
       </div>
-<button title={record.server.python} onClick={()=>setEnvironmentOpen(true)}>환경: {record.server.kernelName||'Python · 서버 기본'} ▾</button>
+{record.server.environment!==undefined&&<button title={record.server.python} onClick={()=>setEnvironmentOpen(true)}>환경: {record.server.kernelName||'Python · 서버 기본'} ▾</button>}
       <button disabled={disabled||record.server.kernel} onClick={()=>void run('connect')}>{operation?.action==='connect'?'연결 중…':'커널 연결'}</button>
       <button disabled={disabled} onClick={()=>void run('run-all')}>{operation?.action==='run-all'?'실행 준비 중…':'전체 실행'}</button>
       <button disabled={!!operation||!['running','interrupting'].includes(state.state)} onClick={()=>void run('interrupt')}>■ 중단</button>
