@@ -2,6 +2,9 @@ import { useState, useEffect, useMemo } from 'react'
 import { renderMarkdown } from '../../markdown'
 import { sanitize } from '../../sanitize'
 import { getHljs } from './FileContent'
+import {useStore, type ViewerTab} from '../../store'
+import {uiId} from '../../uiId'
+import {useNotebooks, openNotebook, editNotebook, refreshNotebook, notebookAction, notebookBusy, listNotebookKernels, stopNotebookKernel, loadServerNotebook, type NotebookState} from './notebookRuntime'
 
 // Read-only Jupyter notebook renderer (nbformat 4; minimal v3 fallback).
 // Cells render defensively — a malformed cell degrades to plain text, never throws.
@@ -36,13 +39,78 @@ function parseNotebook(content: string): { cells: NbCell[]; lang: string } | { e
   return { cells, lang }
 }
 
-export function NotebookView({ content }: { content: string }) {
+export function NotebookView({tab,ownerKey}:{tab:ViewerTab;ownerKey:string}) {
+  const record=useNotebooks(s=>s.records[tab.path])
+  const [error,setError]=useState('')
+  const [kernels,setKernels]=useState<{limit:number;sessions:NotebookState[]}|null>(null)
+  const local=JSON.parse(ownerKey)[0]==='local'
+  const supported=useMemo(()=>{try{const nb=JSON.parse(tab.content);return nb.nbformat===4&&Array.isArray(nb.cells)}catch{return false}},[tab.content])
+  useEffect(()=>{
+    if(!local||!supported)return
+    let alive=true
+    void openNotebook(tab.path,tab.content,!!tab.dirty).then(()=>refreshNotebook(tab.path)).catch(e=>{if(alive)setError(e.message)})
+    const timer=setInterval(()=>void refreshNotebook(tab.path),700)
+    return()=>{alive=false;clearInterval(timer)}
+  },[tab.path,local,supported])
+  useEffect(()=>{
+    if(!record||!local)return
+    const store=useStore.getState()
+    const current=store._viewerState[ownerKey]?.tabs.find(t=>t.id===tab.id)
+    if(!current)return
+    if(current.content!==record.content)store.updateTab(tab.id,record.content,ownerKey)
+    if(!record.server.dirty&&record.content===record.server.content)store.markTabSaved(tab.id,record.content,record.server.version,ownerKey)
+  },[record?.content,record?.server.dirty,record?.server.version,tab.id,ownerKey,local])
+  const run=async(action:string,cell?:number)=>{setError('');try{await notebookAction(tab.path,action,cell)}catch(e){setError(e instanceof Error?e.message:'실패')}}
+  const download=()=>{
+    const blob=new Blob([record?.content||tab.content],{type:'application/x-ipynb+json'})
+    const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download=tab.name;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000)
+  }
+  if(!local||!supported)return <><div className="nb-runtime-bar">{!local?'원격 머신의 노트북은 현재 읽기만 지원합니다.':'실행·편집은 nbformat 4 노트북에서 지원합니다.'}</div><NotebookPreview content={tab.content}/></>
+  if(!record)return <div className="nb-runtime-bar" role="status">{error||'노트북 연결 중…'}</div>
+  const busy=notebookBusy(record.server.state), disabled=busy||record.pending
+  const notebook=JSON.parse(record.content)
+  const change=(index:number,source:string)=>{const nb=JSON.parse(record.content);nb.cells[index].source=source;editNotebook(tab.path,JSON.stringify(nb,null,1)+'\n')}
+  const add=(kind:string)=>{
+    const nb=JSON.parse(record.content);nb.cells.push({id:uiId(),cell_type:kind,metadata:{},source:'',...(kind==='code'?{execution_count:null,outputs:[]}:{} )});editNotebook(tab.path,JSON.stringify(nb,null,1)+'\n')
+  }
+  const dirty=record.server.dirty||record.content!==record.server.content
+  return <div className="nb-interactive">
+    <div className="nb-runtime-bar">
+      <strong title={record.server.python}>Python · {({stopped:'연결 안 됨',starting:'연결 중',idle:'대기',running:'실행 중',interrupting:'중단 중',stopping:'종료 중'} as Record<string,string>)[record.server.state]||record.server.state}</strong>
+      <button disabled={disabled||record.server.kernel} onClick={()=>void run('connect')}>커널 연결</button>
+      <button disabled={disabled} onClick={()=>void run('run-all')}>전체 실행</button>
+      <button disabled={!['running','interrupting'].includes(record.server.state)} onClick={()=>void run('interrupt')}>■ 중단</button>
+      <button disabled={disabled||!record.server.kernel} onClick={()=>{if(confirm('커널을 재시작할까요? 메모리의 변수는 초기화되고 셀과 출력은 유지됩니다.'))void run('restart')}}>재시작</button>
+      <button disabled={record.pending||!record.server.kernel} onClick={()=>{if(confirm('이 노트북의 커널을 종료할까요? 실행 중인 작업과 변수는 종료됩니다.'))void run('shutdown')}}>커널 종료</button>
+      <button disabled={disabled||!dirty} onClick={()=>void run('save')}>{dirty?'저장 · 변경 있음':'저장됨'}</button>
+      <button onClick={download}>다운로드</button>
+      <button onClick={()=>void listNotebookKernels().then(setKernels).catch(e=>setError(e.message))}>커널 목록</button>
+      <button disabled={disabled} onClick={()=>{if(confirm('저장하지 않은 편집·출력을 버리고 디스크 원본을 다시 열까요? 커널 변수도 초기화됩니다.'))void run('reload')}}>원본 다시 열기</button>
+    </div>
+    {(error||record.error||record.server.error)&&<div className="nb-runtime-error" role="alert">{error||record.error||record.server.error}<button disabled={record.pending} onClick={()=>{if(confirm('이 화면의 편집 초안을 서버 상태로 바꿀까요? 필요한 내용은 먼저 다운로드하세요.'))void loadServerNotebook(tab.path).then(()=>setError('')).catch(e=>setError(e.message))}}>서버 상태 불러오기</button></div>}
+    {kernels&&<div className="nb-kernel-list"><strong>연결된 커널 {kernels.sessions.filter(s=>s.kernel).length} / {kernels.limit}</strong><button onClick={()=>setKernels(null)}>닫기</button>{kernels.sessions.filter(s=>s.kernel).map(s=><div key={s.id}><span>{s.path} · {s.state}</span><button onClick={()=>{if(confirm('이 커널의 작업과 변수를 종료할까요?'))void stopNotebookKernel(s.id).then(listNotebookKernels).then(setKernels).catch(e=>setError(e.message))}}>종료</button></div>)}</div>}
+    <div className="nb-wrap">
+      {notebook.cells.map((cell:NbCell,index:number)=><section className={`nb-edit-cell ${record.server.cell===index?'nb-cell-running':''}`} key={index}>
+        <div className="nb-cell-actions"><span>{cell.cell_type==='code'?`In [${record.server.cell===index?'*':cell.execution_count??' '}]`:'Markdown'} · 셀 {index+1}</span>
+          {cell.cell_type==='code'&&<button disabled={disabled} onClick={()=>void run('execute',index)}>▶ 셀 실행</button>}
+          <button disabled={disabled} onClick={()=>{if(!confirm(`셀 ${index+1}을 삭제할까요?`))return;const nb=JSON.parse(record.content);nb.cells.splice(index,1);editNotebook(tab.path,JSON.stringify(nb,null,1)+'\n')}}>삭제</button>
+        </div>
+        <textarea className="nb-source" aria-label={`셀 ${index+1} 코드`} value={joinSrc(cell.source)} disabled={busy} rows={Math.min(16,Math.max(2,joinSrc(cell.source).split('\n').length))} spellCheck={false} autoCorrect="off" autoCapitalize="none" onChange={e=>change(index,e.target.value)} onKeyDown={e=>{if(e.shiftKey&&e.key==='Enter'&&cell.cell_type==='code'){e.preventDefault();if(!disabled)void run('execute',index)}}}/>
+        {cell.cell_type==='markdown'&&<TextCell cell={cell}/>}
+        {(cell.outputs||[]).map((output,i)=><Output key={i} out={output}/>)}
+      </section>)}
+      <div className="nb-cell-actions"><button disabled={disabled} onClick={()=>add('code')}>＋ 코드 셀</button><button disabled={disabled} onClick={()=>add('markdown')}>＋ Markdown 셀</button></div>
+    </div>
+  </div>
+}
+
+export function NotebookPreview({ content }: { content: string }) {
   const parsed = useMemo(() => parseNotebook(content), [content])
   const [hljs, setHljs] = useState<any>(null)
   useEffect(() => { getHljs().then(setHljs).catch(() => {}) }, [])
 
   if ('error' in parsed) {
-    return <div className="viewer-empty">{parsed.error} (✎ 버튼으로 원본 JSON을 열 수 있습니다)</div>
+    return <div className="viewer-empty">{parsed.error}</div>
   }
   return (
     <div className="nb-wrap">

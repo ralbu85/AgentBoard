@@ -13,6 +13,7 @@ import { TerminalPane } from '../Terminal/TerminalPane'
 import { InputCard } from '../Terminal/InputCard'
 import { leaves, mapTree, moveTab, newLeaf, readLayout, saveLayout, syncTree, type PaneNode, type TreeNode, type DropZone } from './layout'
 import { NotebookView } from './NotebookView'
+import {notebookAction,openNotebook} from './notebookRuntime'
 
 const EMPTY_TABS: ViewerTab[] = []
 
@@ -113,7 +114,7 @@ function LeafPane({ node, tabs, activeTabId, split, onClose, onSelect, onMove, o
   const isTextTab = activeTab && (activeTab.type === 'code' || activeTab.type === 'markdown' || activeTab.type === 'latex' || activeTab.type === 'notebook')
   const isMd = activeTab?.type === 'markdown'
   const isNb = activeTab?.type === 'notebook'
-  const isRendered = isMd || isNb
+  const isRendered = isMd
   const dirty = !!activeTab?.dirty
   const [saving, setSaving] = useState(false)
   const [mdEditMode, setMdEditMode] = useState(false)
@@ -165,6 +166,12 @@ function LeafPane({ node, tabs, activeTabId, split, onClose, onSelect, onMove, o
   const saveFile = useCallback(async () => {
     if (!activeTab) return
     setSaving(true)
+    if(activeTab.type==='notebook'&&JSON.parse(ownerKey)[0]==='local'){
+      try{await openNotebook(activeTab.path,activeTab.content,!!activeTab.dirty);await notebookAction(activeTab.path,'save')}
+      catch(e){useToasts.getState().push(e instanceof Error?e.message:'노트북 저장 실패')}
+      finally{setSaving(false)}
+      return
+    }
     const res = await api.writeFile(activeTab.path, activeTab.content, activeTab.version)
     if (res?.ok === true) markTabSaved(activeTab.id, activeTab.content, res.version, ownerKey)
     setSaving(false)
@@ -289,7 +296,7 @@ function LeafPane({ node, tabs, activeTabId, split, onClose, onSelect, onMove, o
           {isRendered && <button className="vtab-action" onClick={() => setMdEditMode(v => !v)} title={mdEditMode ? 'Preview' : 'Edit'}>{mdEditMode ? '👁' : '✎'}</button>}
           {dirty && <button className="vtab-action vtab-send" onClick={saveFile} title="Save (Ctrl+S)" disabled={saving}>{saving ? '...' : '💾'}</button>}
           {activeTab?.type !== 'terminal' && activeTab?.type !== 'browser' && <button className="vtab-action" onClick={downloadTab} title="Download">↓</button>}
-          {activeTab?.type !== 'terminal' && activeTab?.type !== 'browser' && <button className="vtab-action" onClick={refreshTab} title="Refresh">↻</button>}
+          {activeTab?.type !== 'terminal' && activeTab?.type !== 'browser' && !isNb && <button className="vtab-action" onClick={refreshTab} title="Refresh">↻</button>}
           {isTextTab && memos.length > 0 && (
             <button className="vtab-action vtab-send" onClick={sendMemosToAgent} title="Send notes to agent">
               ▶ {memos.length}
@@ -310,7 +317,7 @@ function LeafPane({ node, tabs, activeTabId, split, onClose, onSelect, onMove, o
           : activeTab.type === 'diff' ? <DiffView diff={activeTab.content} />
           : activeTab.type === 'pdf' ? <PdfViewer key={activeTab.id} url={activeTab.content} viewState={activeTab.viewState} onViewChange={rememberView} />
           : activeTab.type === 'image' ? <FileContent content={activeTab.content} type="image" lang="" />
-          : (isNb && !mdEditMode) ? <NotebookView content={activeTab.content} />
+          : isNb ? <NotebookView key={activeTab.path} tab={activeTab} ownerKey={ownerKey} />
           : (isMd && !mdEditMode) ? <MarkdownView content={activeTab.content} filePath={activeTab.path} onContextMenu={handleCtxMenu} onEdit={saveMdEdit} />
           : (
             <CodeEditor key={activeTab.id}

@@ -7,3 +7,6 @@ websockets>=13.0
 pywebpush>=2.0
 
 playwright==1.58.0
+jupyter-client>=8.6,<9
+nbformat>=5.10,<6
+ipykernel>=6.29,<7

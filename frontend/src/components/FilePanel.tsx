@@ -5,7 +5,7 @@ import type { FileEntry } from '../types'
 import { renderMarkdown } from '../markdown'
 import { sanitize } from '../sanitize'
 import { PdfViewer } from './PdfViewer'
-import { NotebookView } from './Viewer/NotebookView'
+import { NotebookPreview } from './Viewer/NotebookView'
 
 type PreviewType = 'code' | 'markdown' | 'latex' | 'pdf' | 'image' | 'notebook'
 
@@ -440,7 +440,7 @@ export function FilePanel({ initialPath, onClose }: Props) {
             </div>
           )}
           {preview.type === 'notebook' && (
-            <NotebookView content={preview.content} />
+            <NotebookPreview content={preview.content} />
           )}
         </div>
       </div>

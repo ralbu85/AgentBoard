@@ -19,4 +19,5 @@ yarn.lock
 .spawn-profiles.json
 
 .browser-state/
+.notebook-state/
 desktop/release/
