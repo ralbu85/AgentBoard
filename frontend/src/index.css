@@ -1800,3 +1800,12 @@ html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 @media(max-width:768px){.nb-edit-cell .cm-cell-editor .cm-editor{font-size:16px!important}}
 .nb-environment-search { width:100%; padding:9px 10px; margin-bottom:12px; border:1px solid var(--border); border-radius:5px; color:var(--text-primary); background:var(--bg-primary); font-size:16px; }
 .nb-environment-folder { overflow-wrap:anywhere; }
+.nb-markdown-cell { margin:12px 0; padding:0 10px; min-width:0; }
+.nb-markdown-preview { padding:8px 0; min-height:36px; outline:none; }
+.nb-markdown-preview:focus-visible { outline:1px solid var(--border); outline-offset:4px; border-radius:4px; }
+.nb-markdown-cell.editing { padding:10px; border:1px solid var(--border); border-radius:6px; }
+.nb-markdown-cell .cm-cell-editor { height:auto; min-height:60px; }
+.nb-markdown-cell .cm-cell-editor .cm-editor { height:auto; }
+.nb-markdown-cell .cm-cell-editor .cm-scroller { max-height:480px; }
+.nb-markdown-empty { color:var(--text-muted); font-size:13px; }
+@media(max-width:768px){.nb-markdown-cell .cm-cell-editor .cm-editor{font-size:16px!important}}

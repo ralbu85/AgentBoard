@@ -5,6 +5,7 @@ import { getHljs } from './FileContent'
 import {useStore, type ViewerTab} from '../../store'
 import {uiId} from '../../uiId'
 import {NotebookEnvironment} from './NotebookEnvironment'
+import {NotebookMarkdownCell} from './NotebookMarkdownCell'
 import {CodeEditor} from './CodeEditor'
 import {NotebookKernels,kernelStateLabel} from './NotebookKernels'
 import {useNotebooks, openNotebook, editNotebook, refreshNotebook, notebookAction, notebookBusy, loadServerNotebook} from './notebookRuntime'
@@ -109,14 +110,13 @@ export function NotebookView({tab,ownerKey}:{tab:ViewerTab;ownerKey:string}) {
     {environmentOpen&&<NotebookEnvironment path={tab.path} onClose={()=>setEnvironmentOpen(false)}/>}
     {kernels&&<NotebookKernels onClose={()=>setKernels(false)}/>}
     <div className="nb-wrap">
-      {notebook.cells.map((cell:NbCell,index:number)=><section className={`nb-edit-cell ${record.server.cell===index?'nb-cell-running':''}`} key={(cell as NbCell&{id?:string}).id||index}>
+      {notebook.cells.map((cell:NbCell,index:number)=>cell.cell_type==='markdown'?<NotebookMarkdownCell key={(cell as NbCell&{id?:string}).id||index} content={joinSrc(cell.source)} index={index} disabled={disabled} onChange={source=>change(index,source)} onSave={()=>{if(!disabled)void run('save')}} onDelete={()=>{if(!confirm(`셀 ${index+1}을 삭제할까요?`))return;const nb=JSON.parse(record.content);nb.cells.splice(index,1);editNotebook(tab.path,JSON.stringify(nb,null,1)+'\n')}}/>:<section className={`nb-edit-cell ${record.server.cell===index?'nb-cell-running':''}`} key={(cell as NbCell&{id?:string}).id||index}>
         <div className="nb-cell-actions"><span>{cell.cell_type==='code'?`In [${record.server.cell===index?'*':cell.execution_count??' '}]`:'Markdown'} · 셀 {index+1}</span>
           {cell.cell_type==='code'&&<button disabled={disabled} onClick={()=>void run('execute',index)}>{operation?.action==='execute'&&operation.cell===index?'실행 준비 중…':state.cell===index&&busy?'실행 중…':'▶ 셀 실행'}</button>}
           <button disabled={disabled} onClick={()=>{if(!confirm(`셀 ${index+1}을 삭제할까요?`))return;const nb=JSON.parse(record.content);nb.cells.splice(index,1);editNotebook(tab.path,JSON.stringify(nb,null,1)+'\n')}}>삭제</button>
         </div>
         <CodeEditor compact ariaLabel={`셀 ${index+1} 코드`} content={joinSrc(cell.source)} lang={cell.cell_type==='code'?'python':cell.cell_type==='markdown'?'markdown':''} readOnly={busy||!!operation} onChange={source=>change(index,source)} onSave={()=>{if(!disabled)void run('save')}} onRun={cell.cell_type==='code'?()=>{if(!disabled)void run('execute',index)}:undefined}/>
 
-        {cell.cell_type==='markdown'&&<TextCell cell={cell}/>}
         {(cell.outputs||[]).map((output,i)=><Output key={i} out={output}/>)}
       </section>)}
       <div className="nb-cell-actions"><button disabled={disabled} onClick={()=>add('code')}>＋ 코드 셀</button><button disabled={disabled} onClick={()=>add('markdown')}>＋ Markdown 셀</button></div>
