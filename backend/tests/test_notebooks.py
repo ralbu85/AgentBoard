@@ -221,3 +221,29 @@ def test_environment_selection_persistence_and_kernel_guard(setup, monkeypatch):
         finally:
             await manager.shutdown()
     asyncio.run(scenario())
+
+
+def test_select_and_connect_requires_confirmation_before_replacing(setup, monkeypatch):
+    manager, create = setup
+    doc = create('value = 17')
+    choices = [{'id': key, 'name': key, 'python': sys.executable, 'source': 'test'} for key in ('one', 'two')]
+    monkeypatch.setattr(notebooks.Document, 'environments', lambda self: choices)
+    async def select(key, replace=False):
+        return await routes_notebook.action(doc.id, routes_notebook.Action(action='connect-environment', revision=doc.revision, environment=key, replace=replace))
+    async def scenario():
+        try:
+            result = await select('one')
+            assert result['kernel'] and result['state'] == 'idle' and result['kernelName'] == 'one'
+            original = doc.km
+            await select('one')
+            assert doc.km is original
+            for key, replace in [('two', False), ('unknown', True)]:
+                with pytest.raises(HTTPException):
+                    await select(key, replace)
+                assert doc.km is original and await original.is_alive()
+            result = await select('two', True)
+            assert result['kernelName'] == 'two' and result['state'] == 'idle'
+            assert doc.km is not original
+        finally:
+            await manager.shutdown()
+    asyncio.run(scenario())

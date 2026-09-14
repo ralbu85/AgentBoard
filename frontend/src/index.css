@@ -1798,3 +1798,5 @@ html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 .nb-edit-cell .cm-cell-editor .cm-editor { height:auto; }
 .nb-edit-cell .cm-cell-editor .cm-scroller { max-height:480px; min-height:60px; }
 @media(max-width:768px){.nb-edit-cell .cm-cell-editor .cm-editor{font-size:16px!important}}
+.nb-environment-search { width:100%; padding:9px 10px; margin-bottom:12px; border:1px solid var(--border); border-radius:5px; color:var(--text-primary); background:var(--bg-primary); font-size:16px; }
+.nb-environment-folder { overflow-wrap:anywhere; }

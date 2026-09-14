@@ -29,10 +29,11 @@ class Update(BaseModel):
 
 class Action(BaseModel):
     model_config = ConfigDict(extra='forbid')
-    action: Literal['connect', 'execute', 'run-all', 'interrupt', 'restart', 'shutdown', 'save', 'reload', 'select-environment']
+    action: Literal['connect', 'execute', 'run-all', 'interrupt', 'restart', 'shutdown', 'save', 'reload', 'select-environment', 'connect-environment']
     revision: int
     cell: int | None = None
     environment: str | None = None
+    replace: bool = False
 
 
 @router.post('/open')
@@ -88,6 +89,23 @@ async def action(key: str, body: Action):
             await document.interrupt()
         elif body.action == 'shutdown':
             await document.shutdown()
+        elif body.action == 'connect-environment':
+            # Resolve before stopping a working kernel: invalid choices must not
+            # destroy the user's current environment.
+            option = next((item for item in document.environments() if item['id'] == body.environment), None)
+            if not option:
+                raise HTTPException(404, '선택한 환경을 찾을 수 없습니다. 다시 탐지하세요.')
+            if document.km and document.environment == body.environment:
+                if document.busy:
+                    raise HTTPException(409, '현재 커널에서 실행 중입니다.')
+                await manager.start(document)
+            else:
+                if document.km:
+                    if not body.replace:
+                        raise HTTPException(409, '환경 변경 시 현재 커널의 변수가 초기화됩니다. 확인 후 다시 선택하세요.')
+                    await document.shutdown()
+                document.select_environment(body.environment)
+                await manager.start(document)
         elif body.action == 'select-environment':
             document.select_environment(body.environment)
         elif body.action == 'save':

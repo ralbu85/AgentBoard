@@ -76,7 +76,7 @@ export function NotebookView({tab,ownerKey}:{tab:ViewerTab;ownerKey:string}) {
   const state=record.observed||record.server
   const busy=notebookBusy(state.state), disabled=busy||record.pending||!!record.operation
   const operation=record.operation
-  const actionText=operation?({'select-environment':'실행 환경 선택 중…',connect:'커널 연결 중…',execute:`셀 ${(operation.cell??0)+1} 실행 준비 중…`,'run-all':'전체 실행 준비 중…',interrupt:'실행 중단 요청 중…',restart:'커널 재시작 중…',shutdown:'커널 종료 중…',save:'결과 저장 중…',reload:'원본 불러오는 중…'} as Record<string,string>)[operation.action]:''
+  const actionText=operation?({'connect-environment':'선택한 환경에 연결 중…','select-environment':'실행 환경 선택 중…',connect:'커널 연결 중…',execute:`셀 ${(operation.cell??0)+1} 실행 준비 중…`,'run-all':'전체 실행 준비 중…',interrupt:'실행 중단 요청 중…',restart:'커널 재시작 중…',shutdown:'커널 종료 중…',save:'결과 저장 중…',reload:'원본 불러오는 중…'} as Record<string,string>)[operation.action]:''
   const statusText=actionText||(busy?`${kernelStateLabel(state.state)}${state.cell!==null?` · 셀 ${state.cell+1}`:''}`:record.pending?'편집 동기화 중…':record.notice||kernelStateLabel(state.state))
   const notebook=JSON.parse(record.content)
   const change=(index:number,source:string)=>{const nb=JSON.parse(record.content);nb.cells[index].source=source;editNotebook(tab.path,JSON.stringify(nb,null,1)+'\n')}

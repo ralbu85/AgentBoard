@@ -87,18 +87,18 @@ export async function refreshNotebook(path:string){
     }else patch(path,{error:error instanceof Error?error.message:'연결 실패'})
   }finally{polling.delete(path)}
 }
-export function notebookAction(path:string,action:string,cell?:number,environment?:string){
+export function notebookAction(path:string,action:string,cell?:number,environment?:string,replace=false){
   if(current(path).operation)return Promise.reject(Error('이전 요청을 처리 중입니다.'))
   patch(path,{operation:{action,cell,started:Date.now()},notice:'',error:'',observed:undefined})
   clearTimeout(timers.get(path));timers.delete(path)
   return queue(path,async()=>{
-    if(!['interrupt','shutdown','reload'].includes(action)){
+    if(!['interrupt','shutdown','reload'].includes(action)&&!(action==='connect-environment'&&notebookBusy(current(path).server.state))){
       do{await flush(path)}while(current(path).content!==current(path).server.content)
     }
     const record=current(path)
-    const server=await request('/'+record.server.id+'/action',{action,revision:record.server.revision,cell,environment})
+    const server=await request('/'+record.server.id+'/action',{action,revision:record.server.revision,cell,environment,replace})
     accept(path,server,action==='reload'?record.content:undefined)
-    patch(path,{notice:({'select-environment':'실행 환경 선택 완료',connect:'커널 연결 완료',save:'저장 완료',restart:'커널 재시작 완료',shutdown:'커널 종료 완료',interrupt:'중단 완료',reload:'원본 불러오기 완료'} as Record<string,string>)[action]||''})
+    patch(path,{notice:({'connect-environment':'선택한 환경에 연결 완료','select-environment':'실행 환경 선택 완료',connect:'커널 연결 완료',save:'저장 완료',restart:'커널 재시작 완료',shutdown:'커널 종료 완료',interrupt:'중단 완료',reload:'원본 불러오기 완료'} as Record<string,string>)[action]||''})
     return server as NotebookState
   }).finally(()=>patch(path,{operation:undefined,observed:undefined}))
 }
