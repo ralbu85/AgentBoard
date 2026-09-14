@@ -1779,3 +1779,18 @@ html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 .nb-source { display:block; width:100%; min-width:0; resize:vertical; padding:8px; font:14px/1.4 var(--font-mono); color:var(--text-primary); background:var(--bg-primary); border:1px solid var(--border); border-radius:4px; tab-size:4; }
 .nb-edit-cell .nb-img { max-width:100%; }
 @media(max-width:768px){.nb-source{font-size:16px}.nb-interactive .nb-wrap{padding:8px}.nb-runtime-bar{position:static}}
+.nb-live-status { display:flex; align-items:center; flex-wrap:wrap; gap:8px; flex-basis:100%; min-width:0; }
+.nb-status-error { color:var(--red); overflow-wrap:anywhere; }
+.nb-spinner { width:12px; height:12px; border:2px solid var(--border); border-top-color:var(--accent); border-radius:50%; animation:nb-spin .8s linear infinite; flex-shrink:0; }
+@keyframes nb-spin { to { transform:rotate(360deg); } }
+@media(prefers-reduced-motion:reduce){.nb-spinner{animation:none}}
+.nb-kernel-dialog { width:min(620px,calc(100vw - 32px)); max-height:80vh; overflow:auto; padding:18px; margin:auto; background:var(--bg-secondary); color:var(--text-primary); border:1px solid var(--border); border-radius:10px; font-size:14px; }
+.nb-kernel-dialog::backdrop { background:rgba(0,0,0,.6); }
+.nb-kernel-dialog header,.nb-kernel-dialog section { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:12px; }
+.nb-kernel-dialog section { padding:12px 0; border-bottom:1px solid var(--border); }
+.nb-kernel-dialog section div { display:flex; flex-direction:column; gap:6px; min-width:0; overflow-wrap:anywhere; }
+.nb-kernel-dialog small { color:var(--text-secondary); }
+.nb-kernel-dialog button { color:var(--text-primary); background:var(--bg-tertiary); border:1px solid var(--border); border-radius:4px; padding:6px 10px; cursor:pointer; flex-shrink:0; }
+.nb-kernel-dialog button:disabled { opacity:.5; cursor:default; }
+.nb-kernel-dialog [role=alert] { color:var(--red); }
+@media(max-width:768px){.nb-interactive .nb-runtime-bar{position:sticky}}

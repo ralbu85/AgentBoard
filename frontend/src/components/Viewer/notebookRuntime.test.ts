@@ -61,4 +61,25 @@ describe('notebook runtime',()=>{
     expect(useNotebooks.getState().records[path].content).toBe('recovered output')
     expect(calls[calls.length-1]).toBe('POST /api/notebooks/open')
   })
+  it('shows an operation immediately and polls server progress during a slow request',async()=>{
+    await openNotebook(path,'original',false)
+    let release!:()=>void
+    const gate=new Promise<void>(resolve=>{release=resolve})
+    const original=vi.mocked(fetch).getMockImplementation()!
+    vi.mocked(fetch).mockImplementation(async(...args)=>{
+      if(String(args[0]).endsWith('/action'))await gate
+      return original(...args)
+    })
+    const action=notebookAction(path,'connect')
+    expect(useNotebooks.getState().records[path].operation?.action).toBe('connect')
+    await Promise.resolve();await Promise.resolve()
+    state={...state,state:'starting',revision:2}
+    await refreshNotebook(path)
+    expect(useNotebooks.getState().records[path].observed?.state).toBe('starting')
+    expect(useNotebooks.getState().records[path].server.revision).toBe(1)
+    release();await action
+    expect(useNotebooks.getState().records[path].operation).toBeUndefined()
+    expect(useNotebooks.getState().records[path].notice).toBe('커널 연결 완료')
+  })
+
 })

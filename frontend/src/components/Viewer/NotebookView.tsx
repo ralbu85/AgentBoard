@@ -4,7 +4,8 @@ import { sanitize } from '../../sanitize'
 import { getHljs } from './FileContent'
 import {useStore, type ViewerTab} from '../../store'
 import {uiId} from '../../uiId'
-import {useNotebooks, openNotebook, editNotebook, refreshNotebook, notebookAction, notebookBusy, listNotebookKernels, stopNotebookKernel, loadServerNotebook, type NotebookState} from './notebookRuntime'
+import {NotebookKernels,kernelStateLabel} from './NotebookKernels'
+import {useNotebooks, openNotebook, editNotebook, refreshNotebook, notebookAction, notebookBusy, loadServerNotebook} from './notebookRuntime'
 
 // Read-only Jupyter notebook renderer (nbformat 4; minimal v3 fallback).
 // Cells render defensively — a malformed cell degrades to plain text, never throws.
@@ -42,7 +43,9 @@ function parseNotebook(content: string): { cells: NbCell[]; lang: string } | { e
 export function NotebookView({tab,ownerKey}:{tab:ViewerTab;ownerKey:string}) {
   const record=useNotebooks(s=>s.records[tab.path])
   const [error,setError]=useState('')
-  const [kernels,setKernels]=useState<{limit:number;sessions:NotebookState[]}|null>(null)
+  const [kernels,setKernels]=useState(false)
+  const [now,setNow]=useState(Date.now())
+  useEffect(()=>{if(!record?.operation&&!notebookBusy(record?.server.state))return;const timer=setInterval(()=>setNow(Date.now()),1000);return()=>clearInterval(timer)},[record?.operation,record?.server.state])
   const local=JSON.parse(ownerKey)[0]==='local'
   const supported=useMemo(()=>{try{const nb=JSON.parse(tab.content);return nb.nbformat===4&&Array.isArray(nb.cells)}catch{return false}},[tab.content])
   useEffect(()=>{
@@ -67,7 +70,11 @@ export function NotebookView({tab,ownerKey}:{tab:ViewerTab;ownerKey:string}) {
   }
   if(!local||!supported)return <><div className="nb-runtime-bar">{!local?'원격 머신의 노트북은 현재 읽기만 지원합니다.':'실행·편집은 nbformat 4 노트북에서 지원합니다.'}</div><NotebookPreview content={tab.content}/></>
   if(!record)return <div className="nb-runtime-bar" role="status">{error||'노트북 연결 중…'}</div>
-  const busy=notebookBusy(record.server.state), disabled=busy||record.pending
+  const state=record.observed||record.server
+  const busy=notebookBusy(state.state), disabled=busy||record.pending||!!record.operation
+  const operation=record.operation
+  const actionText=operation?({connect:'커널 연결 중…',execute:`셀 ${(operation.cell??0)+1} 실행 준비 중…`,'run-all':'전체 실행 준비 중…',interrupt:'실행 중단 요청 중…',restart:'커널 재시작 중…',shutdown:'커널 종료 중…',save:'결과 저장 중…',reload:'원본 불러오는 중…'} as Record<string,string>)[operation.action]:''
+  const statusText=actionText||(busy?`${kernelStateLabel(state.state)}${state.cell!==null?` · 셀 ${state.cell+1}`:''}`:record.pending?'편집 동기화 중…':record.notice||kernelStateLabel(state.state))
   const notebook=JSON.parse(record.content)
   const change=(index:number,source:string)=>{const nb=JSON.parse(record.content);nb.cells[index].source=source;editNotebook(tab.path,JSON.stringify(nb,null,1)+'\n')}
   const add=(kind:string)=>{
@@ -76,26 +83,32 @@ export function NotebookView({tab,ownerKey}:{tab:ViewerTab;ownerKey:string}) {
   const dirty=record.server.dirty||record.content!==record.server.content
   return <div className="nb-interactive">
     <div className="nb-runtime-bar">
-      <strong title={record.server.python}>Python · {({stopped:'연결 안 됨',starting:'연결 중',idle:'대기',running:'실행 중',interrupting:'중단 중',stopping:'종료 중'} as Record<string,string>)[record.server.state]||record.server.state}</strong>
-      <button disabled={disabled||record.server.kernel} onClick={()=>void run('connect')}>커널 연결</button>
-      <button disabled={disabled} onClick={()=>void run('run-all')}>전체 실행</button>
-      <button disabled={!['running','interrupting'].includes(record.server.state)} onClick={()=>void run('interrupt')}>■ 중단</button>
+      <div className="nb-live-status" role="status" aria-live="polite" aria-busy={busy||!!operation}>
+        {(busy||operation||record.pending)&&<span className="nb-spinner" aria-hidden="true"/>}
+        <strong title={record.server.python}>Python · {statusText}</strong>
+        {operation&&<span>{Math.max(0,Math.floor((now-operation.started)/1000))}초</span>}
+        {operation&&state.state==='starting'&&<span>Python 커널을 시작하고 있습니다.</span>}
+        {(error||record.error||record.server.error)&&<span className="nb-status-error">{error||record.error||record.server.error}</span>}
+      </div>
+      <button disabled={disabled||record.server.kernel} onClick={()=>void run('connect')}>{operation?.action==='connect'?'연결 중…':'커널 연결'}</button>
+      <button disabled={disabled} onClick={()=>void run('run-all')}>{operation?.action==='run-all'?'실행 준비 중…':'전체 실행'}</button>
+      <button disabled={!!operation||!['running','interrupting'].includes(state.state)} onClick={()=>void run('interrupt')}>■ 중단</button>
       <button disabled={disabled||!record.server.kernel} onClick={()=>{if(confirm('커널을 재시작할까요? 메모리의 변수는 초기화되고 셀과 출력은 유지됩니다.'))void run('restart')}}>재시작</button>
       <button disabled={record.pending||!record.server.kernel} onClick={()=>{if(confirm('이 노트북의 커널을 종료할까요? 실행 중인 작업과 변수는 종료됩니다.'))void run('shutdown')}}>커널 종료</button>
       <button disabled={disabled||!dirty} onClick={()=>void run('save')}>{dirty?'저장 · 변경 있음':'저장됨'}</button>
       <button onClick={download}>다운로드</button>
-      <button onClick={()=>void listNotebookKernels().then(setKernels).catch(e=>setError(e.message))}>커널 목록</button>
+      <button onClick={()=>setKernels(true)}>커널 목록</button>
       <button disabled={disabled} onClick={()=>{if(confirm('저장하지 않은 편집·출력을 버리고 디스크 원본을 다시 열까요? 커널 변수도 초기화됩니다.'))void run('reload')}}>원본 다시 열기</button>
     </div>
     {(error||record.error||record.server.error)&&<div className="nb-runtime-error" role="alert">{error||record.error||record.server.error}<button disabled={record.pending} onClick={()=>{if(confirm('이 화면의 편집 초안을 서버 상태로 바꿀까요? 필요한 내용은 먼저 다운로드하세요.'))void loadServerNotebook(tab.path).then(()=>setError('')).catch(e=>setError(e.message))}}>서버 상태 불러오기</button></div>}
-    {kernels&&<div className="nb-kernel-list"><strong>연결된 커널 {kernels.sessions.filter(s=>s.kernel).length} / {kernels.limit}</strong><button onClick={()=>setKernels(null)}>닫기</button>{kernels.sessions.filter(s=>s.kernel).map(s=><div key={s.id}><span>{s.path} · {s.state}</span><button onClick={()=>{if(confirm('이 커널의 작업과 변수를 종료할까요?'))void stopNotebookKernel(s.id).then(listNotebookKernels).then(setKernels).catch(e=>setError(e.message))}}>종료</button></div>)}</div>}
+    {kernels&&<NotebookKernels onClose={()=>setKernels(false)}/>}
     <div className="nb-wrap">
       {notebook.cells.map((cell:NbCell,index:number)=><section className={`nb-edit-cell ${record.server.cell===index?'nb-cell-running':''}`} key={index}>
         <div className="nb-cell-actions"><span>{cell.cell_type==='code'?`In [${record.server.cell===index?'*':cell.execution_count??' '}]`:'Markdown'} · 셀 {index+1}</span>
-          {cell.cell_type==='code'&&<button disabled={disabled} onClick={()=>void run('execute',index)}>▶ 셀 실행</button>}
+          {cell.cell_type==='code'&&<button disabled={disabled} onClick={()=>void run('execute',index)}>{operation?.action==='execute'&&operation.cell===index?'실행 준비 중…':state.cell===index&&busy?'실행 중…':'▶ 셀 실행'}</button>}
           <button disabled={disabled} onClick={()=>{if(!confirm(`셀 ${index+1}을 삭제할까요?`))return;const nb=JSON.parse(record.content);nb.cells.splice(index,1);editNotebook(tab.path,JSON.stringify(nb,null,1)+'\n')}}>삭제</button>
         </div>
-        <textarea className="nb-source" aria-label={`셀 ${index+1} 코드`} value={joinSrc(cell.source)} disabled={busy} rows={Math.min(16,Math.max(2,joinSrc(cell.source).split('\n').length))} spellCheck={false} autoCorrect="off" autoCapitalize="none" onChange={e=>change(index,e.target.value)} onKeyDown={e=>{if(e.shiftKey&&e.key==='Enter'&&cell.cell_type==='code'){e.preventDefault();if(!disabled)void run('execute',index)}}}/>
+        <textarea className="nb-source" aria-label={`셀 ${index+1} 코드`} value={joinSrc(cell.source)} disabled={busy||!!operation} rows={Math.min(16,Math.max(2,joinSrc(cell.source).split('\n').length))} spellCheck={false} autoCorrect="off" autoCapitalize="none" onChange={e=>change(index,e.target.value)} onKeyDown={e=>{if(e.shiftKey&&e.key==='Enter'&&cell.cell_type==='code'){e.preventDefault();if(!disabled)void run('execute',index)}}}/>
         {cell.cell_type==='markdown'&&<TextCell cell={cell}/>}
         {(cell.outputs||[]).map((output,i)=><Output key={i} out={output}/>)}
       </section>)}
