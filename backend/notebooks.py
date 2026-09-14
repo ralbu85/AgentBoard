@@ -87,6 +87,9 @@ class Document:
         self.dirty = False
         self.revision = time.time_ns() // 1000
         self.state = 'stopped'
+        self.environment = 'default'
+        self.python = PYTHON
+        self.kernel_name = 'Python · 서버 기본'
         self.error = ''
         self.active_cell = None
         self.km = None
@@ -101,6 +104,8 @@ class Document:
         if checkpoint.exists():
             try:
                 saved = json.loads(checkpoint.read_text())
+                if saved.get('path') == str(path):
+                    self.environment = saved.get('environment', 'default')
                 if saved['path'] == str(path) and saved['dirty']:
                     self.notebook = parse(encoded(saved['notebook']))
                     self.file_version = saved['version']
@@ -108,6 +113,11 @@ class Document:
                     self.error = '저장 전 편집·출력을 복구했습니다. 커널 변수는 새로 실행해야 합니다.'
             except (ValueError, KeyError, OSError, HTTPException):
                 pass
+
+        if self.environment != 'default':
+            option = next((item for item in self.environments() if item['id'] == self.environment), None)
+            self.kernel_name = option['name'] if option else '선택한 환경을 찾을 수 없음'
+            self.python = option['python'] if option else ''
 
     @property
     def busy(self):
@@ -117,7 +127,7 @@ class Document:
         return {'id': self.id, 'path': str(self.path), 'content': encoded(self.notebook),
                 'version': self.file_version, 'revision': self.revision, 'dirty': self.dirty,
                 'state': self.state, 'cell': self.active_cell, 'error': self.error,
-                'python': PYTHON, 'kernel': bool(self.km)}
+                'python': self.python, 'environment': self.environment, 'kernelName': self.kernel_name, 'kernel': bool(self.km)}
 
     def touch(self, checkpoint=False):
         self.revision += 1
@@ -128,7 +138,7 @@ class Document:
     def checkpoint(self):
         atomic_write(STATE_DIR/(self.id+'.json'), json.dumps({
             'path': str(self.path), 'notebook': self.notebook,
-            'version': self.file_version, 'dirty': self.dirty,
+            'version': self.file_version, 'dirty': self.dirty, 'environment': self.environment,
         }, ensure_ascii=False).encode())
         self.last_checkpoint = time.monotonic()
 
@@ -163,6 +173,22 @@ class Document:
         self.dirty = False
         self.touch(checkpoint=True)
 
+    def environments(self):
+        from .notebook_environments import discover
+        return discover(self.path.parent, PYTHON)
+
+    def select_environment(self, key):
+        if self.km or self.busy:
+            raise HTTPException(409, '커널을 종료한 뒤 환경을 변경하세요. 코드와 출력은 유지됩니다.')
+        option = next((item for item in self.environments() if item['id'] == key), None)
+        if not option:
+            raise HTTPException(404, '이 실행 폴더에서 찾을 수 없는 Python 환경입니다. 목록을 새로고침하세요.')
+        self.environment = option['id']
+        self.python = option['python']
+        self.kernel_name = option['name']
+        self.error = ''
+        self.touch(checkpoint=True)
+
     async def start(self):
         if self.km:
             if await self.km.is_alive():
@@ -172,12 +198,13 @@ class Document:
         language = metadata.get('kernelspec', {}).get('language') or metadata.get('language_info', {}).get('name', 'python')
         if str(language).lower() not in ('python', 'python3'):
             raise HTTPException(400, '현재는 이 서버의 Python 노트북만 실행할 수 있습니다.')
+        self.select_environment(self.environment)
         self.state = 'starting'
         self.error = ''
         self.touch()
         km = AsyncKernelManager(kernel_name='python3', autorestart=False)
         # Never execute a kernelspec supplied by the notebook or browser.
-        km.kernel_spec.argv = [PYTHON, '-m', 'ipykernel_launcher', '-f', '{connection_file}']
+        km.kernel_spec.argv = [self.python, '-m', 'ipykernel_launcher', '-f', '{connection_file}']
         km.kernel_spec.env = {}
         self.km = km
         try:

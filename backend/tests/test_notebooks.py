@@ -183,3 +183,41 @@ def test_evicted_document_retains_unsaved_draft(setup, monkeypatch):
     recovered = manager.open(str(first.path))
     assert recovered.notebook['cells'][0]['source'] == 'remember me'
     assert recovered.dirty and not recovered.km
+
+
+def test_environment_discovery_is_read_only(setup, tmp_path):
+    from backend.notebook_environments import discover
+    env = tmp_path / '.venv' / 'bin'
+    env.mkdir(parents=True)
+    python = env / 'python'
+    marker = tmp_path / 'must-not-run'
+    python.write_text('#!/bin/sh\ntouch '+str(marker)+'\n')
+    python.chmod(0o755)
+    options = discover(tmp_path, sys.executable)
+    found = next(item for item in options if item['python'] == str(python))
+    assert found['source'] == '프로젝트 환경' and '.venv' in found['name']
+    assert not marker.exists()
+
+
+def test_environment_selection_persistence_and_kernel_guard(setup, monkeypatch):
+    manager, create = setup
+    doc = create('import sys\nprint(sys.executable)')
+    choices = [{'id':'chosen','name':'Research Python','python':sys.executable,'source':'test'}]
+    monkeypatch.setattr(notebooks.Document, 'environments', lambda self: choices)
+    doc.select_environment('chosen')
+    assert doc.snapshot()['kernelName'] == 'Research Python'
+    assert notebooks.Document(doc.path).environment == 'chosen'
+    with pytest.raises(HTTPException):
+        doc.select_environment('arbitrary-command')
+    async def scenario():
+        try:
+            await manager.start(doc)
+            with pytest.raises(HTTPException) as exc:
+                doc.select_environment('chosen')
+            assert exc.value.status_code == 409
+            doc.schedule([0])
+            await asyncio.wait_for(doc.task, 10)
+            assert sys.executable in doc.notebook['cells'][0]['outputs'][0]['text']
+        finally:
+            await manager.shutdown()
+    asyncio.run(scenario())

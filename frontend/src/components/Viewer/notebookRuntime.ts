@@ -1,6 +1,6 @@
 import {create} from 'zustand'
 
-export type NotebookState={id:string;path:string;content:string;version:string;revision:number;dirty:boolean;state:string;cell:number|null;error:string;kernel:boolean;python:string}
+export type NotebookState={id:string;path:string;content:string;version:string;revision:number;dirty:boolean;state:string;cell:number|null;error:string;kernel:boolean;python:string;environment?:string;kernelName?:string}
 type RecordState={server:NotebookState;content:string;error:string;pending:boolean;conflict?:boolean;operation?:{action:string;cell?:number;started:number};observed?:NotebookState;notice?:string}
 export const useNotebooks=create<{records:Record<string,RecordState>}>(()=>({records:{}}))
 const openings=new Map<string,Promise<void>>()
@@ -87,7 +87,7 @@ export async function refreshNotebook(path:string){
     }else patch(path,{error:error instanceof Error?error.message:'연결 실패'})
   }finally{polling.delete(path)}
 }
-export function notebookAction(path:string,action:string,cell?:number){
+export function notebookAction(path:string,action:string,cell?:number,environment?:string){
   if(current(path).operation)return Promise.reject(Error('이전 요청을 처리 중입니다.'))
   patch(path,{operation:{action,cell,started:Date.now()},notice:'',error:'',observed:undefined})
   clearTimeout(timers.get(path));timers.delete(path)
@@ -96,9 +96,9 @@ export function notebookAction(path:string,action:string,cell?:number){
       do{await flush(path)}while(current(path).content!==current(path).server.content)
     }
     const record=current(path)
-    const server=await request('/'+record.server.id+'/action',{action,revision:record.server.revision,cell})
+    const server=await request('/'+record.server.id+'/action',{action,revision:record.server.revision,cell,environment})
     accept(path,server,action==='reload'?record.content:undefined)
-    patch(path,{notice:({connect:'커널 연결 완료',save:'저장 완료',restart:'커널 재시작 완료',shutdown:'커널 종료 완료',interrupt:'중단 완료',reload:'원본 불러오기 완료'} as Record<string,string>)[action]||''})
+    patch(path,{notice:({'select-environment':'실행 환경 선택 완료',connect:'커널 연결 완료',save:'저장 완료',restart:'커널 재시작 완료',shutdown:'커널 종료 완료',interrupt:'중단 완료',reload:'원본 불러오기 완료'} as Record<string,string>)[action]||''})
     return server as NotebookState
   }).finally(()=>patch(path,{operation:undefined,observed:undefined}))
 }
@@ -115,3 +115,5 @@ export async function stopNotebookKernel(id:string){
   const server=await request('/'+id+'/action',{action:'shutdown',revision:0})
   if(current(server.path))accept(server.path,server)
 }
+
+export const notebookEnvironments=(path:string)=>request(`/${current(path).server.id}/environments`)

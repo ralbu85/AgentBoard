@@ -38,6 +38,6 @@ export function NotebookKernels({onClose}:{onClose:()=>void}){
     {error&&<p role="alert">{error}</p>}
     <button disabled={loading} onClick={()=>setReload(v=>v+1)}>{loading?'조회 중…':'새로고침'}</button>
     {data&&!sessions.length&&<p>연결된 커널이 없습니다. 노트북에서 커널 연결 또는 셀 실행을 눌러 시작하세요.</p>}
-    {sessions.map(s=><section key={s.id}><div><strong>{s.path.split('/').pop()}</strong><small>{s.path}</small><span>{kernelStateLabel(s.state)}{s.cell!==null?` · 셀 ${s.cell+1}`:''}</span></div><button disabled={!!stopping} onClick={()=>void stop(s.id)}>{stopping===s.id?'종료 중…':'종료'}</button></section>)}
+    {sessions.map(s=><section key={s.id}><div><strong>{s.path.split('/').pop()}</strong><small>{s.path}</small><small>{s.kernelName||'Python'} · {s.python}</small><span>{kernelStateLabel(s.state)}{s.cell!==null?` · 셀 ${s.cell+1}`:''}</span></div><button disabled={!!stopping} onClick={()=>void stop(s.id)}>{stopping===s.id?'종료 중…':'종료'}</button></section>)}
   </dialog>,document.body)
 }

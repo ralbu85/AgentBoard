@@ -1,8 +1,9 @@
 import { useEffect, useRef } from 'react'
 import { EditorView, keymap, lineNumbers, highlightActiveLine, Decoration, type DecorationSet } from '@codemirror/view'
 import { EditorState, type Extension, StateField, StateEffect, Compartment } from '@codemirror/state'
-import { defaultKeymap, history, historyKeymap } from '@codemirror/commands'
+import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'
 import { search, searchKeymap, highlightSelectionMatches } from '@codemirror/search'
+import {bracketMatching, indentOnInput, foldGutter} from '@codemirror/language'
 import { oneDark } from '@codemirror/theme-one-dark'
 import type { Memo, SelectionInfo } from './FileContent'
 
@@ -75,14 +76,19 @@ interface Props {
   viewState?: { editorScroll?: number; cursor?: number }
   onViewChange?: (view: {editorScroll: number; cursor: number}) => void
   onSave: () => void
-  onContextMenu: (info: SelectionInfo) => void
+  onContextMenu?: (info: SelectionInfo) => void
+  readOnly?: boolean
+  onRun?: () => void
+  compact?: boolean
+  ariaLabel?: string
 }
 
-export function CodeEditor({ content, lang, memos, onChange, onSave, onContextMenu, viewState, onViewChange }: Props) {
+export function CodeEditor({ content, lang, memos, onChange, onSave, onContextMenu, viewState, onViewChange, readOnly=false, onRun, compact=false, ariaLabel }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const viewRef = useRef<EditorView | null>(null)
-  const cbRef = useRef({ onChange, onSave, onContextMenu, onViewChange })
-  cbRef.current = { onChange, onSave, onContextMenu, onViewChange }
+  const readonlyComp=useRef(new Compartment())
+  const cbRef = useRef({ onChange, onSave, onContextMenu, onViewChange, onRun })
+  cbRef.current = { onChange, onSave, onContextMenu, onViewChange, onRun }
 
   // Recreate editor when lang changes (tab switch)
   useEffect(() => {
@@ -100,12 +106,17 @@ export function CodeEditor({ content, lang, memos, onChange, onSave, onContextMe
 
     const extensions: Extension[] = [
       lineNumbers(),
+      bracketMatching(), indentOnInput(), foldGutter(),
+      readonlyComp.current.of(EditorState.readOnly.of(readOnly)),
+      EditorView.contentAttributes.of({'aria-label':ariaLabel||'코드 편집기'}),
       highlightActiveLine(),
       history(),
       search({ top: true }),
       highlightSelectionMatches(),
       fontComp.of(fontTheme(readFs())),
       keymap.of([
+        {key: 'Shift-Enter',run:()=>{if(!cbRef.current.onRun)return false;if(!viewRef.current?.state.readOnly)cbRef.current.onRun();return true}},
+        indentWithTab,
         ...searchKeymap,   // Ctrl+F find, Ctrl+H replace, F3 next
         ...defaultKeymap,
         ...historyKeymap,
@@ -136,7 +147,7 @@ export function CodeEditor({ content, lang, memos, onChange, onSave, onContextMe
 
     const handleCtx = (e: MouseEvent) => {
       const sel = view.state.selection.main
-      if (sel.from === sel.to) return
+      if (sel.from === sel.to || !cbRef.current.onContextMenu) return
       e.preventDefault()
       const from = view.state.doc.lineAt(sel.from)
       const to = view.state.doc.lineAt(sel.to)
@@ -168,6 +179,8 @@ export function CodeEditor({ content, lang, memos, onChange, onSave, onContextMe
     }
   }, [content])
 
+  useEffect(()=>{viewRef.current?.dispatch({effects:readonlyComp.current.reconfigure(EditorState.readOnly.of(readOnly))})},[readOnly])
+
   // Update memo highlights
   useEffect(() => {
     const view = viewRef.current
@@ -176,5 +189,5 @@ export function CodeEditor({ content, lang, memos, onChange, onSave, onContextMe
     view.dispatch({ effects: setMemosEffect.of(ranges) })
   }, [memos])
 
-  return <div ref={containerRef} className="cm-wrapper" />
+  return <div ref={containerRef} className={`cm-wrapper ${compact?'cm-cell-editor':''}`} />
 }

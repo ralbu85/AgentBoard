@@ -1794,3 +1794,7 @@ html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 .nb-kernel-dialog button:disabled { opacity:.5; cursor:default; }
 .nb-kernel-dialog [role=alert] { color:var(--red); }
 @media(max-width:768px){.nb-interactive .nb-runtime-bar{position:sticky}}
+.nb-edit-cell .cm-cell-editor { height:auto; min-height:60px; border:1px solid var(--border); border-radius:4px; overflow:hidden; }
+.nb-edit-cell .cm-cell-editor .cm-editor { height:auto; }
+.nb-edit-cell .cm-cell-editor .cm-scroller { max-height:480px; min-height:60px; }
+@media(max-width:768px){.nb-edit-cell .cm-cell-editor .cm-editor{font-size:16px!important}}

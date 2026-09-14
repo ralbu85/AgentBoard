@@ -29,9 +29,10 @@ class Update(BaseModel):
 
 class Action(BaseModel):
     model_config = ConfigDict(extra='forbid')
-    action: Literal['connect', 'execute', 'run-all', 'interrupt', 'restart', 'shutdown', 'save', 'reload']
+    action: Literal['connect', 'execute', 'run-all', 'interrupt', 'restart', 'shutdown', 'save', 'reload', 'select-environment']
     revision: int
     cell: int | None = None
+    environment: str | None = None
 
 
 @router.post('/open')
@@ -45,6 +46,13 @@ async def list_notebooks():
         {key: value for key, value in d.snapshot().items() if key != 'content'}
         for d in manager.documents.values()
     ]}
+
+
+@router.get('/{key}/environments')
+async def environments(key: str):
+    import asyncio
+    document = manager.get(key)
+    return {'folder': str(document.path.parent), 'selected': document.environment, 'environments': await asyncio.to_thread(document.environments)}
 
 
 @router.get('/{key}')
@@ -80,6 +88,8 @@ async def action(key: str, body: Action):
             await document.interrupt()
         elif body.action == 'shutdown':
             await document.shutdown()
+        elif body.action == 'select-environment':
+            document.select_environment(body.environment)
         elif body.action == 'save':
             document.save(body.revision)
         elif body.action == 'reload':

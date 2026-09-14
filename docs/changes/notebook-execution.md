@@ -14,7 +14,7 @@
 
 ## 범위와 설정
 
-- 로컬 nbformat 4 Python만 실행한다. 원격 머신, 개별 가상환경 선택, JupyterLab 확장·대화형 위젯·stdin 입력은 이번 범위에 없다.
+- 로컬 nbformat 4 Python만 실행한다. 원격 머신, JupyterLab 확장·대화형 위젯·stdin 입력은 이번 범위에 없다. 로컬 환경 선택은 아래 후속 변경에 설명한다.
 - 기본 인터프리터는 서버 PATH의 `python3`이다. `AGENTBOARD_NOTEBOOK_PYTHON=/absolute/path/to/python`으로 바꿀 수 있다. 선택한 인터프리터에 `ipykernel`과 사용할 분석 라이브러리가 있어야 한다.
 - 노트북 디렉터리에서 실행한다. 노트북 메타데이터에 지정된 kernelspec 명령은 실행하지 않는다. 커널은 AgentBoard 서버 계정의 권한으로 동작한다.
 - `AGENTBOARD_NOTEBOOK_KERNELS` 기본 4개, `AGENTBOARD_NOTEBOOK_IDLE_SECONDS` 기본 1800초. 실행 중 커널은 유휴 정리 대상이 아니다. 커널마다 별도 Python 프로세스 메모리를 사용한다.
@@ -34,3 +34,11 @@
 자동화 테스트는 임시 파일과 테스트가 생성한 커널만 사용한다. 인증·경로 제한, 리비전/디스크 저장 충돌, 복구, 실제 커널 변수 공유·오류·중단·재시작·종료, rich output, 출력 한도, 커널 수 제한과 프런트엔드 상태 충돌을 검증한다. 별도 격리 브라우저 테스트에서 실행·편집·탭 전환·저장/새로고침·중단 및 390/440px 폭을 확인했다. 기존 사용자 노트북이나 에이전트 세션에 테스트 코드를 보내지 않았다.
 
 구현 참고: [Jupyter 메시지 규약](https://jupyter-client.readthedocs.io/en/stable/messaging.html), [비동기 클라이언트 API](https://jupyter-client.readthedocs.io/en/stable/api/jupyter_client.asynchronous.html).
+
+## 코드 편집기와 환경 선택 후속 변경
+
+노트북 셀에서 기존 CodeMirror 편집기를 사용한다. Python/Markdown 하이라이팅, 줄 번호, 코드 접기, 괄호 짝 표시, 자동 들여쓰기, 실행 취소/재실행, 검색/바꾸기와 글자 크기 단축키를 제공한다. `Shift+Enter`는 코드 셀 실행, `Ctrl/Cmd+S`는 노트북 저장이다. 실행 중에는 셀 편집을 잠근다.
+
+**환경** 버튼은 노트북 폴더와 허용된 상위 폴더의 `.venv`, `venv`, `env`, `.conda`, 일반적인 Conda 환경 경로와 등록된 Python ipykernel의 이름·실행 파일 경로·탐지 출처를 보여준다. 탐지를 위해 Python이나 프로젝트 스크립트를 실행하지 않는다. 모든 VS Code 환경 제공자나 사용자 정의 커널 런처를 지원하는 것은 아니다. `ipykernel` 설치 여부는 실제 연결 시 확인하며 자동 설치하지 않는다. 등록된 커널의 임의 실행 명령·사용자 정의 환경변수를 그대로 적용하지 않고 선택된 Python으로 ipykernel을 시작한다.
+
+연결된 커널을 종료한 뒤 환경을 변경할 수 있다. 선택한 환경은 복구 상태에 저장되며 커널 상태와 목록에 이름·경로를 표시한다. 서버 재시작이 필요한 배포 시 기존 연결 커널이 있으면 변수 손실을 피하기 위해 사용자 확인 후 반영한다.
