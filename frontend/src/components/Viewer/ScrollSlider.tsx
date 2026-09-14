@@ -9,7 +9,7 @@ export function ScrollSlider({container, identity}: {container:RefObject<HTMLDiv
     let frame=0
     const measure=()=>{
       frame=0
-      const el=root.querySelector<HTMLElement>('.cm-scroller') || root
+      const el=root.querySelector('.nb-interactive') ? root : root.querySelector<HTMLElement>('.cm-scroller') || root
       target.current=el
       const max=el.scrollHeight-el.clientHeight
       const percent=max>0?Math.round(el.scrollTop/max*1000)/10:0

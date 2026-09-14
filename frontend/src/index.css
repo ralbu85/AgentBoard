@@ -1813,3 +1813,13 @@ html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 .nb-file-change span { flex:1 1 240px; }
 /* Long notebook code stays on one line and scrolls inside the cell. */
 .nb-edit-cell .cm-cell-editor .cm-scroller { overflow:auto; overscroll-behavior-x:contain; touch-action:pan-x pan-y; }
+/* Status updates must not change the notebook toolbar height on phones. */
+.nb-toolbar-actions { display:flex; align-items:center; gap:6px; flex-wrap:wrap; width:100%; min-width:0; }
+.nb-live-status { flex-wrap:nowrap; height:24px; min-height:24px; overflow:hidden; }
+.nb-live-status strong { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.nb-live-status>span:not(.nb-spinner) { white-space:nowrap; flex-shrink:0; }
+.nb-spinner-idle { visibility:hidden; animation:none; }
+@media(max-width:768px){
+  .nb-toolbar-actions { flex-wrap:nowrap; overflow-x:auto; overscroll-behavior-x:contain; scrollbar-width:thin; }
+  .nb-toolbar-actions button { flex-shrink:0; height:30px; white-space:nowrap; }
+}

@@ -101,12 +101,13 @@ export function NotebookView({tab,ownerKey}:{tab:ViewerTab;ownerKey:string}) {
   return <div className="nb-interactive">
     <div className="nb-runtime-bar">
       <div className="nb-live-status" role="status" aria-live="polite" aria-busy={busy||!!operation}>
-        {(busy||operation||record.pending)&&<span className="nb-spinner" aria-hidden="true"/>}
+        <span className={`nb-spinner ${busy||operation||record.pending?'':'nb-spinner-idle'}`} aria-hidden="true"/>
         <strong title={record.server.python}>{state.kernelName||'Python'} · {statusText}</strong>
         {operation&&<span>{Math.max(0,Math.floor((now-operation.started)/1000))}초</span>}
         {operation&&state.state==='starting'&&<span>Python 커널을 시작하고 있습니다.</span>}
         {(error||record.error||record.connectionError||record.server.error)&&<span className="nb-status-error">{error||record.error||record.connectionError||record.server.error}</span>}
       </div>
+<div className="nb-toolbar-actions">
 {record.server.environment!==undefined&&<button title={record.server.python} onClick={()=>setEnvironmentOpen(true)}>환경: {record.server.kernelName||'Python · 서버 기본'} ▾</button>}
       <button disabled={disabled||record.server.kernel} onClick={()=>void run('connect')}>{operation?.action==='connect'?'연결 중…':'커널 연결'}</button>
       <button disabled={disabled} onClick={()=>void run('run-all')}>{operation?.action==='run-all'?'실행 준비 중…':'전체 실행'}</button>
@@ -117,6 +118,7 @@ export function NotebookView({tab,ownerKey}:{tab:ViewerTab;ownerKey:string}) {
       <button onClick={download}>다운로드</button>
       <button onClick={()=>setKernels(true)}>커널 목록</button>
       <button disabled={disabled} onClick={reloadFile}>{operation?.action==='reload'?'불러오는 중…':'↻ 파일 새로고침'}</button>
+      </div>
       {record.fileChanged&&<div className="nb-file-change" role="status"><span>원본 파일이 외부에서 변경되었습니다. 에이전트가 수정한 내용일 수 있습니다.</span><button disabled={disabled} onClick={reloadFile}>변경 내용 불러오기</button>{dirty&&<button onClick={download}>내 편집본 다운로드</button>}{busy&&<small>실행을 중단하거나 완료한 뒤 불러올 수 있습니다.</small>}</div>}
       {record.fileCheckError&&<div className="nb-file-change" role="status"><span>{record.fileCheckError}</span><button disabled={record.fileChecking} onClick={()=>void checkNotebookFile(tab.path,true)}>다시 확인</button></div>}
     </div>
