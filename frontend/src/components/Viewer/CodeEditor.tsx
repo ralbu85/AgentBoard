@@ -3,8 +3,9 @@ import { EditorView, keymap, lineNumbers, highlightActiveLine, Decoration, type 
 import { EditorState, type Extension, StateField, StateEffect, Compartment } from '@codemirror/state'
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'
 import { search, searchKeymap, highlightSelectionMatches } from '@codemirror/search'
-import {bracketMatching, indentOnInput, foldGutter} from '@codemirror/language'
-import { oneDark } from '@codemirror/theme-one-dark'
+import {bracketMatching, indentOnInput, foldGutter, HighlightStyle, syntaxHighlighting} from '@codemirror/language'
+import {tags} from '@lezer/highlight'
+import { oneDark, oneDarkTheme } from '@codemirror/theme-one-dark'
 import type { Memo, SelectionInfo } from './FileContent'
 
 import { javascript } from '@codemirror/lang-javascript'
@@ -42,6 +43,22 @@ function getLangExt(lang: string): Extension {
     default: return []
   }
 }
+
+// Restrained notebook palette: identifiers and numbers stay neutral;
+// only keywords, strings and comments receive subtle color distinctions.
+const notebookHighlight = HighlightStyle.define([
+  {tag: [tags.name, tags.number, tags.bool, tags.null, tags.operator, tags.punctuation], color: '#c9cdd2'},
+  {tag: tags.keyword, color: '#a6bcd4'},
+  {tag: [tags.string, tags.regexp], color: '#afc0ab'},
+  {tag: tags.comment, color: '#939ba5'},
+  {tag: [tags.heading, tags.link], color: '#a6bcd4'},
+  {tag: tags.invalid, textDecoration: 'underline wavy #bd9292'},
+])
+const notebookTheme = EditorView.theme({
+  '&': {color: '#c9cdd2', backgroundColor: 'var(--bg-primary)'},
+  '.cm-gutters': {color: '#939ba5', backgroundColor: 'var(--bg-primary)', border: 'none'},
+  '.cm-activeLine, .cm-activeLineGutter': {backgroundColor: 'rgba(180,190,200,.035)'},
+})
 
 // Memo line highlight decoration
 const memoLineDeco = Decoration.line({ class: 'cm-memo-line' })
@@ -130,7 +147,7 @@ export function CodeEditor({ content, lang, memos, onChange, onSave, onContextMe
         if (update.docChanged) cbRef.current.onChange(update.state.doc.toString())
         if (update.selectionSet) cbRef.current.onViewChange?.({editorScroll: update.view.scrollDOM.scrollTop, cursor: update.state.selection.main.head})
       }),
-      oneDark,
+      ...(compact ? [oneDarkTheme, notebookTheme, syntaxHighlighting(notebookHighlight)] : [oneDark]),
       EditorView.lineWrapping,
       getLangExt(lang),
       memoField,
