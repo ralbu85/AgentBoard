@@ -19,7 +19,7 @@ const QUICK_KEYS = [
   { label: 'PgDn', key: 'PageDown' },
   { label: '\u23CE', key: 'Enter' },
   { label: 'Tab', key: 'Tab' },
-  { label: 'C-c', key: 'C-c' },
+  { label: '■ 실행 중단', key: 'C-c' },
 ]
 
 const isMobile = () => window.innerWidth <= 768
@@ -100,6 +100,7 @@ export function InputCard({ sessionId }: Props) {
   }
 
   const onQuickKey = (key: string) => {
+    if(key==='C-c'&&!window.confirm('현재 터미널에 중단 신호(Ctrl+C)를 보낼까요? 실행 중인 프로그램이나 에이전트가 종료될 수 있습니다.'))return
     // PgUp/PgDn: normal sessions scroll the local xterm scrollback (the app
     // never sees page keys there); alt-screen apps get the key forwarded.
     if (key === 'PageUp' || key === 'PageDown') {
@@ -158,7 +159,7 @@ export function InputCard({ sessionId }: Props) {
       <div className="quick-keys">
         <button className="btn quick-key" title="입력창에 하이픈 두 개 삽입" onPointerDown={e => e.preventDefault()} onClick={insertDoubleHyphen}>--</button>
         {QUICK_KEYS.map((k) => (
-          <button key={k.key} className="btn quick-key" onClick={() => onQuickKey(k.key)}>
+          <button key={k.key} className="btn quick-key" title={k.key==='C-c'?'복사가 아니라 실행 중단 신호를 보냅니다':undefined} onClick={() => onQuickKey(k.key)}>
             {k.label}
           </button>
         ))}

@@ -144,8 +144,9 @@ export function TerminalPane({ sessionId }: { sessionId?: string }) {
           📜 전체 로그
         </button>
       )}
-      {activeId && isMobile && (
-        <button className="select-text-btn" onClick={() => setSelectText(TM.getBufferText(activeId))} title="텍스트 선택 (길게 눌러 범위 지정 → 복사)">
+      {activeId && !isMobile && <button className="select-text-btn" onMouseDown={e=>e.preventDefault()} onClick={()=>void TM.copySelection(activeId)} title="선택한 텍스트 복사 (Ctrl+C / Cmd+C)">선택 복사</button>}
+      {activeId && (
+        <button className="select-text-btn" onClick={() => setSelectText(TM.getBufferText(activeId))} title="변하지 않는 텍스트 창에서 범위를 선택해 복사">
           텍스트 선택
         </button>
       )}

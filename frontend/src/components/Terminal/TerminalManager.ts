@@ -3,6 +3,8 @@ import { SearchAddon } from '@xterm/addon-search'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import { Unicode11Addon } from '@xterm/addon-unicode11'
 import { loadTerminalPreferences, terminalPreferenceKey, terminalGeometry, type TerminalPreferences } from './readability'
+import {handleCopyKey, writeClipboard} from './clipboard'
+import {useToasts} from '../../toasts'
 import { send } from '../../ws'
 import { useStore, workspaceId } from '../../store'
 
@@ -16,6 +18,13 @@ export function getBufferText(id: string): string {
   const lines: string[] = []
   for (let i = 0; i < buf.length; i++) lines.push(buf.getLine(i)?.translateToString(true) ?? '')
   return lines.join('\n').replace(/\n+$/, '')
+}
+
+export async function copySelection(id:string):Promise<void> {
+  const text=terminals.get(id)?.term.getSelection()||''
+  if(!text){useToasts.getState().push('복사할 텍스트를 드래그해 선택하세요. 실행 중단은 ‘실행 중단’ 버튼을 사용하세요.');return}
+  try{await writeClipboard(text);useToasts.getState().push('선택한 내용을 복사했습니다.')}
+  catch(error){useToasts.getState().push(error instanceof Error?error.message:'복사 실패')}
 }
 
 // Full-screen (alt-screen) apps keep their history inside the app, reachable
@@ -128,6 +137,7 @@ export function create(id: string): TermInstance {
   term.unicode.activeVersion = '11'
 
   if (!isMobile) {
+    term.attachCustomKeyEventHandler?.(event=>handleCopyKey(event,()=>void copySelection(id)))
     term.onData((data: string) => {
       send({ type: 'terminal-input', id, data })
     })
