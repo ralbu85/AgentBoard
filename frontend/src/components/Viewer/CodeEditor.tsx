@@ -148,7 +148,7 @@ export function CodeEditor({ content, lang, memos, onChange, onSave, onContextMe
         if (update.selectionSet) cbRef.current.onViewChange?.({editorScroll: update.view.scrollDOM.scrollTop, cursor: update.state.selection.main.head})
       }),
       ...(compact ? [oneDarkTheme, notebookTheme, syntaxHighlighting(notebookHighlight)] : [oneDark]),
-      EditorView.lineWrapping,
+      ...(compact && lang !== 'markdown' ? [] : [EditorView.lineWrapping]),
       getLangExt(lang),
       memoField,
     ]
