@@ -44,7 +44,7 @@ async def open_notebook(body: Open):
 @router.get('')
 async def list_notebooks():
     return {'limit': MAX_KERNELS, 'sessions': [
-        {key: value for key, value in d.snapshot().items() if key != 'content'}
+        d.snapshot(include_content=False)
         for d in manager.documents.values()
     ]}
 

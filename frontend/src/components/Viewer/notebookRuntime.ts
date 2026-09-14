@@ -1,7 +1,7 @@
 import {create} from 'zustand'
 
 export type NotebookState={id:string;path:string;content:string;version:string;revision:number;dirty:boolean;state:string;cell:number|null;error:string;kernel:boolean;python:string;environment?:string;kernelName?:string}
-type RecordState={server:NotebookState;content:string;error:string;pending:boolean;conflict?:boolean;operation?:{action:string;cell?:number;started:number};observed?:NotebookState;notice?:string}
+type RecordState={server:NotebookState;content:string;error:string;pending:boolean;connectionError?:string;conflict?:boolean;operation?:{action:string;cell?:number;started:number};observed?:NotebookState;notice?:string}
 export const useNotebooks=create<{records:Record<string,RecordState>}>(()=>({records:{}}))
 const openings=new Map<string,Promise<void>>()
 const queues=new Map<string,Promise<unknown>>()
@@ -32,7 +32,7 @@ function accept(path:string,server:NotebookState,submitted?:string){
     return
   }
   const finished=record?.server.state==='running'&&server.state==='idle'
-  patch(path,{server,content:replace?server.content:record.content,error:'',conflict:false,observed:undefined,...(finished?{notice:server.error?'실행 오류':'실행 완료'}:record?.server.state!==server.state?{notice:''}:{})})
+  patch(path,{server,content:replace?server.content:record.content,error:'',connectionError:'',conflict:false,observed:undefined,...(finished?{notice:server.error?'실행 오류':'실행 완료'}:record?.server.state!==server.state?{notice:''}:{})})
 }
 export async function openNotebook(path:string,content:string,dirty:boolean){
   if(current(path))return
@@ -76,15 +76,21 @@ export async function refreshNotebook(path:string){
   const before=record.server.revision
   try{
     const server=await request(`/${record.server.id}?since=${before}`)
+    patch(path,{connectionError:''})
     if(!server.unchanged&&current(path)?.server.revision===before){
       if(current(path)?.pending)patch(path,{observed:server})
       else accept(path,server)
     }
+    const latest=current(path)
+    if(!latest.pending&&!latest.operation&&!latest.conflict&&!notebookBusy(latest.server.state)&&latest.content!==latest.server.content){
+      clearTimeout(timers.get(path));timers.delete(path)
+      void queue(path,()=>flush(path)).catch(()=>{})
+    }
   }catch(error){
     if((error as {status?:number}).status===404){
       try{const server=await request('/open',{path});if(!current(path)?.pending)accept(path,server)}
-      catch(e){patch(path,{error:e instanceof Error?e.message:'연결 실패'})}
-    }else patch(path,{error:error instanceof Error?error.message:'연결 실패'})
+      catch(e){patch(path,{connectionError:e instanceof Error?e.message:'연결 실패'})}
+    }else patch(path,{connectionError:error instanceof Error?error.message:'연결 실패'})
   }finally{polling.delete(path)}
 }
 export function notebookAction(path:string,action:string,cell?:number,environment?:string,replace=false){

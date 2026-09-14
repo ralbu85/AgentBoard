@@ -82,4 +82,26 @@ describe('notebook runtime',()=>{
     expect(useNotebooks.getState().records[path].notice).toBe('커널 연결 완료')
   })
 
+  it('clears a recovered polling error even when the revision did not change',async()=>{
+    await openNotebook(path,'original',false)
+    vi.mocked(fetch).mockRejectedValueOnce(Error('offline'))
+    await refreshNotebook(path)
+    expect(useNotebooks.getState().records[path].connectionError).toBe('offline')
+    vi.mocked(fetch).mockResolvedValueOnce({ok:true,json:async()=>({unchanged:true})} as Response)
+    await refreshNotebook(path)
+    expect(useNotebooks.getState().records[path].connectionError).toBe('')
+  })
+  it('retries an unsynced draft after the connection recovers without another keystroke',async()=>{
+    await openNotebook(path,'original',false)
+    editNotebook(path,'offline draft')
+    vi.mocked(fetch).mockRejectedValueOnce(Error('offline'))
+    await vi.advanceTimersByTimeAsync(501)
+    expect(state.content).toBe('original')
+    expect(useNotebooks.getState().records[path].content).toBe('offline draft')
+    await refreshNotebook(path)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(state.content).toBe('offline draft')
+    expect(useNotebooks.getState().records[path].error).toBe('')
+  })
+
 })

@@ -123,11 +123,14 @@ class Document:
     def busy(self):
         return self.state in ('starting', 'running', 'interrupting', 'stopping')
 
-    def snapshot(self):
-        return {'id': self.id, 'path': str(self.path), 'content': encoded(self.notebook),
+    def snapshot(self, include_content=True):
+        snapshot = {'id': self.id, 'path': str(self.path),
                 'version': self.file_version, 'revision': self.revision, 'dirty': self.dirty,
                 'state': self.state, 'cell': self.active_cell, 'error': self.error,
                 'python': self.python, 'environment': self.environment, 'kernelName': self.kernel_name, 'kernel': bool(self.km)}
+        if include_content:
+            snapshot['content'] = encoded(self.notebook)
+        return snapshot
 
     def touch(self, checkpoint=False):
         self.revision += 1
@@ -216,7 +219,7 @@ class Document:
             self.touch()
         except BaseException as exc:
             await self.shutdown()
-            self.error = 'Python 커널을 시작하지 못했습니다. 서버 Python의 ipykernel 설치를 확인하세요.'
+            self.error = f'선택한 환경({self.kernel_name})에 연결하지 못했습니다. {self.python}의 ipykernel 설치와 실행 권한을 확인하세요.'
             self.touch()
             if isinstance(exc, asyncio.CancelledError):
                 raise
@@ -332,7 +335,7 @@ class Document:
                         break
                 self.checkpoint()
                 if failed:
-                    self.error = '셀에서 오류가 발생해 실행을 멈췄습니다. 아래 출력을 확인하세요.'
+                    self.error = '' if self.stop_requested else '셀에서 오류가 발생해 실행을 멈췄습니다. 아래 출력을 확인하세요.'
                     break
         except asyncio.CancelledError:
             self.error = '실행이 중단되었습니다.'

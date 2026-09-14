@@ -45,6 +45,7 @@ function parseNotebook(content: string): { cells: NbCell[]; lang: string } | { e
 export function NotebookView({tab,ownerKey}:{tab:ViewerTab;ownerKey:string}) {
   const record=useNotebooks(s=>s.records[tab.path])
   const [error,setError]=useState('')
+  const [openRetry,setOpenRetry]=useState(0)
   const [kernels,setKernels]=useState(false)
   const [environmentOpen,setEnvironmentOpen]=useState(false)
   const [now,setNow]=useState(Date.now())
@@ -54,10 +55,10 @@ export function NotebookView({tab,ownerKey}:{tab:ViewerTab;ownerKey:string}) {
   useEffect(()=>{
     if(!local||!supported)return
     let alive=true
-    void openNotebook(tab.path,tab.content,!!tab.dirty).then(()=>refreshNotebook(tab.path)).catch(e=>{if(alive)setError(e.message)})
+    void openNotebook(tab.path,tab.content,!!tab.dirty).then(()=>{if(alive)setError('');return refreshNotebook(tab.path)}).catch(e=>{if(alive)setError(e.message)})
     const timer=setInterval(()=>void refreshNotebook(tab.path),700)
     return()=>{alive=false;clearInterval(timer)}
-  },[tab.path,local,supported])
+  },[tab.path,local,supported,openRetry])
   useEffect(()=>{
     if(!record||!local)return
     const store=useStore.getState()
@@ -72,9 +73,9 @@ export function NotebookView({tab,ownerKey}:{tab:ViewerTab;ownerKey:string}) {
     const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download=tab.name;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000)
   }
   if(!local||!supported)return <><div className="nb-runtime-bar">{!local?'원격 머신의 노트북은 현재 읽기만 지원합니다.':'실행·편집은 nbformat 4 노트북에서 지원합니다.'}</div><NotebookPreview content={tab.content}/></>
-  if(!record)return <div className="nb-runtime-bar" role="status">{error||'노트북 연결 중…'}</div>
+  if(!record)return <div className="nb-runtime-bar" role="status">{error||'노트북 연결 중…'}{error&&<button onClick={()=>{setError('');setOpenRetry(v=>v+1)}}>다시 연결</button>}</div>
   const state=record.observed||record.server
-  const busy=notebookBusy(state.state), disabled=busy||record.pending||!!record.operation
+  const busy=notebookBusy(state.state), disabled=busy||!!record.operation
   const operation=record.operation
   const actionText=operation?({'connect-environment':'선택한 환경에 연결 중…','select-environment':'실행 환경 선택 중…',connect:'커널 연결 중…',execute:`셀 ${(operation.cell??0)+1} 실행 준비 중…`,'run-all':'전체 실행 준비 중…',interrupt:'실행 중단 요청 중…',restart:'커널 재시작 중…',shutdown:'커널 종료 중…',save:'결과 저장 중…',reload:'원본 불러오는 중…'} as Record<string,string>)[operation.action]:''
   const statusText=actionText||(busy?`${kernelStateLabel(state.state)}${state.cell!==null?` · 셀 ${state.cell+1}`:''}`:record.pending?'편집 동기화 중…':record.notice||kernelStateLabel(state.state))
@@ -91,7 +92,7 @@ export function NotebookView({tab,ownerKey}:{tab:ViewerTab;ownerKey:string}) {
         <strong title={record.server.python}>{state.kernelName||'Python'} · {statusText}</strong>
         {operation&&<span>{Math.max(0,Math.floor((now-operation.started)/1000))}초</span>}
         {operation&&state.state==='starting'&&<span>Python 커널을 시작하고 있습니다.</span>}
-        {(error||record.error||record.server.error)&&<span className="nb-status-error">{error||record.error||record.server.error}</span>}
+        {(error||record.error||record.connectionError||record.server.error)&&<span className="nb-status-error">{error||record.error||record.connectionError||record.server.error}</span>}
       </div>
 {record.server.environment!==undefined&&<button title={record.server.python} onClick={()=>setEnvironmentOpen(true)}>환경: {record.server.kernelName||'Python · 서버 기본'} ▾</button>}
       <button disabled={disabled||record.server.kernel} onClick={()=>void run('connect')}>{operation?.action==='connect'?'연결 중…':'커널 연결'}</button>
@@ -104,7 +105,7 @@ export function NotebookView({tab,ownerKey}:{tab:ViewerTab;ownerKey:string}) {
       <button onClick={()=>setKernels(true)}>커널 목록</button>
       <button disabled={disabled} onClick={()=>{if(confirm('저장하지 않은 편집·출력을 버리고 디스크 원본을 다시 열까요? 커널 변수도 초기화됩니다.'))void run('reload')}}>원본 다시 열기</button>
     </div>
-    {(error||record.error||record.server.error)&&<div className="nb-runtime-error" role="alert">{error||record.error||record.server.error}<button disabled={record.pending} onClick={()=>{if(confirm('이 화면의 편집 초안을 서버 상태로 바꿀까요? 필요한 내용은 먼저 다운로드하세요.'))void loadServerNotebook(tab.path).then(()=>setError('')).catch(e=>setError(e.message))}}>서버 상태 불러오기</button></div>}
+    {(error||record.error||record.connectionError||record.server.error)&&<div className="nb-runtime-error" role="alert">{error||record.error||record.connectionError||record.server.error}<button disabled={record.pending} onClick={()=>{if(confirm('이 화면의 편집 초안을 서버 상태로 바꿀까요? 필요한 내용은 먼저 다운로드하세요.'))void loadServerNotebook(tab.path).then(()=>setError('')).catch(e=>setError(e.message))}}>서버 상태 불러오기</button></div>}
     {environmentOpen&&<NotebookEnvironment path={tab.path} onClose={()=>setEnvironmentOpen(false)}/>}
     {kernels&&<NotebookKernels onClose={()=>setKernels(false)}/>}
     <div className="nb-wrap">

@@ -97,6 +97,7 @@ def test_real_kernel_execution_errors_save_and_interrupt(setup):
                 await asyncio.sleep(.05)
             await doc.interrupt()
             assert not doc.busy and not doc.notebook['cells'][3]['outputs']
+            assert not doc.error
             assert await doc.km.is_alive()
             doc.schedule([1])
             await asyncio.wait_for(doc.task, 10)
@@ -247,3 +248,12 @@ def test_select_and_connect_requires_confirmation_before_replacing(setup, monkey
         finally:
             await manager.shutdown()
     asyncio.run(scenario())
+
+
+def test_kernel_list_does_not_serialize_notebook_contents(setup, monkeypatch):
+    manager, create = setup
+    doc = create('print("large document fixture")')
+    monkeypatch.setattr(notebooks, 'encoded', lambda _: (_ for _ in ()).throw(AssertionError('list serialized content')))
+    result = asyncio.run(routes_notebook.list_notebooks())
+    assert result['sessions'][0]['id'] == doc.id
+    assert 'content' not in result['sessions'][0]
