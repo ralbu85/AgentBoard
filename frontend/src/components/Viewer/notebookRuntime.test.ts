@@ -1,5 +1,5 @@
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest'
-import {editNotebook, loadServerNotebook, notebookAction, openNotebook, refreshNotebook, useNotebooks, type NotebookState} from './notebookRuntime'
+import {editNotebook, loadServerNotebook, notebookAction, openNotebook, refreshNotebook, useNotebooks, checkNotebookFile, type NotebookState} from './notebookRuntime'
 
 const path='/fixture/test.ipynb'
 let state:NotebookState
@@ -102,6 +102,28 @@ describe('notebook runtime',()=>{
     await vi.advanceTimersByTimeAsync(0)
     expect(state.content).toBe('offline draft')
     expect(useNotebooks.getState().records[path].error).toBe('')
+  })
+
+  it('detects external versions without replacing local drafts and avoids repeated full reads',async()=>{
+    await openNotebook(path,'original',false)
+    editNotebook(path,'my draft')
+    let fullReads=0
+    const original=vi.mocked(fetch).getMockImplementation()!
+    vi.mocked(fetch).mockImplementation(async(...args)=>{
+      const url=String(args[0])
+      if(url.startsWith('/api/files?'))return {ok:true,json:async()=>({entries:[{name:'test.ipynb',mtime:1,size:10}]})} as Response
+      if(url.startsWith('/api/file?')){fullReads++;return {ok:true,json:async()=>({version:'external-version',content:'agent changes'})} as Response}
+      return original(...args)
+    })
+    await checkNotebookFile(path,true)
+    expect(useNotebooks.getState().records[path].fileChanged).toBe(true)
+    expect(useNotebooks.getState().records[path].content).toBe('my draft')
+    await checkNotebookFile(path)
+    expect(fullReads).toBe(1)
+    // A successful save/reload establishes a new original version.
+    useNotebooks.setState(s=>({records:{...s.records,[path]:{...s.records[path],server:{...s.records[path].server,version:'external-version'}}}}))
+    await checkNotebookFile(path)
+    expect(useNotebooks.getState().records[path].fileChanged).toBe(false)
   })
 
 })

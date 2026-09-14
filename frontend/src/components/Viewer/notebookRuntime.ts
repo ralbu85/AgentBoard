@@ -1,7 +1,7 @@
 import {create} from 'zustand'
 
 export type NotebookState={id:string;path:string;content:string;version:string;revision:number;dirty:boolean;state:string;cell:number|null;error:string;kernel:boolean;python:string;environment?:string;kernelName?:string}
-type RecordState={server:NotebookState;content:string;error:string;pending:boolean;connectionError?:string;conflict?:boolean;operation?:{action:string;cell?:number;started:number};observed?:NotebookState;notice?:string}
+type RecordState={server:NotebookState;content:string;error:string;pending:boolean;fileChanged?:boolean;fileChecking?:boolean;fileCheckError?:string;connectionError?:string;conflict?:boolean;operation?:{action:string;cell?:number;started:number};observed?:NotebookState;notice?:string}
 export const useNotebooks=create<{records:Record<string,RecordState>}>(()=>({records:{}}))
 const openings=new Map<string,Promise<void>>()
 const queues=new Map<string,Promise<unknown>>()
@@ -104,6 +104,7 @@ export function notebookAction(path:string,action:string,cell?:number,environmen
     const record=current(path)
     const server=await request('/'+record.server.id+'/action',{action,revision:record.server.revision,cell,environment,replace})
     accept(path,server,action==='reload'?record.content:undefined)
+    if(action==='reload')patch(path,{fileChanged:false,fileCheckError:''})
     patch(path,{notice:({'connect-environment':'선택한 환경에 연결 완료','select-environment':'실행 환경 선택 완료',connect:'커널 연결 완료',save:'저장 완료',restart:'커널 재시작 완료',shutdown:'커널 종료 완료',interrupt:'중단 완료',reload:'원본 불러오기 완료'} as Record<string,string>)[action]||''})
     return server as NotebookState
   }).finally(()=>patch(path,{operation:undefined,observed:undefined}))
@@ -123,3 +124,38 @@ export async function stopNotebookKernel(id:string){
 }
 
 export const notebookEnvironments=(path:string)=>request(`/${current(path).server.id}/environments`)
+
+// Poll directory metadata, reading the notebook only when it changes (or once
+// per minute to catch replacements with preserved timestamps).
+const fileChecks=new Map<string,{signature:string;checkedAt:number;version:string}>()
+async function fileRequest(url:string){
+  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),10000)
+  try{
+    const response=await fetch(url,{signal:controller.signal,cache:'no-store'})
+    const data=await response.json()
+    if(!response.ok)throw Error(data.error||data.detail||'파일 변경 확인 실패')
+    return data
+  }finally{clearTimeout(timer)}
+}
+export async function checkNotebookFile(path:string,force=false){
+  const record=current(path)
+  if(!record||record.fileChecking)return
+  patch(path,{fileChecking:true})
+  try{
+    const slash=path.lastIndexOf('/'),folder=path.slice(0,slash)||'/',name=path.slice(slash+1)
+    const listing=await fileRequest('/api/files?path='+encodeURIComponent(folder))
+    const entry=listing.entries?.find((entry:{name:string})=>entry.name===name)
+    // Hidden files aren't included in directory listings; read them directly.
+    if(!entry&&!name.startsWith('.'))throw Error('원본 파일을 찾을 수 없습니다. 이동·삭제되었는지 확인하세요.')
+    const signature=entry?`${entry.mtime}:${entry.size}`:''
+    const previous=fileChecks.get(path)
+    if(force||!entry||!previous||previous.signature!==signature||previous.version!==current(path).server.version||Date.now()-previous.checkedAt>60000){
+      const file=await fileRequest('/api/file?path='+encodeURIComponent(path))
+      if(typeof file.version!=='string')throw Error('파일 버전을 확인하지 못했습니다.')
+      patch(path,{fileChanged:file.version!==current(path).server.version})
+      fileChecks.set(path,{signature,checkedAt:Date.now(),version:current(path).server.version})
+    }
+    patch(path,{fileCheckError:''})
+  }catch(error){patch(path,{fileCheckError:error instanceof Error?error.message:'파일 변경 확인 실패'})}
+  finally{patch(path,{fileChecking:false})}
+}

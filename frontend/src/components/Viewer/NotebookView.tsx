@@ -8,7 +8,7 @@ import {NotebookEnvironment} from './NotebookEnvironment'
 import {NotebookMarkdownCell} from './NotebookMarkdownCell'
 import {CodeEditor} from './CodeEditor'
 import {NotebookKernels,kernelStateLabel} from './NotebookKernels'
-import {useNotebooks, openNotebook, editNotebook, refreshNotebook, notebookAction, notebookBusy, loadServerNotebook} from './notebookRuntime'
+import {useNotebooks, openNotebook, editNotebook, refreshNotebook, notebookAction, notebookBusy, loadServerNotebook, checkNotebookFile} from './notebookRuntime'
 
 // Read-only Jupyter notebook renderer (nbformat 4; minimal v3 fallback).
 // Cells render defensively — a malformed cell degrades to plain text, never throws.
@@ -62,6 +62,13 @@ export function NotebookView({tab,ownerKey}:{tab:ViewerTab;ownerKey:string}) {
   },[tab.path,local,supported,openRetry])
   useEffect(()=>{
     if(!record||!local)return
+    const check=()=>{if(document.visibilityState!=='hidden')void checkNotebookFile(tab.path)}
+    check();const timer=setInterval(check,5000)
+    window.addEventListener('focus',check)
+    return()=>{clearInterval(timer);window.removeEventListener('focus',check)}
+  },[!!record,local,tab.path])
+  useEffect(()=>{
+    if(!record||!local)return
     const store=useStore.getState()
     const current=store._viewerState[ownerKey]?.tabs.find(t=>t.id===tab.id)
     if(!current)return
@@ -86,6 +93,11 @@ export function NotebookView({tab,ownerKey}:{tab:ViewerTab;ownerKey:string}) {
     const nb=JSON.parse(record.content);nb.cells.push({id:uiId(),cell_type:kind,metadata:{},source:'',...(kind==='code'?{execution_count:null,outputs:[]}:{} )});editNotebook(tab.path,JSON.stringify(nb,null,1)+'\n')
   }
   const dirty=record.server.dirty||record.content!==record.server.content
+  const reloadFile=()=>{
+    const consequences=[dirty?'저장하지 않은 편집·실행 결과는 원본 파일 내용으로 교체됩니다.':'',record.server.kernel?'연결된 커널이 종료되어 Python 변수는 초기화됩니다.':''].filter(Boolean)
+    if(consequences.length&&!confirm(consequences.join('\n')+'\n계속 새로고침할까요? 필요한 내용은 먼저 다운로드하세요.'))return
+    void run('reload').then(()=>checkNotebookFile(tab.path,true))
+  }
   return <div className="nb-interactive">
     <div className="nb-runtime-bar">
       <div className="nb-live-status" role="status" aria-live="polite" aria-busy={busy||!!operation}>
@@ -104,7 +116,9 @@ export function NotebookView({tab,ownerKey}:{tab:ViewerTab;ownerKey:string}) {
       <button disabled={disabled||!dirty} onClick={()=>void run('save')}>{dirty?'저장 · 변경 있음':'저장됨'}</button>
       <button onClick={download}>다운로드</button>
       <button onClick={()=>setKernels(true)}>커널 목록</button>
-      <button disabled={disabled} onClick={()=>{if(confirm('저장하지 않은 편집·출력을 버리고 디스크 원본을 다시 열까요? 커널 변수도 초기화됩니다.'))void run('reload')}}>원본 다시 열기</button>
+      <button disabled={disabled} onClick={reloadFile}>{operation?.action==='reload'?'불러오는 중…':'↻ 파일 새로고침'}</button>
+      {record.fileChanged&&<div className="nb-file-change" role="status"><span>원본 파일이 외부에서 변경되었습니다. 에이전트가 수정한 내용일 수 있습니다.</span><button disabled={disabled} onClick={reloadFile}>변경 내용 불러오기</button>{dirty&&<button onClick={download}>내 편집본 다운로드</button>}{busy&&<small>실행을 중단하거나 완료한 뒤 불러올 수 있습니다.</small>}</div>}
+      {record.fileCheckError&&<div className="nb-file-change" role="status"><span>{record.fileCheckError}</span><button disabled={record.fileChecking} onClick={()=>void checkNotebookFile(tab.path,true)}>다시 확인</button></div>}
     </div>
     {(error||record.error||record.connectionError||record.server.error)&&<div className="nb-runtime-error" role="alert">{error||record.error||record.connectionError||record.server.error}<button disabled={record.pending} onClick={()=>{if(confirm('이 화면의 편집 초안을 서버 상태로 바꿀까요? 필요한 내용은 먼저 다운로드하세요.'))void loadServerNotebook(tab.path).then(()=>setError('')).catch(e=>setError(e.message))}}>서버 상태 불러오기</button></div>}
     {environmentOpen&&<NotebookEnvironment path={tab.path} onClose={()=>setEnvironmentOpen(false)}/>}

@@ -1809,3 +1809,5 @@ html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 .nb-markdown-cell .cm-cell-editor .cm-scroller { max-height:480px; }
 .nb-markdown-empty { color:var(--text-muted); font-size:13px; }
 @media(max-width:768px){.nb-markdown-cell .cm-cell-editor .cm-editor{font-size:16px!important}}
+.nb-file-change { display:flex; align-items:center; flex-wrap:wrap; gap:8px; width:100%; padding:8px 10px; border:1px solid #75664b; border-radius:5px; background:#302b22; color:#ddcca8; }
+.nb-file-change span { flex:1 1 240px; }
