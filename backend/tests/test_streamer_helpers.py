@@ -23,7 +23,10 @@ class _FakeTmux:
     async def display_info(self, name):
         return {"process": "bash", "created_at": 1, "alt_screen": False}
 
-    async def capture_with_cursor(self, name, ansi=True):
+    async def capture_with_cursor(self, name, ansi=True, lines=0):
+        if lines:
+            self.atomic_calls += 1
+            return "hist-1\nvis-1\nvis-2\n", (0, 1, True)
         return "vis-1\nvis-2\n", (0, 1, True)          # T1 visible
 
     async def history_info(self, name):
@@ -48,7 +51,7 @@ def _snapshot(monkeypatch):
     monkeypatch.setattr(streamer, "tmux", fake)
     s = SimpleNamespace(id="t-hist", session_name="term-t-hist", status="running",
                         process="bash", created_at=1, alt_screen=False,
-                        ai_state=None, mem_kb=0)
+                        ai_state=None, mem_kb=0, display_rows=2)
     store.sessions["t-hist"] = s
     try:
         return asyncio.run(streamer.get_snapshot("t-hist", s.session_name)), fake
@@ -67,6 +70,35 @@ def test_snapshot_has_no_duplicated_line(monkeypatch):
     # vis-1 would appear twice with the old racing stitch; atomic capture = once
     assert combined.count("vis-1") == 1
     assert combined.index("hist-1") < combined.index("vis-2")
+
+
+def test_snapshot_cursor_matches_the_same_captured_screen(monkeypatch):
+    combined, _ = _snapshot(monkeypatch)
+    # Cursor on the final screen row, not positioned using the history row count.
+    assert combined.endswith('vis-2\r\x1b[?25h')
+
+
+def test_snapshot_capture_includes_cursor_in_same_tmux_invocation(monkeypatch):
+    from unittest.mock import AsyncMock
+    from backend import tmux
+    run = AsyncMock(return_value='history\nprompt\n\x012;0;1\n')
+    monkeypatch.setattr(tmux, 'tmux_run', run)
+    body, cursor = asyncio.run(tmux.capture_with_cursor('owned-fixture', lines=2000))
+    assert body == 'history\nprompt\n' and cursor == (2, 0, True)
+    run.assert_awaited_once()
+    args = run.call_args.args[0]
+    assert args[args.index('-S') + 1] == '-2000'
+    assert 'display-message' in args and ';' in args
+
+
+def test_alt_snapshot_uses_only_the_current_screen(monkeypatch):
+    from unittest.mock import AsyncMock
+    capture = AsyncMock(return_value=('prompt' + '\n' * 40, (6, 0, True)))
+    monkeypatch.setattr(streamer.tmux, 'capture_with_cursor', capture)
+    data, current, cursor = asyncio.run(streamer._capture_snapshot('owned-fixture', True, 40))
+    capture.assert_awaited_once_with('owned-fixture', lines=0)
+    assert data.count('\n') == 39 and current.count('\n') == 40
+    assert data.endswith('\r\x1b[39A\x1b[6C\x1b[?25h')
 
 
 # ── _combine_snapshot: history above, exact current screen at the bottom ──
@@ -126,3 +158,20 @@ def test_snapshot_does_not_advance_agent_state(monkeypatch):
     monkeypatch.setattr(streamer, '_detect_state', unexpected)
     result, _ = _snapshot(monkeypatch)
     assert result
+
+
+def test_snapshot_preserves_empty_source_rows(monkeypatch):
+    from unittest.mock import AsyncMock
+    # Final newline is the capture delimiter; the other 39 belong to the grid.
+    capture = "prompt" + "\n" * 40
+    monkeypatch.setattr(streamer.tmux, 'capture_pane', AsyncMock(return_value=capture))
+    result = asyncio.run(streamer._normal_snapshot_body('owned-fixture'))
+    assert result.count('\n') == 39
+    assert result.startswith('prompt\r\n')
+
+def test_frames_advertise_full_row_protocol(monkeypatch):
+    events=[]
+    monkeypatch.setattr(streamer, '_broadcast', events.append)
+    streamer.broadcast({'type':'screen','id':'fixture','data':'test'})
+    assert events[0]['cols'] == 80 and events[0]['rows'] == 40
+    assert events[0]['fullRows'] is True

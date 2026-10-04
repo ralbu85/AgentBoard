@@ -29,7 +29,7 @@ class Update(BaseModel):
 
 class Action(BaseModel):
     model_config = ConfigDict(extra='forbid')
-    action: Literal['connect', 'execute', 'run-all', 'interrupt', 'restart', 'shutdown', 'save', 'reload', 'select-environment', 'connect-environment']
+    action: Literal['connect', 'execute', 'run-all', 'run-to-cell', 'interrupt', 'restart', 'shutdown', 'save', 'reload', 'select-environment', 'connect-environment']
     revision: int
     cell: int | None = None
     environment: str | None = None
@@ -125,11 +125,14 @@ async def action(key: str, body: Action):
             if document.busy:
                 raise HTTPException(409, '이미 실행·연결 중입니다.')
             indices = [body.cell] if body.action == 'execute' else [i for i, cell in enumerate(document.notebook['cells']) if cell['cell_type'] == 'code']
-            if body.action in ('execute', 'run-all'):
+            if body.action == 'run-to-cell':
+                document.validate_indices([body.cell])
+                indices = [i for i in indices if i <= body.cell]
+            if body.action in ('execute', 'run-all', 'run-to-cell'):
                 document.validate_indices(indices)
             if body.action == 'restart':
                 await document.shutdown()
             await manager.start(document)
-            if body.action in ('execute', 'run-all'):
+            if body.action in ('execute', 'run-all', 'run-to-cell'):
                 document.schedule(indices)
         return document.snapshot()

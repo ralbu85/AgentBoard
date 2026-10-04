@@ -16,8 +16,9 @@ RUN apt-get update \
 
 WORKDIR /app
 COPY backend/requirements.txt backend/requirements.txt
-RUN pip install --no-cache-dir -r backend/requirements.txt \
- && python -m playwright install --with-deps chromium
+RUN pip install --no-cache-dir -r backend/requirements.txt
+# Chromium runs in the separate non-root worker (deploy/browser), never in
+# this shell/session hub. Do not install a root browser into the hub image.
 
 COPY backend/ backend/
 COPY --from=frontend /build/dist frontend/dist

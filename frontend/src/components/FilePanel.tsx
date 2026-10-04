@@ -1,3 +1,4 @@
+import {HtmlView} from './Viewer/HtmlView'
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { api } from '../api'
 import { useStore, viewerKey } from '../store'
@@ -425,7 +426,8 @@ export function FilePanel({ initialPath, onClose }: Props) {
           </div>
         </div>
         <div className="fv-body">
-          {preview.type === 'code' && (
+          {preview.type === 'code' && /\.html?$/i.test(preview.name) && <HtmlView content={preview.content}/>}
+          {preview.type === 'code' && !/\.html?$/i.test(preview.name) && (
             <pre className="fv-code"><code className="hljs" dangerouslySetInnerHTML={{ __html: highlightedCode }} /></pre>
           )}
           {preview.type === 'markdown' && (
@@ -440,7 +442,7 @@ export function FilePanel({ initialPath, onClose }: Props) {
             </div>
           )}
           {preview.type === 'notebook' && (
-            <NotebookPreview content={preview.content} />
+            <NotebookPreview content={preview.content} filePath={preview.path} />
           )}
         </div>
       </div>

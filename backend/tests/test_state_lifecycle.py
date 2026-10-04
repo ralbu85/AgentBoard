@@ -69,6 +69,40 @@ def test_color_cursor_and_rewrap_are_not_new_activity():
     assert activity_signature('\x1b[32mAnswer\x1b[0m\ntext\x1b[2;3H') == activity_signature('Answer text')
 
 
+def test_polling_follows_secondary_activity_and_pending_transition(monkeypatch):
+    monkeypatch.setattr(streamer, 'get_active_session_ids', lambda: {'primary','secondary'})
+    monkeypatch.setattr(streamer._time, 'monotonic', lambda: 100.0)
+    monkeypatch.setattr(streamer, '_last_change_at', {'primary':0, 'secondary':99.8})
+    monkeypatch.setattr(streamer, '_pending_state', {})
+    assert streamer._active_sleep_for('primary') == .08
+    streamer._last_change_at['secondary'] = 0
+    assert streamer._active_sleep_for('primary') == .5
+    streamer._pending_state['secondary'] = ('working', 99.9)
+    assert streamer._active_sleep_for('primary') == .08
+
+
+def test_immediate_capture_updates_state_and_wakes_polling(monkeypatch):
+    import asyncio
+    from backend.sessions import store
+    session, events, observe = machine(monkeypatch)
+    session.status = 'running'
+    session.session_name = 'owned-fake'
+    monkeypatch.setattr(store, 'get', lambda key: session)
+    monkeypatch.setattr(streamer, '_last_change_at', {})
+    monkeypatch.setattr(streamer, '_last_screen', {})
+    monkeypatch.setattr(streamer, '_last_cursor', {})
+    monkeypatch.setattr(streamer, '_last_state_check', {})
+    async def capture(name):
+        return 'Working (esc to interrupt)', None
+    monkeypatch.setattr(streamer.tmux, 'capture_with_cursor', capture)
+    observe(0, 'Working (esc to interrupt)')
+    observe(.7, 'Working (esc to interrupt)')
+    session.ai_state = 'idle'
+    asyncio.run(streamer.poll_now('test'))
+    assert 'test' in streamer._pending_state
+    assert streamer._last_change_at['test'] == .7
+
+
 def test_long_idle_redraw_never_creates_a_new_completion(monkeypatch):
     session, events, observe = machine(monkeypatch)
     session.completion_id = 'acknowledged-turn'

@@ -157,23 +157,28 @@ def test_paste_goes_through_buffer_not_keys():
 
 # ── resize bounds ──
 
-def test_resize_valid_applies_and_snapshots():
+def test_legacy_resize_keeps_source_grid_and_snapshots():
     s = make_session("1")
     _, _, streamer, tmux = run({"type": "resize", "id": "1", "rows": 50}, {"1": s})
-    assert tmux.resizes == [(80, 50)]  # no cols → stays 80
+    assert tmux.resizes == []
+    assert streamer.broadcasts[-1]["cols"] == 80
+    assert streamer.broadcasts[-1]["rows"] == 40
     assert any(m["type"] == "snapshot" for m in streamer.broadcasts)
 
 
-def test_resize_mobile_cols_narrows_pane():
+def test_mobile_resize_cannot_change_shared_pane():
     s = make_session("1")
     _, _, _, tmux = run({"type": "resize", "id": "1", "rows": 45, "cols": 50}, {"1": s})
-    assert tmux.resizes == [(50, 45)]  # phone width → narrower pane, content reflows
+    assert tmux.resizes == []
+    assert (s.display_cols,s.display_rows) == (80,40)
 
 
-def test_resize_cols_out_of_range_falls_back_to_80():
+def test_legacy_resize_cannot_override_dynamic_grid():
     s = make_session("1")
+    s.display_cols,s.display_rows = 160,40
     _, _, _, tmux = run({"type": "resize", "id": "1", "rows": 45, "cols": 5}, {"1": s})
-    assert tmux.resizes == [(80, 45)]  # too narrow → clamp back to canonical
+    assert tmux.resizes == []
+    assert s.display_cols == 160
 
 
 def test_resize_below_canonical_ignored():

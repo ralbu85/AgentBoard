@@ -13,6 +13,7 @@ import uuid
 from typing import Awaitable, Callable, Optional
 
 from .logger import log
+from .terminal_geometry import viewports, frame_meta
 from .sessions import CANONICAL_COLS, CANONICAL_ROWS
 
 # Single bytes/sequences from xterm mapped to tmux key names.
@@ -76,26 +77,63 @@ async def apply_command(store, streamer, tmux, msg: dict,
         streamer.broadcast({"type": "removed", "id": mid})
         return None
 
+    if mtype == 'viewport-release':
+        viewports.release(ws_id, mid or None)
+        return None
+
+    if mtype == 'viewport':
+        s = store.get(mid)
+        device, cols = msg.get('device'), msg.get('cols')
+        if not s or not ws_id or device not in ('desktop', 'mobile'):
+            return None
+        if device == 'desktop' and (type(cols) is not int or not 80 <= cols <= 240):
+            return None
+        requested = cols if device == 'desktop' else None
+        viewports.update(mid, ws_id, requested)
+        cols = viewports.target_columns(mid)
+        if (cols is None or cols == s.display_cols) and getattr(s, 'geometry_verified', True):
+            return None
+        if not hasattr(s, 'resize_lock'):
+            s.resize_lock = asyncio.Lock()
+        async with s.resize_lock:
+            viewports.update(mid, ws_id, requested)
+            cols = viewports.target_columns(mid)
+            if (cols is None or cols == s.display_cols) and getattr(s, 'geometry_verified', True):
+                return None
+            s.resizing = True
+            s.geometry_verified = False
+            s.grid_revision = getattr(s, 'grid_revision', 0) + 1
+            try:
+                if cols is not None:
+                    await tmux.resize_window(s.session_name, cols, CANONICAL_ROWS)
+                actual = await tmux.pane_size(s.session_name)
+                if actual and 30 <= actual[0] <= 240 and 1 <= actual[1] <= 200:
+                    s.display_cols, s.display_rows = actual
+                    s.geometry_verified = True
+                else:
+                    log.warning('Cannot verify terminal dimensions for %s', s.session_name)
+            except Exception as exc:
+                log.warning('Terminal resize failed for %s: %s', s.session_name, exc)
+            finally:
+                s.resizing = False
+            if not s.geometry_verified:
+                # The next viewport heartbeat retries. Never label a frame
+                # with guessed dimensions after a partial resize failure.
+                return None
+            output = await streamer.get_snapshot(mid, s.session_name)
+            if output:
+                # Every viewer must replace its old-width history together.
+                streamer.broadcast({'type':'snapshot', 'id':mid, 'data':output, **frame_meta(s, output)})
+        return None
+
     if mtype == "resize":
-        rows = msg.get("rows")
-        # cols optional: desktop stays at 80; mobile narrows the pane so content
-        # reflows to fit a phone (readable font WITHOUT horizontal scroll).
-        # NOTE: this makes the pane width per-viewer — if a desktop and a phone
-        # view the same session at once, its width flip-flops. Fine for the
-        # common single-viewer case.
-        cols = msg.get("cols")
-        cols = cols if isinstance(cols, int) and 30 <= cols <= CANONICAL_COLS else CANONICAL_COLS
-        if isinstance(rows, int) and CANONICAL_ROWS <= rows <= 200:
-            s = store.get(mid)
-            if s and (rows != s.display_rows or cols != s.display_cols):
-                s.display_rows = rows
-                s.display_cols = cols
-                await tmux.resize_window(s.session_name, cols, rows)
-                # Give the TUI time to handle SIGWINCH and redraw.
-                await asyncio.sleep(0.15)
-                output = await streamer.get_snapshot(mid, s.session_name)
-                if output:
-                    streamer.broadcast({"type": "snapshot", "id": mid, "data": output})
+        # Old browsers may request rows/columns. They cannot take ownership.
+        rows = msg.get('rows')
+        s = store.get(mid)
+        if type(rows) is int and CANONICAL_ROWS <= rows <= 200 and s:
+            output = await streamer.get_snapshot(mid, s.session_name)
+            if output:
+                await _reply({'type':'snapshot', 'id':mid, 'data':output, **frame_meta(s, output)})
         return None
 
     if mtype == "active":
@@ -103,10 +141,9 @@ async def apply_command(store, streamer, tmux, msg: dict,
         if mid:
             s = store.get(mid)
             if s:
-                await tmux.resize_window(s.session_name, s.display_cols, s.display_rows)
                 output = await streamer.get_snapshot(mid, s.session_name)
                 if output:
-                    await _reply({"type": "snapshot", "id": mid, "data": output})
+                    await _reply({'type':'snapshot', 'id':mid, 'data':output, **frame_meta(s, output)})
         return None
 
     if mtype == "resync":
@@ -114,7 +151,7 @@ async def apply_command(store, streamer, tmux, msg: dict,
         if s:
             output = await streamer.get_snapshot(mid, s.session_name)
             if output:
-                await _reply({"type": "snapshot", "id": mid, "data": output})
+                await _reply({'type':'snapshot', 'id':mid, 'data':output, **frame_meta(s, output)})
         return None
 
     if mtype == "title":

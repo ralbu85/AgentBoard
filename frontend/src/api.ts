@@ -44,6 +44,8 @@ async function get(url: string) {
 }
 
 export const api = {
+  sessionView: () => get('/api/session-view'),
+  changeSessionView: (change:object) => post('/api/session-view',change),
   login: (pw: string) => post('/api/login', { pw }),
   workers: () => get('/api/workers'),
   hosts: () => get('/api/hosts'),

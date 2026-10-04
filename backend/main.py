@@ -10,6 +10,8 @@ from . import config, streamer, tunnel, push
 from .logger import log
 from .sessions import store
 from .routes_session import router as session_router
+from .routes_session_view import router as session_view_router
+from .routes_conversation import router as conversation_router
 from .routes_browser import router as browser_router
 from .routes_desktop import router as desktop_router
 from .routes_notebook import router as notebook_router
@@ -18,6 +20,7 @@ from .browser import manager as browser_manager
 from .routes_file import router as file_router
 from .ws import handle_ws, broadcast
 from .agent_ws import handle_agent_ws
+from .security_audit import AuditMiddleware, audit
 
 _frontend_dist = Path(__file__).parent.parent / "frontend" / "dist"
 
@@ -46,6 +49,7 @@ async def lifespan(app: FastAPI):
         )
 
     log.info("AgentBoard running on http://localhost:%s", config.PORT)
+    audit.write('service.start', result='ready')
     notebook_reaper = asyncio.create_task(notebook_manager.reap())
     yield
 
@@ -58,8 +62,11 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None)
+app.add_middleware(AuditMiddleware)
 
 app.include_router(session_router)
+app.include_router(session_view_router)
+app.include_router(conversation_router)
 app.include_router(browser_router)
 app.include_router(desktop_router)
 app.include_router(notebook_router)

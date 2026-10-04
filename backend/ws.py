@@ -19,6 +19,7 @@ _lock = asyncio.Lock()
 # Which remote (host, local_id) each browser ws is currently viewing. Lets us
 # tell an agent to drop back to background polling once its last viewer leaves.
 _ws_remote: dict[int, tuple[str, str]] = {}
+_ws_viewports: dict[int, set[tuple[str, str]]] = {}
 
 
 # Per-session frame types: heavy and only meaningful to a client actually
@@ -46,10 +47,22 @@ def _viewers_of(pid: str) -> list[WebSocket]:
                 ws = by_wsid.get(wsid)
                 if ws is not None:
                     out.append(ws)
+    for wsid, views in _ws_viewports.items():
+        if (host, local_id) in views and wsid in by_wsid and by_wsid[wsid] not in out:
+            out.append(by_wsid[wsid])
     return out
 
 
 def broadcast(msg: dict):
+    if msg.get('type') == 'status' and msg.get('status') in ('stopped', 'completed'):
+        try:
+            from .routes_session_view import retire_ended
+            session = store.get(msg.get('id', ''))
+            records = [session.to_dict()] if session else [s for s in registry.mirror() if s['id'] == msg.get('id')]
+            retire_ended([{**s, 'status': msg['status']} for s in records])
+        except Exception as exc:
+            log.warning('Automatic session cleanup failed: %s', exc)
+
     # Fire an OS push on attention transitions (waiting/completed) for both local
     # and remote sessions — every state change funnels through here.
     try:
@@ -95,6 +108,9 @@ async def handle_ws(ws: WebSocket):
             "sessions": [s.to_dict() for s in store.all()] + registry.mirror(),
         }))
 
+        from .routes_session_view import get_state
+        await ws.send_text(json.dumps({'type':'session-view', **(await get_state())}))
+
         titles = store.titles
         if titles:
             await ws.send_text(json.dumps({"type": "titles", "titles": titles}))
@@ -122,6 +138,8 @@ async def handle_ws(ws: WebSocket):
             clients.discard(ws)
         streamer.remove_client(id(ws))
         await _release_remote(id(ws))
+        for host in {h for h, _ in _ws_viewports.pop(id(ws), set()) if h != LOCAL}:
+            await registry.send(host, {'type':'viewport-release', 'id':'', 'wsId':id(ws)})
 
 
 async def _handle_msg(msg: dict, ws: WebSocket):
@@ -134,10 +152,19 @@ async def _handle_msg(msg: dict, ws: WebSocket):
         await _handle_active(host, local_id, ws)
         return
 
+    if msg_type in ('viewport', 'viewport-release'):
+        views = _ws_viewports.setdefault(id(ws), set())
+        if msg_type == 'viewport':
+            views.add((host, local_id))
+        else:
+            views.discard((host, local_id))
+
     if host != LOCAL:
         # Remote session — forward the command to its agent with the bare id.
         m = dict(msg)
         m["id"] = local_id
+        if msg_type in ('viewport', 'viewport-release'):
+            m["wsId"] = id(ws)
         await registry.send(host, m)
         return
 

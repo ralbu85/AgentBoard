@@ -11,6 +11,7 @@ from .models import (
 from .agents import registry
 from .namespace import LOCAL, split_id
 from . import config, tmux, streamer, commands, push, profiles
+from .security_audit import audit, peer
 
 router = APIRouter(prefix="/api")
 
@@ -28,6 +29,7 @@ async def login(req: LoginRequest, request: Request, response: Response):
     fails, locked_until = _LOGIN_FAILS.get(ip, (0, 0.0))
     now = time.monotonic()
     if locked_until > now:
+        audit.write('login', peer=peer(ip), result='throttled')
         retry_after = int(locked_until - now) + 1
         raise HTTPException(status_code=429, detail=f"Too many failed logins; retry in {retry_after}s")
     if locked_until and locked_until <= now:
@@ -40,9 +42,11 @@ async def login(req: LoginRequest, request: Request, response: Response):
         fails += 1
         locked_until = now + _LOGIN_LOCKOUT_S if fails >= _LOGIN_MAX_FAILS else 0.0
         _LOGIN_FAILS[ip] = (fails, locked_until)
+        audit.write('login', peer=peer(ip), result='denied')
         return {"ok": False}
 
     _LOGIN_FAILS.pop(ip, None)  # Successful login resets the counter for this IP
+    audit.write('login', peer=peer(ip), result='accepted')
     response.set_cookie(
         "token", config.AUTH_TOKEN, path="/",
         httponly=True, samesite="lax", secure=config.COOKIE_SECURE,

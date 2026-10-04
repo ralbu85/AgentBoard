@@ -16,17 +16,44 @@ beforeEach(()=>{
       if(body.revision!==state.revision)return {ok:false,status:409,json:async()=>({detail:'conflict'})}
       state={...state,content:body.content,revision:state.revision+1,dirty:true}
     }
-    if(url.endsWith('/action'))state={...state,revision:state.revision+1,state:'running'}
+    if(url.endsWith('/action'))state={...state,revision:state.revision+1,state:body.action==='shutdown'?'stopped':'running',...(body.action==='shutdown'?{kernel:false}:{})}
     return {ok:true,json:async()=>({...state})}
   }))
 })
 afterEach(()=>{vi.useRealTimers();vi.unstubAllGlobals()})
 
 describe('notebook runtime',()=>{
-  it('flushes pending edits before execution and shares state across reopened tabs',async()=>{
+  it('resets outputs and kernel after syncing the draft, preserving sources and metadata',async()=>{
+    const cells=[{cell_type:'code',source:'x = 42',outputs:[{text:'42'}],execution_count:3,metadata:{keep:true}},
+      {cell_type:'markdown',source:'# Notes',metadata:{}}]
+    state={...state,kernel:true,state:'idle',content:JSON.stringify({cells,metadata:{name:'fixture'}})}
+    await openNotebook(path,state.content,false)
+    cells[0].source='x = 43'
+    editNotebook(path,JSON.stringify({cells,metadata:{name:'fixture'}}))
+    await notebookAction(path,'reset')
+    expect(calls.slice(-3)).toEqual(['PUT /api/notebooks/fixture','POST /api/notebooks/fixture/action','PUT /api/notebooks/fixture'])
+    const result=JSON.parse(state.content)
+    expect(result.cells[0]).toEqual({...cells[0],outputs:[],execution_count:null})
+    expect(result.cells[1]).toEqual(cells[1])
+    expect(result.metadata).toEqual({name:'fixture'})
+    expect(state.kernel).toBe(false)
+    expect(state.dirty).toBe(true)
+  })
+  it('keeps outputs if stopping the kernel fails during reset',async()=>{
+    const original=JSON.stringify({cells:[{cell_type:'code',source:'42',outputs:[{text:'42'}],execution_count:1}]})
+    state={...state,content:original,kernel:true,state:'idle'}
+    await openNotebook(path,original,false)
+    vi.mocked(fetch).mockRejectedValueOnce(Error('connection lost'))
+    await expect(notebookAction(path,'reset')).rejects.toThrow('connection lost')
+    expect(useNotebooks.getState().records[path].content).toBe(original)
+    expect(useNotebooks.getState().records[path].operation).toBeUndefined()
+  })
+  it.each(['execute','run-to-cell'])('flushes pending edits before %s and shares state across reopened tabs',async(action)=>{
     await openNotebook(path,'original',false)
     editNotebook(path,'edited')
-    await notebookAction(path,'execute',0)
+    await notebookAction(path,action,0)
+    const requestBody=JSON.parse(vi.mocked(fetch).mock.calls[vi.mocked(fetch).mock.calls.length-1][1]!.body as string)
+    expect(requestBody).toMatchObject({action,cell:0,revision:2})
     expect(calls.slice(-2)).toEqual(['PUT /api/notebooks/fixture','POST /api/notebooks/fixture/action'])
     expect(state.content).toBe('edited')
     const count=calls.length

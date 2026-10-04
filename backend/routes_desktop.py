@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, WebSocket, WebSo
 from pydantic import BaseModel, ConfigDict, Field
 
 from .auth import verify, verify_ws
+from .security_audit import audit, destination
 
 router = APIRouter(prefix='/api/desktop')
 
@@ -69,6 +70,9 @@ async def command(desktop_id: str, body: Command, request: Request, _=Depends(ve
     request_id = str(uuid.uuid4())
     future = asyncio.get_running_loop().create_future()
     desktop.pending[request_id] = future
+    audit.write('desktop.command', action=body.action, result='requested')
+    if body.url:
+        destination('desktop.destination', body.url, action=body.action)
     try:
         async with desktop.lock:
             await desktop.ws.send_json({'type': 'command', 'id': request_id, 'command': body.model_dump(exclude_none=True)})

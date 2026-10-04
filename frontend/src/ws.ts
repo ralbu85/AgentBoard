@@ -8,9 +8,10 @@ let _retryDelay = 1000  // ms; doubles per failure up to 30s
 
 // Terminal write callbacks — set by TerminalManager
 export const terminalHandlers = {
-  onSnapshot: null as ((id: string, data: string) => void) | null,
-  onScreen: null as ((id: string, data: string) => void) | null,
-  onStream: null as ((id: string, data: string) => void) | null,
+  onConnect: null as (()=>void)|null,
+  onSnapshot: null as ((id: string, data: string, cols?:number, rows?:number, fullRows?:boolean, gridVersion?:number, dynamicWidth?:boolean, wrappedRows?:number[]) => void) | null,
+  onScreen: null as ((id: string, data: string, cols?:number, rows?:number, fullRows?:boolean, gridVersion?:number, dynamicWidth?:boolean, wrappedRows?:number[]) => void) | null,
+  onStream: null as ((id: string, data: string, cols?:number, rows?:number, fullRows?:boolean, gridVersion?:number, dynamicWidth?:boolean, wrappedRows?:number[]) => void) | null,
 }
 
 // Debug counters (accessible from console/tests)
@@ -32,6 +33,7 @@ export function initWs() {
       send({ type: 'active', id: activeId })
     }
     _pendingActive = null
+    terminalHandlers.onConnect?.()
     // Flush messages that were queued while the socket was connecting
     while (_pendingSend.length > 0) {
       const msg = _pendingSend.shift()!
@@ -67,13 +69,13 @@ export function initWs() {
     //              used solely to fill the state-detection ring buffer.
     if (msg.type === 'snapshot') {
       window.__wsDebug.snapshotCount++
-      terminalHandlers.onSnapshot?.(msg.id, msg.data)
+      terminalHandlers.onSnapshot?.(msg.id, msg.data, msg.cols, msg.rows, msg.fullRows, msg.gridVersion, msg.dynamicWidth, msg.wrappedRows)
     } else if (msg.type === 'screen') {
       const d = window.__wsDebug
       d.screenCount++
       d.lastScreenId = msg.id
       d.lastScreenLen = msg.data?.length || 0
-      terminalHandlers.onScreen?.(msg.id, msg.data)
+      terminalHandlers.onScreen?.(msg.id, msg.data, msg.cols, msg.rows, msg.fullRows, msg.gridVersion, msg.dynamicWidth, msg.wrappedRows)
     }
 
     // Route state updates to Zustand store
@@ -85,6 +87,8 @@ export function send(msg: object) {
   if (ws && ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify(msg))
   } else {
+    // Geometry is transient; reconnect recomputes current visible viewports.
+    if(['viewport','viewport-release'].includes((msg as {type?:string}).type||''))return
     _pendingSend.push(msg)
   }
 }

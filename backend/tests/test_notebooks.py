@@ -115,6 +115,38 @@ def test_real_kernel_execution_errors_save_and_interrupt(setup):
     asyncio.run(scenario())
 
 
+def test_run_to_cell_includes_target_skips_markdown_and_leaves_later_cells(setup):
+    manager, create = setup
+    doc = create('x = 40', 'x + 2', 'raise AssertionError("must not run")')
+    doc.notebook['cells'].insert(1, nbformat.v4.new_markdown_cell('Explanation'))
+
+    async def scenario():
+        try:
+            for invalid in (None, -1, 1, 4):
+                with pytest.raises(HTTPException) as exc:
+                    await routes_notebook.action(doc.id, routes_notebook.Action(
+                        action='run-to-cell', revision=doc.revision, cell=invalid))
+                assert exc.value.status_code == 400
+                assert not doc.km
+            await routes_notebook.action(doc.id, routes_notebook.Action(
+                action='run-to-cell', revision=doc.revision, cell=2))
+            await asyncio.wait_for(doc.task, 20)
+            cells = doc.notebook['cells']
+            assert cells[0]['execution_count'] == 1
+            assert cells[2]['outputs'][0]['data']['text/plain'] == '42'
+            assert cells[3]['execution_count'] is None and not cells[3]['outputs']
+            assert not doc.error
+            await routes_notebook.action(doc.id, routes_notebook.Action(
+                action='run-to-cell', revision=doc.revision, cell=0))
+            await asyncio.wait_for(doc.task, 20)
+            assert cells[0]['execution_count'] == 3
+            assert cells[2]['execution_count'] == 2
+        finally:
+            await manager.shutdown()
+
+    asyncio.run(scenario())
+
+
 def test_rich_output_updates_clear_and_limits(setup, monkeypatch):
     manager, create = setup
     monkeypatch.setattr(notebooks, 'MAX_OUTPUT', 5000)

@@ -45,12 +45,13 @@ export type WsMessage =
   | { type: 'host-connection'; host: string; online: boolean }
   | { type: 'activity'; id: string; lastActivityAt: number }
   | { type: 'spawned'; id: string; cwd: string; cmd: string; status: string; sessionName: string; host?: string; hostLabel?: string; reqId?: string }
-  | { type: 'snapshot'; id: string; data: string }
-  | { type: 'screen'; id: string; data: string }
+  | { type: 'snapshot'; id: string; data: string; cols?:number; rows?:number; fullRows?:boolean; gridVersion?:number; dynamicWidth?:boolean; wrappedRows?:number[] }
+  | { type: 'screen'; id: string; data: string; cols?:number; rows?:number; fullRows?:boolean; gridVersion?:number; dynamicWidth?:boolean; wrappedRows?:number[] }
   | { type: 'stream'; id: string; data: string }
   | { type: 'status'; id: string; status: string }
   | { type: 'removed'; id: string }
   | { type: 'cwd'; id: string; cwd: string }
+  | { type:'session-view';revision:number;visibility:Record<string,boolean>;orders:Record<string,string[]> }
   | { type: 'aiState'; id: string; state: string; completionId?: string | null }
   | { type: 'info'; id: string; process: string; createdAt: number; memKB: number; altScreen?: boolean; autoTitle?: string }
   | { type: 'title'; id: string; title: string }

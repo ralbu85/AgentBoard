@@ -5,7 +5,7 @@ const TOKEN = crypto.createHmac('sha256', 'termhub').update('demo-shots-1').dige
 const OUT = __dirname + '/video'
 
 ;(async () => {
-  const browser = await chromium.launch({ executablePath: '/usr/bin/google-chrome', args: ['--no-sandbox', '--disable-dev-shm-usage'] })
+  const browser = await require('./safe-browser.cjs').launchBrowser(chromium)
 
   // ── Desktop: grid → click the Asking tile → approve with the ⏎ quick key ──
   const desk = await browser.newContext({

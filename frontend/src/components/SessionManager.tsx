@@ -34,7 +34,7 @@ export function SessionManager({onClose}:{onClose:()=>void}) {
   return <div className="session-manager-backdrop" onClick={e=>{if(e.target===e.currentTarget)onClose()}}>
     <section className="session-manager" role="dialog" aria-modal="true" aria-label="세션 관리">
       <div className="session-manager-head"><strong>세션 관리 · {sessions.length}개</strong><button className="btn" disabled={loading} onClick={refresh}>미연결 목록 새로고침</button><button className="btn" onClick={onClose} aria-label="세션 관리 닫기">×</button></div>
-      <p>숨김은 이 브라우저의 목록·탭에서만 감춥니다. 종료하면 실행 중인 작업이 중단됩니다.</p>
+      <p>숨김은 연결된 기기의 세션 목록·탭에 함께 반영됩니다. 종료하면 실행 중인 작업이 중단됩니다.</p>
       {state.connection!=='online'&&<p role="status">서버 연결이 끊겼습니다. 표시된 상태는 마지막 수신 정보입니다.</p>}
       <input type="search" aria-label="세션 검색" placeholder="작업 이름·폴더·머신 검색" value={query} onChange={e=>setQuery(e.target.value)} />
       <div className="session-manager-filters">{[['all','전체'],['running','실행 중'],['ended','종료됨'],['hidden','숨김'],['unmanaged','미연결']].map(([key,label])=><button className="btn" aria-pressed={filter===key} key={key} onClick={()=>setFilter(key)}>{label}</button>)}</div>

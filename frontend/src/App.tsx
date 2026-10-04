@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api } from './api'
-import { useStore, viewerKey, workspaceEntries } from './store'
+import { useStore, viewerKey, workspaceEntries, completionKey } from './store'
 import { initWs, terminalHandlers } from './ws'
 import { Login } from './components/Login'
 import { Toaster } from './components/Toaster'
@@ -47,10 +47,14 @@ export function App() {
   useEffect(() => {
     setLoadingMsg('Loading sessions...')
     api.workers()
-      .then((sessions) => {
+      .then(async(sessions) => {
         setLoadingMsg(`${sessions.length} sessions loaded`)
         useStore.getState().setSessions(sessions)
         useStore.getState().loadProfiles()
+        try{
+          const view=await api.changeSessionView({action:'seed',items:useStore.getState().hiddenSessions})
+          if(view.ok!==false)useStore.getState().applySessionView(view)
+        }catch{/* Existing local tabs remain usable when sync is unavailable. */}
         setAuthed(true)
       })
       .catch(() => setAuthed(false))
@@ -59,6 +63,7 @@ export function App() {
   useEffect(() => {
     if (!authed) return
 
+    terminalHandlers.onConnect = TM.refreshViewports
     terminalHandlers.onSnapshot = TM.writeSnapshot
     terminalHandlers.onScreen = TM.writeScreen
     terminalHandlers.onStream = TM.writeStream
@@ -104,7 +109,12 @@ export function App() {
       }
     }
     const initial = new URLSearchParams(location.search).get('session')
-    if (initial) openSession(initial)
+    if (initial) {
+      const session=useStore.getState().sessions[initial]
+      if (!session || !useStore.getState().hiddenSessions.includes(completionKey(session))) openSession(initial)
+      const url=new URL(location.href);url.searchParams.delete('session')
+      history.replaceState(history.state,'',url)
+    }
     const onSwMsg = (e: MessageEvent) => {
       if (e.data?.type === 'open-session' && e.data.url) {
         const sid = new URL(e.data.url, location.origin).searchParams.get('session')

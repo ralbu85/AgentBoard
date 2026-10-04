@@ -1,8 +1,8 @@
+import {AgentIcon} from '../AgentIcon'
 import { useState } from 'react'
-import { useStore, completionKey } from '../../store'
-import { api } from '../../api'
+import { useStore, completionKey, sessionLabel } from '../../store'
 import { notifyActive } from '../../ws'
-import { spawnAndFocus } from '../../spawn'
+import { CLEAN_TERMINAL, spawnAndFocus } from '../../spawn'
 
 const STATE_COLORS: Record<string, string> = {
   working: '#a78bfa', waiting: '#fbbf24', idle: '#6e7681',
@@ -20,30 +20,23 @@ export function SessionTabs({ wsCwd }: { wsCwd: string }) {
   const effectiveState = useStore((s) => s.effectiveState)
   const setActive = useStore((s) => s.setActive)
   const setWorkspace = useStore((s) => s.setWorkspace)
-  const removeSession = useStore((s) => s.removeSession)
   const openSpawn = useStore((s) => s.openSpawn)
   const openProfileEditor = useStore((s) => s.openProfileEditor)
   const profiles = useStore((s) => s.profiles)
   const [menuOpen, setMenuOpen] = useState(false)
 
   const workspaceHost = useStore(s => s.workspaceHost)
-  const ids = Object.keys(sessions).filter((id) => (sessions[id].cwd || '~') === wsCwd && (sessions[id].host || 'local') === workspaceHost)
+  const hiddenSessions=useStore(s=>s.hiddenSessions)
+  const ids = Object.keys(sessions).filter((id) => (sessions[id].cwd || '~') === wsCwd && (sessions[id].host || 'local') === workspaceHost && !hiddenSessions.includes(completionKey(sessions[id])))
   const host = workspaceHost
-  const defaultProfile = profiles.find((p) => p.default) || profiles[0]
 
   const select = (id: string) => { setActive(id); useStore.getState().acknowledgeCompletion(id); setWorkspace(sessions[id]?.cwd || wsCwd, sessions[id]?.host || 'local'); notifyActive(id) }
   const launch = (command: string) => { setMenuOpen(false); spawnAndFocus(wsCwd, host, command) }
-  const addDefault = () => launch(defaultProfile?.command || 'claude')
+  const addDefault = () => launch(CLEAN_TERMINAL)
 
-  const close = async (e: React.MouseEvent, id: string) => {
+  const close = (e: React.MouseEvent, id: string) => {
     e.stopPropagation()
-    const s = sessions[id]
-    if (s.status === 'stopped' || s.status === 'completed') {
-      const res = await api.remove(id); if (res.ok !== false) removeSession(id)
-    } else {
-      if (!window.confirm('이 세션의 실행 중인 프로세스를 종료할까요?\n작업이 중단됩니다.')) return
-      await api.kill(id)
-    }
+    useStore.getState().setSessionHidden(id,true)
   }
 
   return (
@@ -53,22 +46,23 @@ export function SessionTabs({ wsCwd }: { wsCwd: string }) {
           const s = sessions[id]
           const unread = unreadCompletions.includes(completionKey(s))
           const state = effectiveState(id) || 'running'
-          const title = titles[id] || `#${id} ${s.cmd}`
+          const title = sessionLabel(s,titles)
           const hostTag = s.host && s.host !== 'local' ? (s.hostLabel || s.host) : ''
           return (
             <div key={id} className={`session-tab ${id === activeId ? 'active' : ''} ${unread ? 'has-unread' : ''}`}
               title={hostTag ? `${title} · ${hostTag}` : title} onClick={() => select(id)}>
               <span className={`session-dot dot-${state}`} style={{ background: STATE_COLORS[state] || '#6e7681' }} />
+              <AgentIcon session={s}/>
               <span className="session-tab-title">{title}</span>
               {unread && <span className="unread-chip" title="완료 후 미확인">✓ 미확인</span>}
-              <button className="session-tab-close" onClick={(e) => close(e, id)} title={s.status === 'running' ? '프로세스 종료' : '목록에서 제거'}>{s.status === 'running' ? '■' : '✕'}</button>
+              <button className="session-tab-close" onClick={(e) => close(e, id)} title="탭 닫기 (기기 간 동기화)">✕</button>
             </div>
           )
         })}
       </div>
 
       <div className="session-tab-addwrap">
-        <button className="session-tab-add-main" title={`새 세션: ${defaultProfile?.label || 'Claude'}`} onClick={addDefault}>＋</button>
+        <button className="session-tab-add-main" title="새 일반 터미널" onClick={addDefault}>＋</button>
         <button className="session-tab-add-caret" title="에이전트 선택" onClick={() => setMenuOpen((v) => !v)}>▾</button>
         {menuOpen && (
           <>

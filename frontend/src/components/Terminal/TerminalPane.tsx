@@ -5,28 +5,18 @@ import { useToasts } from '../../toasts'
 import { notifyActive } from '../../ws'
 import * as TM from './TerminalManager'
 import { AgentIcon } from '../AgentIcon'
+import {ConversationView} from './ConversationView'
 
 import '@xterm/xterm/css/xterm.css'
 
-// Quick responses for a session that's waiting on a prompt. Claude Code prompts
-// are usually a numbered menu (1 = affirmative) confirmed with Enter, cancelled
-// with Esc — so these cover the common cases without opening the terminal.
-const QUICK_KEYS: { label: string; key: string; cls?: string }[] = [
-  { label: 'Yes ⏎', key: 'Enter', cls: 'qa-yes' },
-  { label: '1', key: '1' },
-  { label: '2', key: '2' },
-  { label: '3', key: '3' },
-  { label: 'No (Esc)', key: 'Escape', cls: 'qa-no' },
-]
-
 const STATE_DISPLAY: Record<string, { label: string; icon: string }> = {
-  working:   { label: 'Thinking', icon: '●' },
-  waiting:   { label: 'Asking',   icon: '◆' },
-  completed: { label: 'Done',     icon: '✓' },
-  idle:      { label: 'Idle',     icon: '○' },
+  working:   { label: '작업 중', icon: '●' },
+  waiting:   { label: '입력 대기',   icon: '◆' },
+  completed: { label: '완료',     icon: '✓' },
+  idle:      { label: '대기',     icon: '○' },
   disconnected: {label: '연결 끊김', icon: '○'},
   running: {label: '상태 확인 중', icon: '○'},
-  stopped:   { label: 'Stopped',  icon: '■' },
+  stopped:   { label: '종료',  icon: '■' },
 }
 
 export function TerminalPane({ sessionId }: { sessionId?: string }) {
@@ -36,10 +26,8 @@ export function TerminalPane({ sessionId }: { sessionId?: string }) {
   const [readability, setReadability] = useState(TM.getReadability)
   const changeReadability = (patch: Partial<ReturnType<typeof TM.getReadability>>) => { TM.setReadability(patch); setReadability(TM.getReadability()) }
   const [showScrollBtn, setShowScrollBtn] = useState(false)
-  // Mobile "select text": snapshot the terminal into plain selectable text so
-  // the OS's own long-press range-select + copy works (native, no custom copy).
-  const [selectText, setSelectText] = useState<string | null>(null)
-  const isMobile = window.innerWidth <= 768
+  const [conversation,setConversation]=useState(false)
+  const isMobile = TM.isMobileViewport
   const currentState = useStore(s => activeId ? s.effectiveState(activeId) : null)
   const agentSession = useStore(s => activeId ? s.sessions[activeId] : undefined)
   const stateInfo = STATE_DISPLAY[currentState || ''] || STATE_DISPLAY.idle
@@ -48,7 +36,7 @@ export function TerminalPane({ sessionId }: { sessionId?: string }) {
   const btnVisible = showScrollBtn || !!altScreen
 
   useEffect(() => {
-    if (!activeId || !containerRef.current) return
+    if (!activeId || !containerRef.current || conversation) return
     TM.open(activeId, containerRef.current)
     TM.reveal(activeId)
     // The terminal element may have been sized for a different container
@@ -60,7 +48,8 @@ export function TerminalPane({ sessionId }: { sessionId?: string }) {
     // this terminal's old buffer — otherwise switch paths that don't call
     // notifyActive themselves (e.g. kill/remove auto-select) leave stale content.
     if (useStore.getState().activeId === activeId) notifyActive(activeId)
-  }, [activeId])
+    return()=>{TM.clearNativeSelection(activeId);TM.releaseViewport(activeId)}
+  }, [activeId,conversation])
 
   // Poll scroll state for button visibility
   useEffect(() => {
@@ -73,10 +62,10 @@ export function TerminalPane({ sessionId }: { sessionId?: string }) {
       setShowScrollBtn(TM.isScrolledUp(id || undefined))
     }, 300)
     return () => clearInterval(interval)
-  }, [sessionId])
+  }, [sessionId,conversation])
 
   // Refit on container size changes. Debounced so keyboard show/hide animation
-  // (many ResizeObserver fires) collapses into one resize round-trip.
+  // (many ResizeObserver fires) collapses into one local display resize.
   useEffect(() => {
     let timer: number | undefined
     const doRefit = () => {
@@ -94,7 +83,7 @@ export function TerminalPane({ sessionId }: { sessionId?: string }) {
       window.removeEventListener('resize', doRefit)
       ro.disconnect()
     }
-  }, [sessionId])
+  }, [sessionId,conversation])
 
   // Full scrollback beyond the ~2000-line streamed snapshot. Opens in the viewer
   // as a searchable text tab (desktop split only; the viewer isn't mounted on
@@ -126,11 +115,15 @@ export function TerminalPane({ sessionId }: { sessionId?: string }) {
   return (
     <div className="terminal-pane-shell">
       <div className="terminal-toolbar">
+        {activeId&&<div className="terminal-reading-mode" aria-label="출력 보기">
+          <button aria-pressed={!conversation} onClick={()=>setConversation(false)}>터미널</button>
+          <button aria-pressed={conversation} disabled={agentSession?.host!=='local'&&!!agentSession?.host} onClick={()=>setConversation(true)} title="원본 대화를 화면 폭에 맞춰 읽기">대화</button>
+        </div>}
         <div className="terminal-font-controls" aria-label="터미널 가독성 설정">
           <button onClick={() => changeReadability({fontSize: readability.fontSize - 1})} disabled={readability.fontSize <= 12} title="터미널 글씨 작게">A−</button>
           <button onClick={() => changeReadability({fontSize: isMobile ? 12 : 15, lineHeight: 1})} title="기본 글씨 크기와 행간으로">{readability.fontSize}px</button>
           <button onClick={() => changeReadability({fontSize: readability.fontSize + 1})} disabled={readability.fontSize >= 22} title="터미널 글씨 크게">A+</button>
-          <button aria-pressed={readability.adaptiveColumns} onClick={() => { changeReadability({adaptiveColumns: isMobile || !readability.adaptiveColumns}); if(activeId)TM.refit(activeId) }} title={isMobile ? '모바일 터미널 폭에 맞추기' : '폭에 맞춰 줄바꿈 / 80열 고정'}>{isMobile ? '폭 맞춤' : readability.adaptiveColumns ? '자동 폭' : '80열'}</button>
+          <span className="terminal-width-mode" title={isMobile?'글씨 크기를 유지하고 긴 출력을 화면 폭에 맞춰 줄바꿈합니다.':'터미널 영역 너비에 따라 열 수를 자동 조절합니다.'}>{isMobile?'자동 줄바꿈':'자동 폭'}</span>
         </div>
       {activeId && (
         <div className={`terminal-state-badge tsb-${currentState || 'idle'}`}>
@@ -145,22 +138,8 @@ export function TerminalPane({ sessionId }: { sessionId?: string }) {
         </button>
       )}
       {activeId && !isMobile && <button className="select-text-btn" onMouseDown={e=>e.preventDefault()} onClick={()=>void TM.copySelection(activeId)} title="선택한 텍스트 복사 (Ctrl+C / Cmd+C)">선택 복사</button>}
-      {activeId && (
-        <button className="select-text-btn" onClick={() => setSelectText(TM.getBufferText(activeId))} title="변하지 않는 텍스트 창에서 범위를 선택해 복사">
-          텍스트 선택
-        </button>
-      )}
       </div>
-      <div ref={containerRef} className="terminal-container">
-      {selectText !== null && (
-        <div className="term-select-overlay">
-          <div className="tso-bar">
-            <span className="tso-hint">길게 눌러 범위 지정 → 복사</span>
-            <button className="tso-close" onClick={() => setSelectText(null)}>✕ 닫기</button>
-          </div>
-          <pre className="tso-text">{selectText}</pre>
-        </div>
-      )}
+      {conversation&&activeId?<ConversationView key={activeId} sessionId={activeId}/>:<div ref={containerRef} className="terminal-container">
       {btnVisible && (
         <button
           className="scroll-bottom-btn"
@@ -172,21 +151,7 @@ export function TerminalPane({ sessionId }: { sessionId?: string }) {
           <span className="sb-text"> 맨아래</span>
         </button>
       )}
-      {activeId && currentState === 'waiting' && (
-        <div className="quick-approve">
-          <span className="qa-label">◆ 입력 대기 중</span>
-          {QUICK_KEYS.map((k) => (
-            <button
-              key={k.key}
-              className={`btn btn-xs qa-btn ${k.cls || ''}`}
-              onClick={() => api.key(activeId, k.key)}
-            >
-              {k.label}
-            </button>
-          ))}
-        </div>
-      )}
-      </div>
+      </div>}
     </div>
   )
 }

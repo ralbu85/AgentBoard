@@ -16,6 +16,8 @@ from urllib.parse import urlsplit
 from playwright.async_api import async_playwright
 
 from . import config
+from .browser_security import launch_browser
+from .security_audit import destination
 
 MAX_TABS = max(1, min(10, int(os.getenv('AGENTBOARD_BROWSER_TABS', '3'))))
 DATA_DIR = config.STATE_DIR / '.browser-state'
@@ -273,10 +275,12 @@ class BrowserManager:
             if not self.browser or not self.browser.is_connected():
                 if self.playwright: await self.playwright.stop()
                 self.playwright=await async_playwright().start()
-                self.browser=await self.playwright.chromium.launch(channel='chromium',headless=True)
+                self.browser=await launch_browser(self.playwright)
             if workspace not in self.contexts:
                 path=self.profile_path(workspace)
                 self.contexts[workspace]=await self.browser.new_context(viewport={'width':1000,'height':700},accept_downloads=True,storage_state=str(path) if path.exists() else None)
+                self.contexts[workspace].on('request', lambda request: destination('browser.request', request.url, method=request.method))
+                self.contexts[workspace].on('requestfailed', lambda request: destination('browser.request_failed', request.url))
                 # No local-file/data navigations, including links and redirects.
                 async def guard(route):
                     try: web_url(route.request.url)

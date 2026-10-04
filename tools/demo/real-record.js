@@ -23,7 +23,7 @@ async function waitState(want, timeoutMs) {
 }
 
 ;(async () => {
-  const browser = await chromium.launch({ executablePath: '/usr/bin/google-chrome', args: ['--no-sandbox', '--disable-dev-shm-usage'] })
+  const browser = await require('./safe-browser.cjs').launchBrowser(chromium)
 
   const desk = await browser.newContext({ viewport: { width: 1440, height: 860 }, recordVideo: { dir: OUT, size: { width: 1440, height: 860 } } })
   await desk.addCookies([{ name: 'token', value: TOKEN, url: 'http://127.0.0.1:13002' }])

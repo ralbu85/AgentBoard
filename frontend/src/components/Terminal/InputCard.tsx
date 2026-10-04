@@ -22,7 +22,7 @@ const QUICK_KEYS = [
   { label: '■ 실행 중단', key: 'C-c' },
 ]
 
-const isMobile = () => window.innerWidth <= 768
+const isMobile = () => TM.isMobileViewport
 
 export function InputCard({ sessionId }: Props) {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -93,7 +93,7 @@ export function InputCard({ sessionId }: Props) {
   }
 
   const onKeyDown = (e: KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+    if (!isMobile() && e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault()
       doSend()
     }
@@ -147,18 +147,19 @@ export function InputCard({ sessionId }: Props) {
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={onKeyDown}
-          placeholder="Type command..."
+          placeholder={isMobile()?'메시지 입력 · Enter 줄바꿈':'Type command...'}
+          enterKeyHint={isMobile()?'enter':'send'}
           rows={1}
           autoCorrect="off"
           autoCapitalize="none"
           autoComplete="off"
           spellCheck={false}
         />
-        <button className="btn send-btn" disabled={sending} onClick={doSend}>Send</button>
+        <button className="btn send-btn" disabled={sending} onClick={doSend} title="작성한 내용 전송">Send</button>
       </div>
       <div className="quick-keys">
         <button className="btn quick-key" title="입력창에 하이픈 두 개 삽입" onPointerDown={e => e.preventDefault()} onClick={insertDoubleHyphen}>--</button>
-        {QUICK_KEYS.map((k) => (
+        {QUICK_KEYS.filter(k=>!isMobile()||k.key!=='Enter').map((k) => (
           <button key={k.key} className="btn quick-key" title={k.key==='C-c'?'복사가 아니라 실행 중단 신호를 보냅니다':undefined} onClick={() => onQuickKey(k.key)}>
             {k.label}
           </button>

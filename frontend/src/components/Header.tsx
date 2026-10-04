@@ -12,13 +12,13 @@ interface Props {
 }
 
 const ACTIVE_STATE_DISPLAY: Record<string, { label: string; icon: string; cls: string }> = {
-  working:   { label: 'Thinking', icon: '●', cls: 'badge-working' },
-  waiting:   { label: 'Asking',   icon: '◆', cls: 'badge-waiting' },
-  completed: { label: 'Done',     icon: '✓', cls: 'badge-done' },
-  idle:      { label: 'Idle',     icon: '○', cls: 'badge-idle' },
+  working:   { label: '작업 중', icon: '●', cls: 'badge-working' },
+  waiting:   { label: '입력 대기',   icon: '◆', cls: 'badge-waiting' },
+  completed: { label: '완료',     icon: '✓', cls: 'badge-done' },
+  idle:      { label: '대기',     icon: '○', cls: 'badge-idle' },
   disconnected: { label: '연결 끊김', icon: '○', cls: 'badge-offline' },
   running: { label: '확인 중', icon: '○', cls: 'badge-idle' },
-  stopped:   { label: 'Stopped',  icon: '■', cls: 'badge-stopped' },
+  stopped:   { label: '종료',  icon: '■', cls: 'badge-stopped' },
 }
 
 export function Header({ onToggleSidebar }: Props) {
@@ -84,16 +84,16 @@ export function Header({ onToggleSidebar }: Props) {
   return (
     <header className="header">
       <div className="header-left">
-        <button className="btn btn-icon" onClick={onToggleSidebar} title="Toggle sidebar (Ctrl+B)">
+        <button className="btn btn-icon" onClick={onToggleSidebar} title="워크스페이스 열기/닫기 (Ctrl+B)" aria-label="워크스페이스 열기/닫기">
           ☰
         </button>
         <span id="status-dot" className={`status-dot ${connection==='online'?'':'off'}`} title={connection==='online'?'서버 연결됨':'서버 재연결 중'} />
         <span className="logo">AgentBoard</span>
       </div>
       <div className="header-center">
-        {counts.working > 0 && <span className="badge badge-working">● {counts.working} Thinking</span>}
-        {counts.waiting > 0 && <span className="badge badge-waiting">◆ {counts.waiting} Asking</span>}
-        {counts.idle > 0 && <span className="badge badge-idle">○ {counts.idle} Idle</span>}
+        {counts.working > 0 && <span className="badge badge-working">● {counts.working} 작업 중</span>}
+        {counts.waiting > 0 && <span className="badge badge-waiting">◆ {counts.waiting} 입력 대기</span>}
+        {counts.idle > 0 && <span className="badge badge-idle">○ {counts.idle} 대기</span>}
       </div>
       {activeDisplay && (
         <div className={`header-active-state ${activeDisplay.cls}`}>
@@ -113,7 +113,7 @@ export function Header({ onToggleSidebar }: Props) {
           </button>
         )}
         <button className="btn" onClick={() => setShowScan(true)} title="전체 세션 관리 및 외부 tmux 세션 찾기">세션 관리</button>
-        <button className="btn btn-primary" onClick={handleSpawn}>+ New</button>
+        <button className="btn btn-primary" onClick={handleSpawn}>＋ 터미널</button>
       </div>
 
       <SpawnModal open={spawnOpen} onClose={closeSpawn} />

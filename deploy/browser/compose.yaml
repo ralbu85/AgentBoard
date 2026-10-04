@@ -1,0 +1,23 @@
+services:
+  browser:
+    build: .
+    init: true
+    user: pwuser
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+      - seccomp=./seccomp_profile.json
+    shm_size: 512mb
+    mem_limit: 2g
+    pids_limit: 256
+    cpus: 2
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,size=768m,mode=1777
+      - /home/pwuser:rw,nosuid,nodev,size=16m,uid=1000,gid=1000,mode=700
+    ports: ["127.0.0.1:3023:3000"]
+    secrets: [browser_ws_path]
+    restart: unless-stopped
+secrets:
+  browser_ws_path:
+    file: ./browser_ws_path.secret

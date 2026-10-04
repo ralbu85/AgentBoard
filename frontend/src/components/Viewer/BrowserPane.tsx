@@ -35,6 +35,7 @@ function RemoteBrowserPane({tab,ownerKey}:{tab:ViewerTab;ownerKey:string}) {
   const viewport=useRef<HTMLDivElement>(null)
   const file=useRef<HTMLInputElement>(null)
   const latest=useRef(remote);latest.current=remote
+  const externalUrl=browserUrl(remote?.url||initialUrl)
   const pendingText=useRef<string|null>(null)
   const coords=(clientX:number,clientY:number)=>{const r=viewport.current!.getBoundingClientRect();return {x:(clientX-r.left)*(latest.current?.width||r.width)/r.width,y:(clientY-r.top)*(latest.current?.height||r.height)/r.height}}
   const send=(data:object)=>{if(socket.current?.readyState!==WebSocket.OPEN){setError('브라우저 연결을 먼저 확인해 주세요.');return false}socket.current.send(JSON.stringify(data));return true}
@@ -112,7 +113,7 @@ function RemoteBrowserPane({tab,ownerKey}:{tab:ViewerTab;ownerKey:string}) {
       <button type="button" title="웹 페이지 새로고침" disabled={connection!=='online'} onClick={()=>send({action:'reload'})}>↻</button>
       <input aria-label="웹 주소" placeholder="https://… 또는 localhost:3000" value={address} onChange={e=>setAddress(e.target.value)} autoCorrect="off" autoCapitalize="none" spellCheck={false}/>
       <button type="submit">이동</button>
-      {remote?.url&&<a href={remote.url} target="_blank" rel="noopener noreferrer" title="외부 브라우저에서 열기">↗</a>}
+      {externalUrl&&<a href={externalUrl} target="_blank" rel="noopener noreferrer" title="외부 브라우저에서 열기">↗</a>}
     </form>
     <div className="browser-help chromium-status"><span>서버 Chromium · {({idle:'주소 입력',connecting:'연결 중',online:'연결됨',closed:'종료됨',error:'실행 불가'} as Record<string,string>)[connection]}</span><button onClick={()=>setShowRunning(v=>!v)}>실행 목록</button>{initialUrl&&connection!=='online'&&<button onClick={()=>{setError('');setRemote(null);setRetry(n=>n+1)}}>다시 연결</button>}{connection==='online'&&<button onClick={()=>void release(tab.id)}>종료</button>}</div>
     {(error||remote?.error)&&<div className="browser-error" role="alert">{error||remote?.error}<button onClick={()=>setError('')}>×</button></div>}
@@ -139,7 +140,7 @@ function RemoteBrowserPane({tab,ownerKey}:{tab:ViewerTab;ownerKey:string}) {
         if(/^(Enter|Tab|Backspace|Delete|Escape|ArrowUp|ArrowDown|ArrowLeft|ArrowRight|Home|End|PageUp|PageDown)$/.test(e.key)||((e.ctrlKey||e.metaKey)&&/^[a-zA-Z]$/.test(e.key))){e.preventDefault();send({action:'key',key:`${e.ctrlKey||e.metaKey?'Control+':''}${e.altKey?'Alt+':''}${e.shiftKey?'Shift+':''}${e.key}`})}
       }}>
       <img ref={image} alt="원격 Chromium 화면" draggable={false} style={{visibility:remote?'visible':'hidden'}}/>
-      {!remote&&<div className="chromium-placeholder">{initialUrl?'Chromium 화면을 연결하고 있습니다.':'주소를 입력해 웹 페이지를 여세요.'}</div>}
+      {!remote&&<div className="chromium-placeholder">{connection==='error'?'현재 서버에서 브라우저를 실행할 수 없습니다. 위 안내를 확인하거나 외부 브라우저에서 여세요.':initialUrl?'Chromium 화면을 연결하고 있습니다.':'주소를 입력해 웹 페이지를 여세요.'}</div>}
     </div>
     {remote?.fileChooser&&<div className="chromium-transfer"><span>웹 페이지에 올릴 파일 선택 (합계 25MB)</span><input ref={file} type="file" multiple aria-label="웹 페이지에 업로드할 파일" onChange={async e=>{
       const files=e.target.files;if(!files?.length)return

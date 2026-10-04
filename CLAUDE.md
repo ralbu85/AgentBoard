@@ -104,13 +104,14 @@ cd frontend && npm run dev
 - Adaptive cadence: active session = 80 ms, background sessions = 2 s
 
 ### Mobile (CRITICAL)
-- xterm.js native touch is disabled via `pointer-events: none` on `.xterm`, `.xterm-viewport`, `.xterm-screen`
-- Custom touch scroll on `.xterm-wrap`: `vp.scrollTop += dy` on touchmove
-- Momentum: velocity tracking + `requestAnimationFrame` decay (0.93)
-- **Direction**: `dy = lastY - y`, then `scrollTop += dy` (finger up → dy positive → scrollTop increases → see earlier content)
-- **CDP touch simulation has OPPOSITE direction from real mobile** — trust user feedback over Playwright output
-- Scroll-to-bottom button shows when `_userScrolledUp`
-- Symmetric font scaling on virtual keyboard show/hide (otherwise viewport jumps)
+- Mobile uses a native text/scroll document; desktop retains xterm.
+- Never restore synthetic momentum, relocate xterm internal DOM, or send swipe gestures to the PTY.
+- Native iPhone selection/menu stays enabled. Copy maps visual wrapping back to source text.
+- Enter in the phone input adds a newline; only Send submits.
+- Mobile never resizes the shared PTY or automatically shrinks the font.
+- Original-message reading is available through the authenticated conversation view.
+- See `docs/terminal-viewports.md` for source limitations and verification status.
+- All browsers, including demos/tests, must follow `AGENTS.md`: non-root and sandbox enabled.
 
 ### Caching
 - All assets: `Cache-Control: no-cache, no-store, must-revalidate`

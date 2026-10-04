@@ -1,3 +1,6 @@
+import {WorkspaceTabs} from './WorkspaceTabs'
+import {useDrafts} from '../Terminal/drafts'
+import {HtmlView} from './HtmlView'
 import { useState, useRef, useCallback, useEffect, useMemo, useLayoutEffect, Fragment } from 'react'
 import { useStore, viewerKey, sessionLabel, type ViewerTab } from '../../store'
 import { useToasts } from '../../toasts'
@@ -51,7 +54,7 @@ function WorkspaceViewer({workspaceKey, tabs, activeTabId}: {workspaceKey:string
   useEffect(() => { saveLayout(workspaceKey, tree) }, [workspaceKey, tree])
 
   const select = (pane:string, id:string) => {
-    if (compact) pane = leaves(displayedTree).find(p => p.tabIds.includes(id))?.id || pane
+    pane = leaves(displayedTree).find(p => p.tabIds.includes(id))?.id || pane
     focused.current = pane
     const state = useStore.getState(), tab = tabs.find(t=>t.id===id)
     if (tab?.type==='terminal' && tab.sessionId) {
@@ -76,7 +79,7 @@ function WorkspaceViewer({workspaceKey, tabs, activeTabId}: {workspaceKey:string
   // Present all tabs in one full-width pane on phones. Only the original tree
   // is persisted, so rotating/resizing back restores the desktop split layout.
   const visibleTree:TreeNode = compact ? {type:'leaf',id:'mobile-view',tabIds:tabs.map(t=>t.id),activeTabId:activeTabId||tabs[0].id} : displayedTree
-  return <div className={`viewer-inner${compact?' compact-viewer':''}`}><RenderNode node={visibleTree} tabs={tabs} activeTabId={activeTabId} onSelect={select} onClose={(_pane,id)=>useStore.getState().closeTab(id)} onMove={move} onResize={resize} onMerge={merge} split={!compact&&displayedTree.type==='split'} /></div>
+  return <div className={`viewer-inner${compact?' compact-viewer':''}`}><RenderNode node={visibleTree} tabs={tabs} activeTabId={activeTabId} onSelect={select} onClose={(_pane,id)=>useStore.getState().closeTab(id,workspaceKey)} onMove={move} onResize={resize} onMerge={merge} split={!compact&&displayedTree.type==='split'} /></div>
 }
 
 interface PaneActions {
@@ -102,12 +105,12 @@ function RenderNode({node,...actions}: {node:TreeNode}&PaneActions) {
 
 function LeafPane({ node, tabs, activeTabId, split, onClose, onSelect, onMove, onMerge }: {node:PaneNode}&PaneActions) {
   const [dropZone, setDropZone] = useState<DropZone|null>(null)
-  const [dragTarget, setDragTarget] = useState<string | null>(null)
   const contentRef = useRef<HTMLDivElement>(null)
   const updateTab = useStore(s => s.updateTab)
   const markTabSaved = useStore(s => s.markTabSaved)
   const sessionState = useStore(s => s.sessions)
   const titles = useStore(s => s.titles)
+  const ownerKey = useStore(viewerKey)
   const activeSessionId = useStore(s => s.activeId)
   const activeTab = tabs.find(t => t.id === node.activeTabId) || tabs.find(t => node.tabIds.includes(t.id))
 
@@ -121,15 +124,22 @@ function LeafPane({ node, tabs, activeTabId, split, onClose, onSelect, onMove, o
 
   // ── Memo state ──
   const [memos, setMemos] = useState<Memo[]>([])
+  const [notesBusy,setNotesBusy]=useState(false)
+  const [noteTarget,setNoteTarget]=useState('')
+  const notePath=useRef(activeTab?.path);notePath.current=activeTab?.path
+  const noteSessions=Object.values(sessionState).filter(s=>JSON.stringify([s.host||'local',s.cwd||'~'])===ownerKey && s.status==='running' && s.online!==false)
+  const targetId=noteSessions.some(s=>s.id===noteTarget)?noteTarget:noteSessions.some(s=>s.id===activeSessionId)?activeSessionId||'':noteSessions.length===1?noteSessions[0].id:''
   const [selInfo, setSelInfo] = useState<{ startLine: number; startCol: number; endLine: number; endCol: number; selectedText: string } | null>(null)
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null)
   const pendingSelRef = useRef<{ startLine: number; startCol: number; endLine: number; endCol: number; text: string } | null>(null)
 
   useEffect(() => {
-    if (!activeTab || activeTab.type === 'terminal' || activeTab.type === 'browser' || activeTab.type === 'pdf' || activeTab.type === 'image') { setMemos([]); return }
-    api.loadNotes(activeTab.path).then(res => setMemos(res.notes || [])).catch(() => {})
-    setSelInfo(null)
-    setMdEditMode(false)
+    let alive=true
+    setMemos([]);setSelInfo(null);setCtxMenu(null);pendingSelRef.current=null;setMdEditMode(false)
+    if (!isTextTab || !activeTab) {setNotesBusy(false);return}
+    setNotesBusy(true)
+    api.loadNotes(activeTab.path).then(res=>{if(alive)setMemos(res.notes||[])}).catch(()=>{}).finally(()=>{if(alive)setNotesBusy(false)})
+    return()=>{alive=false}
   }, [activeTab?.id])
 
   // ── Right-click on selected text → context menu (used by CodeEditor) ──
@@ -150,7 +160,6 @@ function LeafPane({ node, tabs, activeTabId, split, onClose, onSelect, onMove, o
     updateTab(activeTab.id, value)
   }, [activeTab?.id])
 
-  const ownerKey = useStore(viewerKey)
   const rememberView = useCallback((view: NonNullable<ViewerTab['viewState']>) => {
     if (activeTab) useStore.getState().updateTabView(activeTab.id, view, ownerKey)
   }, [activeTab?.id, ownerKey])
@@ -187,36 +196,34 @@ function LeafPane({ node, tabs, activeTabId, split, onClose, onSelect, onMove, o
   }, [activeTab, ownerKey])
 
   // ── Memo CRUD ──
-  const handleSaveMemo = useCallback((newMemo: Memo) => {
-    if (!activeTab) return
-    const updated = [...memos, newMemo]
-    setMemos(updated)
-    setSelInfo(null)
-    api.saveNotes(activeTab.path, updated)
-  }, [activeTab, memos])
-
-  const deleteMemo = async (idx: number) => {
-    if (!activeTab) return
-    const updated = memos.filter((_, i) => i !== idx)
-    setMemos(updated)
-    await api.saveNotes(activeTab.path, updated)
+  const saveMemoList=async(updated:Memo[])=>{
+    if(!activeTab||notesBusy)return false
+    const path=activeTab.path
+    setNotesBusy(true)
+    try{
+      const result=await api.saveNotes(path,updated)
+      if(result.ok===false)return false
+      if(notePath.current===path)setMemos(updated)
+      return true
+    }finally{if(notePath.current===path)setNotesBusy(false)}
   }
+  const handleSaveMemo=async(newMemo:Memo)=>{
+    const path=activeTab?.path
+    if(await saveMemoList([...memos,newMemo])&&notePath.current===path)setSelInfo(null)
+  }
+  const deleteMemo=(idx:number)=>saveMemoList(memos.filter((_,i)=>i!==idx))
 
-  const sendMemosToAgent = async () => {
-    if (!activeTab || !activeSessionId || memos.length === 0) return
-    const sorted = [...memos].sort((a, b) => a.startLine - b.startLine)
-    const parts: string[] = []
-    parts.push(`@${activeTab.path} 수정 요청:`)
-    for (const m of sorted) {
-      const loc = m.startCol
-        ? `L${m.startLine}:${m.startCol}-${m.endLine}:${m.endCol}`
-        : `L${m.startLine}${m.endLine !== m.startLine ? `-${m.endLine}` : ''}`
-      parts.push(`- [${loc}] ${m.text}`)
+  const sendMemosToAgent=()=>{
+    if(!activeTab||!targetId||notesBusy||!memos.length)return
+    const session=sessionState[targetId]
+    const parts=[`파일: ${activeTab.path}`, '다음 메모에 따라 수정해 주세요. 선택 문장을 기준으로 위치를 확인해 주세요.']
+    for(const m of [...memos].sort((a,b)=>a.startLine-b.startLine)){
+      parts.push(`\n${m.startLine>0?`[L${m.startLine}${m.endLine!==m.startLine?'-'+m.endLine:''}] `:''}요청: ${m.text}`)
+      if(m.selectedText)parts.push('선택 문장:\n'+m.selectedText.split('\n').map(line=>'> '+line).join('\n'))
     }
-    await api.paste(activeSessionId, parts.join('\n'))
-    setMemos([])
-    setSelInfo(null)
-    await api.saveNotes(activeTab.path, [])
+    const key=JSON.stringify([session.host||'local',session.id,session.cwd||'~'])
+    useDrafts.getState().write(key,previous=>[previous,parts.join('\n')].filter(Boolean).join('\n\n'))
+    useStore.getState().setActive(targetId)
   }
 
   const refreshTab = async () => {
@@ -258,8 +265,9 @@ function LeafPane({ node, tabs, activeTabId, split, onClose, onSelect, onMove, o
 
   return (
     <div className={`leaf-pane ${node.activeTabId===activeTabId?'focused-pane':''}`} data-pane-id={node.id}
-      onPointerDownCapture={e=>{if(!(e.target as HTMLElement).closest('.vtab-bar, a')&&activeTab)onSelect(node.id,activeTab.id)}}
-      onFocusCapture={e=>{if(!(e.target as HTMLElement).closest('.vtab-bar, a')&&activeTab&&node.activeTabId!==activeTabId)onSelect(node.id,activeTab.id)}}
+      onPointerDownCapture={e=>{if(!(e.target as HTMLElement).closest('.vtab-bar, .workspace-tabs-popup, a')&&activeTab)onSelect(node.id,activeTab.id)}}
+      onFocusCapture={e=>{if(!(e.target as HTMLElement).closest('.vtab-bar, .workspace-tabs-popup, a')&&activeTab&&node.activeTabId!==activeTabId)onSelect(node.id,activeTab.id)}}
+      onDragEnd={()=>setDropZone(null)}
       onDragOver={e=>{
         if(!e.dataTransfer.types.includes('application/agentboard-tab')||(e.target as HTMLElement).closest('.vtab-bar'))return
         e.preventDefault();const r=e.currentTarget.getBoundingClientRect(),x=(e.clientX-r.left)/r.width,y=(e.clientY-r.top)/r.height
@@ -268,26 +276,10 @@ function LeafPane({ node, tabs, activeTabId, split, onClose, onSelect, onMove, o
       onDragLeave={e=>{if(!e.currentTarget.contains(e.relatedTarget as Node))setDropZone(null)}}
       onDrop={e=>{document.body.classList.remove('dragging-viewer-tab');const id=e.dataTransfer.getData('application/agentboard-tab');if(!id)return;e.preventDefault();onMove(id,node.id,dropZone||'center');setDropZone(null)}}
     >
-      <div className="vtab-bar">
-        {node.tabIds.map(tid => {
-          const t = tabs.find(tt => tt.id === tid)
-          if (!t) return null
-          return (
-            <div key={t.id} className={`vtab ${t.id === node.activeTabId ? 'active' : ''} ${dragTarget === t.id ? 'tab-drop-target' : ''}`}
-              draggable
-              onDragStart={e => { document.body.classList.add('dragging-viewer-tab'); e.dataTransfer.setData('application/agentboard-tab', t.id); e.dataTransfer.effectAllowed = 'move' }}
-              onDragOver={e => { if (e.dataTransfer.types.includes('application/agentboard-tab')) { e.preventDefault(); setDragTarget(t.id) } }}
-              onDragLeave={() => setDragTarget(null)}
-              onDragEnd={() => { document.body.classList.remove('dragging-viewer-tab'); setDragTarget(null); setDropZone(null) }}
-              onDrop={e => { document.body.classList.remove('dragging-viewer-tab'); e.preventDefault(); e.stopPropagation(); const id = e.dataTransfer.getData('application/agentboard-tab'); const r = e.currentTarget.getBoundingClientRect(); if (id) { onMove(id,node.id,'center'); useStore.getState().reorderTab(id, t.id, e.clientX > r.left + r.width / 2) }; setDragTarget(null) }}
-              onClick={() => onSelect(node.id, t.id)}
-            >
-              <span className={`tab-kind tab-kind-${t.type}`}>{t.type === 'browser' ? '◎' : t.type === 'terminal' ? '›_' : t.type === 'pdf' ? 'PDF' : '▤'}</span>
-              <span className="vtab-name" title={t.type === 'terminal' && t.sessionId && sessionState[t.sessionId] ? sessionLabel(sessionState[t.sessionId], titles) : t.path}>{t.type === 'terminal' && t.sessionId && sessionState[t.sessionId] ? sessionLabel(sessionState[t.sessionId], titles) : t.name}</span>
-              <span title={t.type === 'terminal' ? '탭 닫기 (세션 유지)' : '탭 닫기'} className="vtab-close vtab-x" onClick={e => { e.stopPropagation(); onClose(node.id, t.id) }}>&times;</span>
-            </div>
-          )
-        })}
+      <WorkspaceTabs tabs={tabs} paneIds={node.tabIds} activeId={activeTab?.id||null}
+        onSelect={id=>onSelect(node.id,id)} onClose={id=>onClose(node.id,id)}
+        onDrop={(id,target,after)=>{onMove(id,node.id,'center');useStore.getState().reorderTab(id,target,after);setDropZone(null)}}
+        actions={
         <div className="vtab-actions">
           <button className="vtab-action vtab-action-split" title="좌우 분할 (선택한 탭을 오른쪽으로)" disabled={node.tabIds.length<2} onClick={()=>activeTab&&onMove(activeTab.id,node.id,'right')}>◫</button>
           <button className="vtab-action vtab-action-split" title="상하 분할 (선택한 탭을 아래로)" disabled={node.tabIds.length<2} onClick={()=>activeTab&&onMove(activeTab.id,node.id,'bottom')}>⬒</button>
@@ -298,12 +290,10 @@ function LeafPane({ node, tabs, activeTabId, split, onClose, onSelect, onMove, o
           {activeTab?.type !== 'terminal' && activeTab?.type !== 'browser' && <button className="vtab-action" onClick={downloadTab} title="Download">↓</button>}
           {activeTab?.type !== 'terminal' && activeTab?.type !== 'browser' && !isNb && <button className="vtab-action" onClick={refreshTab} title="Refresh">↻</button>}
           {isTextTab && memos.length > 0 && (
-            <button className="vtab-action vtab-send" onClick={sendMemosToAgent} title="Send notes to agent">
-              ▶ {memos.length}
-            </button>
+            <><select className="memo-target-select" aria-label="메모를 받을 세션" value={targetId} onChange={e=>setNoteTarget(e.target.value)}><option value="">대상 세션 선택</option>{noteSessions.map(s=><option key={s.id} value={s.id}>{sessionLabel(s,titles)}</option>)}</select><button className="vtab-action vtab-send" disabled={notesBusy||!targetId} onClick={sendMemosToAgent} title="기존 입력에 메모를 추가합니다. 전송 전 내용을 확인하세요.">채팅에 넣기 · {memos.length}</button></>
           )}
         </div>
-      </div>
+      } />
       <div className="viewer-body">
       <div ref={contentRef} className={`viewer-content ${activeTab?.type === 'terminal' ? 'terminal-tab-content' : activeTab?.type === 'browser' ? 'browser-tab-content' : ''}`} onClick={e => {
         setCtxMenu(null)
@@ -317,6 +307,7 @@ function LeafPane({ node, tabs, activeTabId, split, onClose, onSelect, onMove, o
           : activeTab.type === 'diff' ? <DiffView diff={activeTab.content} />
           : activeTab.type === 'pdf' ? <PdfViewer key={activeTab.id} url={activeTab.content} viewState={activeTab.viewState} onViewChange={rememberView} />
           : activeTab.type === 'image' ? <FileContent content={activeTab.content} type="image" lang="" />
+          : activeTab.type==='code'&&/\.html?$/i.test(activeTab.name) ? <HtmlView key={activeTab.id} content={activeTab.content} onChange={onContentChange} onSave={saveFile}/>
           : isNb ? <NotebookView key={activeTab.path} tab={activeTab} ownerKey={ownerKey} />
           : (isMd && !mdEditMode) ? <MarkdownView content={activeTab.content} filePath={activeTab.path} onContextMenu={handleCtxMenu} onEdit={saveMdEdit} />
           : (
@@ -338,19 +329,19 @@ function LeafPane({ node, tabs, activeTabId, split, onClose, onSelect, onMove, o
       {dropZone&&<div className={`pane-drop-overlay pane-drop-${dropZone}`}>{dropZone==='center'?'이 화면으로 탭 이동':'여기에 화면 분할'}</div>}
       {ctxMenu && (
         <div className="ctx-menu" style={{ left: ctxMenu.x, top: ctxMenu.y }} onClick={e => e.stopPropagation()}>
-          <button className="ctx-menu-item" onClick={addNoteFromCtx}>+ Add Note</button>
+          <button className="ctx-menu-item" disabled={notesBusy} onClick={addNoteFromCtx}>＋ 메모 추가</button>
         </div>
       )}
       {selInfo && (
-        <MemoInputPanel selInfo={selInfo} onSave={handleSaveMemo} onCancel={() => setSelInfo(null)} />
+        <MemoInputPanel busy={notesBusy} selInfo={selInfo} onSave={handleSaveMemo} onCancel={() => setSelInfo(null)} />
       )}
       {isTextTab && memos.length > 0 && !selInfo && (
         <div className="memo-list">
-          {[...memos].sort((a,b) => a.startLine - b.startLine).map((m, i) => (
+          {memos.map((m,i)=>({m,i})).sort((a,b)=>a.m.startLine-b.m.startLine).map(({m,i}) => (
             <div key={i} className="memo-item">
-              <span className="memo-item-range">{m.startCol ? `L${m.startLine}:${m.startCol}-${m.endLine}:${m.endCol}` : `L${m.startLine}${m.endLine !== m.startLine ? `-${m.endLine}` : ''}`}</span>
+              <span className="memo-item-range">{m.startLine===0?'선택 문장':m.startCol ? `L${m.startLine}:${m.startCol}-${m.endLine}:${m.endCol}` : `L${m.startLine}${m.endLine !== m.startLine ? `-${m.endLine}` : ''}`}</span>
               <span className="memo-item-text">{m.text}</span>
-              <button className="memo-item-del" onClick={() => deleteMemo(i)}>&times;</button>
+              <button className="memo-item-del" disabled={notesBusy} onClick={() => deleteMemo(i)}>&times;</button>
             </div>
           ))}
         </div>
@@ -377,8 +368,9 @@ function DiffView({ diff }: { diff: string }) {
 }
 
 /** Isolated memo input — typing here does NOT re-render FileContent */
-function MemoInputPanel({ selInfo, onSave, onCancel }: {
+function MemoInputPanel({ selInfo, onSave, onCancel, busy }: {
   selInfo: { startLine: number; startCol: number; endLine: number; endCol: number; selectedText: string }
+  busy:boolean
   onSave: (memo: Memo) => void
   onCancel: () => void
 }) {
@@ -387,16 +379,15 @@ function MemoInputPanel({ selInfo, onSave, onCancel }: {
   useEffect(() => { setTimeout(() => ref.current?.focus(), 50) }, [])
 
   const save = () => {
-    if (!text.trim()) return
+    if (busy||!text.trim()) return
     onSave({ startLine: selInfo.startLine, startCol: selInfo.startCol, endLine: selInfo.endLine, endCol: selInfo.endCol, text: text.trim(), selectedText: selInfo.selectedText })
-    setText('')
   }
 
   return (
     <div className="memo-panel">
       <div className="memo-panel-header">
         <span className="memo-panel-range">
-          L{selInfo.startLine}:{selInfo.startCol}-{selInfo.endLine}:{selInfo.endCol}
+          {selInfo.startLine>0?`L${selInfo.startLine}–${selInfo.endLine}`:'선택 문장'}
         </span>
         <span className="memo-panel-excerpt">{selInfo.selectedText.slice(0, 60)}{selInfo.selectedText.length > 60 ? '...' : ''}</span>
         <button className="btn btn-xs" onClick={onCancel}>&times;</button>
@@ -406,13 +397,13 @@ function MemoInputPanel({ selInfo, onSave, onCancel }: {
         className="memo-textarea"
         value={text}
         onChange={e => setText(e.target.value)}
-        placeholder="Add a note..."
+        placeholder="수정 요청을 입력하세요…"
         rows={2}
         onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) save() }}
       />
       <div className="memo-panel-actions">
-        <button className="btn btn-xs" onClick={onCancel}>Cancel</button>
-        <button className="btn btn-xs btn-primary" onClick={save} disabled={!text.trim()}>Save</button>
+        <button className="btn btn-xs" onClick={onCancel}>취소</button>
+        <button className="btn btn-xs btn-primary" onClick={save} disabled={busy||!text.trim()}>{busy?'저장 중…':'메모 저장'}</button>
       </div>
     </div>
   )
@@ -472,25 +463,22 @@ function MarkdownView({ content, filePath, onContextMenu, onEdit }: { content: s
     const sel = window.getSelection()
     if (!sel || sel.isCollapsed || !sel.toString().trim()) return
     e.preventDefault()
+    e.stopPropagation()
     const text = sel.toString().trim()
-    // Find the selected text in the source markdown to get line numbers
-    const lines = content.split('\n')
-    let startLine = 1, endLine = 1
-    // Search for the first few words in source
-    const searchKey = text.slice(0, 80).replace(/\s+/g, ' ')
-    for (let i = 0; i < lines.length; i++) {
-      if (lines[i].includes(searchKey) || lines.slice(i, i + 3).join(' ').includes(searchKey)) {
-        startLine = i + 1
-        endLine = startLine
-        break
-      }
-    }
+    if(!bodyRef.current?.contains(sel.anchorNode)||!bodyRef.current.contains(sel.focusNode))return
+    // Only claim line numbers for a unique exact source match. Rendered
+    // emphasis, links and repeated passages are located by their quoted text.
+    const offset=content.indexOf(text)
+    const exact=offset>=0&&content.indexOf(text,offset+1)<0
+    const startLine=exact?content.slice(0,offset).split('\n').length:0
+    const endLine=exact?startLine+text.split('\n').length-1:0
     onContextMenu({ startLine, startCol: 0, endLine, endCol: 0, text, x: e.clientX, y: e.clientY })
   }, [onContextMenu, content])
 
   return (
     <div className="md-wrap">
       <div className="md-zoom-toolbar">
+        <button className="md-zoom-btn" onMouseDown={e=>e.preventDefault()} onClick={handleContextMenu} title="문장을 선택한 뒤 메모 추가">선택에 메모</button>
         <button className="md-zoom-btn" onClick={zoomOut} title="Zoom out">−</button>
         <span className="md-zoom-label" onClick={zoomReset} title="Reset">{Math.round(zoom * 100)}%</span>
         <button className="md-zoom-btn" onClick={zoomIn} title="Zoom in">+</button>

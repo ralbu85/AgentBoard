@@ -70,6 +70,6 @@ backend/.venv/bin/python -m pytest backend/tests/test_desktop.py -q
 AGENTBOARD_TEST_PYTHON=backend/.venv/bin/python xvfb-run -a npm --prefix desktop run test:integration
 ```
 
-통합 검사는 임시 프로필·독립 FastAPI 서버·가짜 터미널 세션으로 실제 Electron과 인증 제어 릴레이를 검사한다. 운영 에이전트에 입력하지 않는다. Linux의 일반 사용자 실행에서는 Chromium 샌드박스를 사용한다. 루트 컨테이너 안의 통합 테스트에만 `--no-sandbox`를 전달한다.
+통합 검사는 임시 프로필·독립 FastAPI 서버·가짜 터미널 세션으로 실제 Electron과 인증 제어 릴레이를 검사한다. 운영 에이전트에 입력하지 않는다. 일반 사용자 계정에서 Chromium 샌드박스를 켜고 실행한다. root 계정과 샌드박스 해제 옵션은 앱과 통합 테스트 모두 거부한다. 샌드박스를 지원하지 않는 컨테이너에서는 통합 테스트를 실행하지 않는다.
 
 구현 근거: [Electron WebContentsView](https://www.electronjs.org/docs/latest/api/web-contents-view), [webContents](https://www.electronjs.org/docs/latest/api/web-contents), [보안 지침](https://www.electronjs.org/docs/latest/tutorial/security).

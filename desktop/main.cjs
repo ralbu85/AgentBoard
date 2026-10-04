@@ -1,4 +1,6 @@
 const {app,BrowserWindow,ipcMain,Menu,dialog,shell} = require('electron')
+require('./browser-security.cjs').assertBrowserSafety()
+app.enableSandbox()
 const path=require('node:path')
 const fs=require('node:fs')
 const os=require('node:os')

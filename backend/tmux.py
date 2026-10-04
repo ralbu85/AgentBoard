@@ -3,9 +3,12 @@ from __future__ import annotations
 import asyncio
 import os
 import shlex
+import re
 from pathlib import Path
+from wcwidth import wcwidth
 
 from . import config
+from .terminal_geometry import FrameText
 
 TMUX_TIMEOUT = 5.0
 
@@ -53,10 +56,47 @@ async def capture_pane(session_name: str, lines: int = 50, ansi: bool = True,
 # Separates capture text from the cursor line in capture_with_cursor's chained
 # output. Pane content never contains C0 controls (tmux stores printable cells).
 _CURSOR_SENTINEL = "\x01"
+_JOINED_SENTINEL = "\x02\n"
+_ANSI_CAPTURE = re.compile(r'\x1b\[[0-?]*[ -/]*[@-~]|\x1b[()][0-2A-Z]')
 
 
-async def capture_with_cursor(session_name: str, ansi: bool = True) -> tuple[str, tuple[int, int, bool] | None]:
-    """Visible-screen capture + cursor position in ONE tmux invocation.
+def _with_soft_wraps(body: str, joined: str, cols: int) -> FrameText:
+    """Recover only boundaries verified by tmux's -J capture, never by prose heuristics.
+
+    -J preserves padding while joining soft-wrapped rows. Validate each physical
+    row against the ordinary capture; on Unicode/version disagreement retain the
+    original frame without guessing which explicit newlines could be removed.
+    """
+    rows = body.removesuffix('\n').split('\n')
+    plain = [_ANSI_CAPTURE.sub('', row) for row in rows]
+    wrapped, padded, index = [], list(rows), 0
+    for logical in joined.removesuffix('\n').split('\n'):
+        chunks, current, used = [], '', 0
+        for char in logical:
+            size = max(0, wcwidth(char, unicode_version='11.0.0'))
+            if size and used == cols:
+                chunks.append(current); current, used = '', 0
+            if used + size > cols:
+                return FrameText(body)
+            current += char; used += size
+        chunks.append(current)
+        for offset, chunk in enumerate(chunks):
+            if index >= len(rows) or chunk.rstrip(' ') != plain[index].rstrip(' '):
+                return FrameText(body)
+            if offset < len(chunks)-1:
+                wrapped.append(index)
+                # Ordinary capture trims spaces at the margin. Restore those
+                # verified by -J before a mobile client joins these rows.
+                padding = len(chunk) - len(plain[index])
+                padded[index] += ' ' * max(0, padding)
+            index += 1
+    if index != len(rows):
+        return FrameText(body)
+    return FrameText('\n'.join(padded)+'\n', wrapped)
+
+
+async def capture_with_cursor(session_name: str, ansi: bool = True, lines: int = 0) -> tuple[str, tuple[int, int, bool] | None]:
+    """Screen (optionally with history) + cursor in ONE tmux invocation.
 
     capture-pane output carries no cursor location, so frames rendered from it
     leave the client cursor at the end of the content — wrong place for typing.
@@ -64,17 +104,26 @@ async def capture_with_cursor(session_name: str, ansi: bool = True) -> tuple[str
     count unchanged. Returns (text, (x, y, visible)) with 0-based viewport
     coords, or (text, None) if the cursor line is missing (e.g. tmux error).
     """
-    args = ["capture-pane", "-t", session_name, "-p", "-S", "-0"]
+    # Snapshot history and cursor must come from the same tmux command queue,
+    # too. Reading the cursor before a second history capture races new output.
+    args = ["capture-pane", "-t", session_name, "-p", "-S", f"-{lines}"]
     if ansi:
         args.append("-e")
-    args += [";", "display-message", "-t", session_name, "-p",
-             _CURSOR_SENTINEL + "#{cursor_x};#{cursor_y};#{cursor_flag}"]
+    args += [";", "display-message", "-t", session_name, "-p", _JOINED_SENTINEL.rstrip('\n'),
+             ";", "capture-pane", "-t", session_name, "-p", "-J", "-S", f"-{lines}",
+             ";", "display-message", "-t", session_name, "-p",
+             _CURSOR_SENTINEL + "#{cursor_x};#{cursor_y};#{cursor_flag};#{pane_width}"]
     raw = await tmux_run(args)
     body, sep, tail = raw.rpartition(_CURSOR_SENTINEL)
     if not sep:
         return raw, None
     parts = tail.strip().split(";")
+    original, split, joined = body.partition(_JOINED_SENTINEL)
+    if split:
+        body = original
     try:
+        if split and len(parts) >= 4:
+            body = _with_soft_wraps(original, joined, int(parts[3]))
         return body, (int(parts[0]), int(parts[1]), parts[2] == "1")
     except (IndexError, ValueError):
         return body, None
@@ -110,6 +159,13 @@ async def resize_window_height(session_name: str, rows: int) -> None:
     await tmux_run(["resize-window", "-t", session_name, "-y", str(rows)])
 
 
+def clean_pane_title(title: str) -> str:
+    # OSC titles can carry animated state, not part of the conversation name.
+    title = re.sub(r"^[\s✳✻✽✶✢·●]+", "", title.strip())
+    title = re.sub(r"^\[\s*[.!•*…]\s*\]\s*(?:(?:Action Required|Working|Thinking|Idle|Done)\s*\|\s*)?", "", title, flags=re.I)
+    return title.strip()[:256]
+
+
 async def display_info(session_name: str) -> dict:
     raw = await tmux_run([
         "display-message", "-t", session_name, "-p",
@@ -124,7 +180,7 @@ async def display_info(session_name: str) -> dict:
         # 1 while a full-screen app (vim/less/TUI) holds the alternate screen —
         # that buffer has no scrollback, so the client can't scroll it.
         "alt_screen": parts[4] == "1" if len(parts) > 4 else False,
-        "auto_title": parts[5].strip()[:256] if len(parts) > 5 else "",
+        "auto_title": clean_pane_title(parts[5]) if len(parts) > 5 else "",
     }
 
 
@@ -205,3 +261,12 @@ async def paste_text(session_name: str, text: str) -> None:
     await tmux_run(["load-buffer", str(tmp)])
     await tmux_run(["paste-buffer", "-t", session_name, "-d"])
     tmp.unlink(missing_ok=True)
+
+
+async def pane_size(session_name: str) -> tuple[int, int] | None:
+    raw = await tmux_run(['display-message', '-p', '-t', session_name, '#{pane_width};#{pane_height}'])
+    try:
+        cols, rows = raw.strip().split(';')
+        return int(cols), int(rows)
+    except (ValueError, TypeError):
+        return None

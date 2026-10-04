@@ -7,7 +7,7 @@ Each session gets:
   - A ring buffer (last 8KB) for state detection
 
 Snapshot (session switch): one-shot capture-pane with full history.
-Background poll (2s): metadata + state detection for inactive sessions.
+Background poll (1s): metadata + state detection for inactive sessions.
 """
 from __future__ import annotations
 
@@ -15,6 +15,7 @@ import asyncio
 import os
 from typing import Callable
 
+from .terminal_geometry import viewports, frame_meta, stable, FrameText
 from . import tmux, config
 from .logger import log
 from .state_detector import detect_state, has_busy_indicator, activity_signature, completion_signature
@@ -30,6 +31,7 @@ _last_state_check: dict[str, float] = {}     # id → monotonic time of last sta
 _last_history_size: dict[str, int] = {}      # id → tmux #{history_size} at last poll
 _last_hist_edge: dict[str, str] = {}         # id → last scrollback line (growth signal at the cap)
 _last_cursor: dict[str, tuple | None] = {}   # id → last pane cursor (x, y, visible)
+_last_wraps: dict[str, tuple | None] = {}    # same cells can gain/lose a soft boundary
 _last_snapshot_at: dict[str, float] = {}     # id → last history-growth snapshot time
 _alt_override: set[str] = set()              # ids with a window-local alternate-screen override
 
@@ -40,7 +42,7 @@ STATE_CHECK_INTERVAL = 0.5  # check state every 500ms even if output unchanged
 
 RING_SIZE = 8192
 ACTIVE_POLL_MS = 80
-BG_POLL_MS = 2000
+BG_POLL_MS = 1000
 MIN_BROADCAST_INTERVAL = 0.08  # 80ms min between broadcasts per session
 # Min seconds between history-growth re-snapshots. While a session streams,
 # history grows on nearly every poll; unthrottled that is a full multi-thousand-
@@ -63,17 +65,28 @@ def _active_sleep_for(primary_id: str | None) -> float:
     last_change = _last_change_at.get(primary_id)
     if last_change is None:
         return ACTIVE_POLL_MS / 1000
+    # A quiet primary must not slow down another visible pane or a pending
+    # state transition. Keep debounce, but sample it promptly.
+    active_ids = get_active_session_ids()
+    if any(sid in _pending_state for sid in active_ids):
+        return ACTIVE_POLL_MS / 1000
+    last_change = max((_last_change_at.get(sid, last_change) for sid in active_ids), default=last_change)
     idle_for = _time.monotonic() - last_change
     for threshold, sleep_s in _ACTIVE_POLL_TIERS:
         if idle_for < threshold:
-            return sleep_s
-    return _ACTIVE_POLL_IDLE_S
+            return min(sleep_s, STATE_CHECK_INTERVAL) if len(active_ids) > 1 else sleep_s
+    return STATE_CHECK_INTERVAL if len(active_ids) > 1 else _ACTIVE_POLL_IDLE_S
 
 # Strip cursor visibility/position codes that cause false diffs (cursor blink)
 _CURSOR_RE = _re.compile(r'\x1b\[\??(25[hl]|\d*[ABCDHJ])')
 
 def _strip_cursor(s: str) -> str:
     return _CURSOR_RE.sub('', s)
+
+
+def _wrap_signature(text):
+    rows = getattr(text, 'wrapped_rows', None)
+    return tuple(rows) if rows is not None else None
 
 def set_broadcast(fn: Callable):
     global _broadcast
@@ -93,19 +106,23 @@ def set_active(id: str | None, ws_id: int = 0):
 def remove_client(ws_id: int):
     """Clean up when a WS client disconnects."""
     _active_ids.pop(ws_id, None)
+    viewports.release(ws_id)
 
 def get_active_session_ids() -> set[str]:
     """Return all session IDs that any client is actively viewing."""
-    return set(_active_ids.values())
+    return set(_active_ids.values()) | viewports.sessions()
 
 
 def local_viewers(local_id: str) -> list[int]:
     """ws_ids currently viewing this LOCAL session — targets for its per-session
     frames (screen/snapshot), so we don't fan them out to browsers looking
     elsewhere. Remote sessions are keyed separately in ws._ws_remote."""
-    return [wsid for wsid, sid in _active_ids.items() if sid == local_id]
+    return list({wsid for wsid, sid in _active_ids.items() if sid == local_id} | set(viewports.viewers(local_id)))
 
 def broadcast(msg: dict):
+    if msg.get('type') in ('screen', 'snapshot'):
+        from .sessions import store
+        msg = {**frame_meta(store.get(msg.get('id', '')), msg.get('data')), **msg}
     if _broadcast:
         _broadcast(msg)
 
@@ -154,6 +171,7 @@ async def stop_stream(id: str, session_name: str):
     _last_history_size.pop(id, None)
     _last_hist_edge.pop(id, None)
     _last_cursor.pop(id, None)
+    _last_wraps.pop(id, None)
     _last_snapshot_at.pop(id, None)
     _alt_override.discard(id)
     _state_samples.pop(id, None)
@@ -220,8 +238,8 @@ def _cursor_suffix(current_body: str, cur: tuple[int, int, bool] | None) -> str:
     which makes the same suffix correct for both `screen` frames (written from
     the viewport top) and snapshots (current screen written last).
 
-    current_body: the frame's current-screen portion, trailing newlines
-    stripped — the same string whose last line the client cursor ends on.
+    current_body: the frame's current-screen portion without the capture
+    delimiter, preserving empty rows — the last line is where writing ends.
     """
     if cur is None:
         return ""
@@ -258,7 +276,25 @@ async def _normal_snapshot_body(session_name: str) -> str:
     duplicate (and empty history just yields the visible screen — no clamping).
     """
     full = await tmux.capture_pane(session_name, lines=SNAPSHOT_HISTORY, ansi=True)
-    return full.rstrip("\n").replace("\n", "\r\n")
+    # Keep empty source rows: tall clients anchor the last source-height rows
+    # below the history. Only the capture delimiter is removed.
+    return full.removesuffix("\n").replace("\n", "\r\n")
+
+
+async def _capture_snapshot(session_name: str, alt: bool, rows: int):
+    """Capture history, current rows and cursor together; never mix two frames."""
+    full, cur = await tmux.capture_with_cursor(
+        session_name, lines=0 if alt else SNAPSHOT_HISTORY,
+    )
+    if not full:
+        return "", "", cur
+    body = full.removesuffix("\n")
+    current = "\n".join(body.split("\n")[-rows:])
+    data = FrameText(body.replace("\n", "\r\n") + _cursor_suffix(current, cur), getattr(full, 'wrapped_rows', None))
+    first_current = max(0, body.count('\n')+1-rows)
+    wraps = getattr(full, 'wrapped_rows', None)
+    visible = FrameText(current+'\n', [row-first_current for row in wraps if row>=first_current] if wraps is not None else None)
+    return data, visible, cur
 
 
 def _combine_snapshot(history: str, current: str) -> str:
@@ -274,28 +310,22 @@ def _combine_snapshot(history: str, current: str) -> str:
 async def get_snapshot(id: str, session_name: str) -> str:
     from .sessions import store
     s = store.get(id)
-    if not s:
+    revision = getattr(s, 'grid_revision', 0)
+    if not s or not stable(s, revision):
         return ""
 
     info_str = await tmux.display_info(session_name)
     alt = info_str.get("alt_screen", False)
-    current, cur = await tmux.capture_with_cursor(session_name)
+    combined, current, cur = await _capture_snapshot(
+        session_name, alt, getattr(s, 'display_rows', 40),
+    )
     hist_size = 0
     try:
         hist_size, _ = await tmux.history_info(session_name)
     except Exception as e:
         log.debug("history size fetch failed for %s: %s", session_name, e)
-    if alt:
-        # Full-screen app (alt-screen): its scrollback lives INSIDE the app, not
-        # in tmux. tmux's normal-buffer scrollback is frozen/stale, so stitching
-        # it under the current screen makes scroll-up jump to unrelated old
-        # content (out of order). Show only the faithful current screen.
-        combined = current.rstrip("\n").replace("\n", "\r\n")
-    else:
-        # Normal pane: history + current screen in ONE atomic capture
-        # (see _normal_snapshot_body — a two-call stitch races and duplicates).
-        combined = await _normal_snapshot_body(session_name)
-    combined += _cursor_suffix(current.rstrip("\n"), cur)
+    if not stable(s, revision):
+        return ''
 
     _update_info(id, s, info_str)
     # Viewing/resizing a session is not evidence of a new agent turn.
@@ -303,6 +333,7 @@ async def get_snapshot(id: str, session_name: str) -> str:
     # Cache the visible capture so the next poll doesn't see a diff and re-broadcast.
     _last_screen[id] = _strip_cursor(current)
     _last_cursor[id] = cur
+    _last_wraps[id] = _wrap_signature(current)
 
     # Sync history baseline so the next active poll doesn't re-broadcast
     # scrollback already included in this snapshot
@@ -314,7 +345,7 @@ async def get_snapshot(id: str, session_name: str) -> str:
     except Exception as e:
         log.debug("history baseline sync failed for %s: %s", session_name, e)
 
-    return combined
+    return combined if stable(s, revision) else ''
 
 
 async def poll_now(id: str):
@@ -323,14 +354,23 @@ async def poll_now(id: str):
     if not s or s.status in ("stopped", "completed"):
         return
     try:
+        revision = getattr(s, 'grid_revision', 0)
+        if not stable(s, revision):
+            return
         output, cur = await tmux.capture_with_cursor(s.session_name)
+        if not stable(s, revision):
+            return
         stripped = _strip_cursor(output)
-        if stripped != _last_screen.get(id) or cur != _last_cursor.get(id):
+        if stripped != _last_screen.get(id) or cur != _last_cursor.get(id) or _wrap_signature(output) != _last_wraps.get(id):
             _last_screen[id] = stripped
             _last_cursor[id] = cur
-            body = output.rstrip("\n")
-            broadcast({"type": "screen", "id": id,
-                       "data": body.replace("\n", "\r\n") + _cursor_suffix(body, cur)})
+            _last_wraps[id] = _wrap_signature(output)
+            _last_change_at[id] = _time.monotonic()
+            body = output.removesuffix("\n")
+            broadcast({"type": "screen", "id": id, **frame_meta(s),
+                       "data": FrameText(body.replace("\n", "\r\n") + _cursor_suffix(body, cur), getattr(output, 'wrapped_rows', None))})
+        _last_state_check[id] = _time.monotonic()
+        _detect_state(id, s, output)
     except Exception as e:
         log.debug("poll_now capture failed for %s: %s", s.session_name, e)
 
@@ -338,7 +378,6 @@ async def poll_now(id: str):
 # ── Background polling ──
 
 async def _poll_active():
-    _rr_index = 0
     primary: str | None = None
     while True:
         await asyncio.sleep(_active_sleep_for(primary))
@@ -347,15 +386,12 @@ async def _poll_active():
             primary = None
             continue
 
-        # Prioritize the most recently activated session
-        # Poll it every cycle, others round-robin on alternating cycles
+        # Sample every visible secondary at least once per state interval.
+        # Round-robin every third primary poll starved split panes for seconds.
         primary = _last_active_id if _last_active_id in active_ids else active_ids[0]
-        others = [sid for sid in active_ids if sid != primary]
-
-        to_poll = [primary]
-        if others and _rr_index % 3 == 0:
-            to_poll.append(others[(_rr_index // 3) % len(others)])
-        _rr_index += 1
+        now = _time.monotonic()
+        to_poll = [primary] + [sid for sid in active_ids if sid != primary
+                              and now - _last_state_check.get(sid, -1) >= STATE_CHECK_INTERVAL]
 
         from .sessions import store
         now = _time.monotonic()
@@ -391,21 +427,21 @@ async def _poll_active():
                     # Scrollback grew — re-snapshot (throttled, see
                     # SNAPSHOT_MIN_INTERVAL). Alt-screen: current only (its
                     # scrollback isn't in tmux); normal: history + current screen.
-                    visible, cur = await tmux.capture_with_cursor(s.session_name)
-                    if s.alt_screen:
-                        snapshot_data = visible.rstrip("\n").replace("\n", "\r\n")
-                    else:
-                        # ONE atomic capture — a two-call history+visible stitch
-                        # races while streaming and duplicates the scrolled-off
-                        # lines (see _normal_snapshot_body).
-                        snapshot_data = await _normal_snapshot_body(s.session_name)
+                    revision = getattr(s, 'grid_revision', 0)
+                    if not stable(s, revision):
+                        continue
+                    snapshot_data, visible, cur = await _capture_snapshot(
+                        s.session_name, s.alt_screen, getattr(s, 'display_rows', 40),
+                    )
+                    if not stable(s, revision):
+                        continue
                     if snapshot_data:
-                        snapshot_data += _cursor_suffix(visible.rstrip("\n"), cur)
-                        broadcast({"type": "snapshot", "id": sid, "data": snapshot_data})
+                        broadcast({"type": "snapshot", "id": sid, "data": snapshot_data, **frame_meta(s)})
                         _last_broadcast_time[sid] = now
                     _last_snapshot_at[sid] = now
                     _last_screen[sid] = _strip_cursor(visible)
                     _last_cursor[sid] = cur
+                    _last_wraps[sid] = _wrap_signature(visible)
                     _last_history_size[sid] = current_hist
                     _last_hist_edge[sid] = edge
                     _last_change_at[sid] = now
@@ -421,22 +457,28 @@ async def _poll_active():
                     _last_history_size[sid] = current_hist
                     _last_hist_edge[sid] = edge
 
+                revision = getattr(s, 'grid_revision', 0)
+                if not stable(s, revision):
+                    continue
                 output, cursor = await tmux.capture_with_cursor(s.session_name)
+                if not stable(s, revision):
+                    continue
                 stripped = _strip_cursor(output)
                 # Cursor moves count as changes too — e.g. arrowing through a
                 # prompt moves the cursor without altering any content.
-                changed = stripped != _last_screen.get(sid) or cursor != _last_cursor.get(sid)
+                changed = stripped != _last_screen.get(sid) or cursor != _last_cursor.get(sid) or _wrap_signature(output) != _last_wraps.get(sid)
 
                 if changed:
                     _last_screen[sid] = stripped
                     _last_cursor[sid] = cursor
+                    _last_wraps[sid] = _wrap_signature(output)
                     _last_change_at[sid] = now
                     # Throttle: skip if last broadcast was too recent
                     if now - _last_broadcast_time.get(sid, 0) >= MIN_BROADCAST_INTERVAL:
                         _last_broadcast_time[sid] = now
-                        body = output.rstrip("\n")
-                        broadcast({"type": "screen", "id": sid,
-                                   "data": body.replace("\n", "\r\n") + _cursor_suffix(body, cursor)})
+                        body = output.removesuffix("\n")
+                        broadcast({"type": "screen", "id": sid, **frame_meta(s),
+                                   "data": FrameText(body.replace("\n", "\r\n") + _cursor_suffix(body, cursor), getattr(output, 'wrapped_rows', None))})
 
                 # Check state periodically (not just on change)
                 if changed or (now - _last_state_check.get(sid, 0) > STATE_CHECK_INTERVAL):
@@ -542,10 +584,14 @@ def _update_info(id: str, s, info: dict):
     # Re-broadcast info when process/uptime OR alt-screen state changes (the
     # latter drives the "full-screen — no scrollback" badge).
     if process != s.process or created_at != s.created_at or alt_screen != s.alt_screen or auto_title != getattr(s, "auto_title", ""):
+        identity_changed = s.created_at != created_at
         s.auto_title = auto_title
         s.process = process
         s.created_at = created_at
         s.alt_screen = alt_screen
+        if identity_changed:
+            from .sessions import store
+            broadcast({"type": "title", "id": id, "title": store.titles.get(id, "")})
         broadcast({
             "type": "info", "id": id, "process": process,
             "createdAt": created_at, "memKB": s.mem_kb, "altScreen": alt_screen, "autoTitle": auto_title,

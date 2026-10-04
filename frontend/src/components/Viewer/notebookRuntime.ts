@@ -101,6 +101,21 @@ export function notebookAction(path:string,action:string,cell?:number,environmen
     if(!['interrupt','shutdown','reload'].includes(action)&&!(action==='connect-environment'&&notebookBusy(current(path).server.state))){
       do{await flush(path)}while(current(path).content!==current(path).server.content)
     }
+    if(action==='reset'){
+      const before=current(path)
+      const stopped=await request('/'+before.server.id+'/action',{action:'shutdown',revision:before.server.revision})
+      accept(path,stopped)
+      const record=current(path)
+      if(record.conflict)throw Error(record.error)
+      const notebook=JSON.parse(record.content)
+      for(const cell of notebook.cells){
+        if(cell.cell_type==='code'){cell.outputs=[];cell.execution_count=null}
+      }
+      patch(path,{content:JSON.stringify(notebook,null,1)+'\n'})
+      await flush(path)
+      patch(path,{notice:'노트북 초기화 완료 · 저장하면 파일에 반영됩니다.'})
+      return current(path).server
+    }
     const record=current(path)
     const server=await request('/'+record.server.id+'/action',{action,revision:record.server.revision,cell,environment,replace})
     accept(path,server,action==='reload'?record.content:undefined)

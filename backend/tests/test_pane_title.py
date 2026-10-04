@@ -17,3 +17,10 @@ def test_display_info_accepts_missing_title(monkeypatch):
         return '/project|bash|123|456|0'
     monkeypatch.setattr(tmux, 'tmux_run', run)
     assert asyncio.run(tmux.display_info('term-test'))['auto_title'] == ''
+
+
+def test_state_decoration_is_not_a_conversation_title():
+    assert tmux.clean_pane_title('[ . ] Action Required | Research | project') == 'Research | project'
+    assert tmux.clean_pane_title('[ ! ] Action Required | Current task') == 'Current task'
+    assert tmux.clean_pane_title('✳ Current task') == 'Current task'
+    assert tmux.clean_pane_title('[Design] Real title') == '[Design] Real title'

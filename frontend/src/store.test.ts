@@ -5,7 +5,7 @@ import { useStore, viewerKey, workspaceEntries, workspaceId, completionKey, sess
 const tab: ViewerTab = { id: '/project/a.py', path: '/project/a.py', name: 'a.py', type: 'code', lang: 'python', content: 'original', version: 'v1' }
 beforeEach(() => {
   localStorage.clear()
-  useStore.setState({ connection: 'online', hiddenSessions: [], sessions: {}, activeId: null, workspaceCwd: '/project', workspaceHost: 'local', _viewerState: {}, _restoredWorkspaces: {}, _completedAt: {}, workspaceFolders: [], workspaceOrder: [], hiddenWorkspaces: [], unreadCompletions: [] })
+  useStore.setState({ _sessionViewReady:false,_sessionViewRevision:-1,_sessionOrders:{}, connection: 'online', hiddenSessions: [], sessions: {}, activeId: null, workspaceCwd: '/project', workspaceHost: 'local', _viewerState: {}, _restoredWorkspaces: {}, _completedAt: {}, workspaceFolders: [], workspaceOrder: [], hiddenWorkspaces: [], unreadCompletions: [] })
 })
 describe('workspace files', () => {
   it('opens and edits without an agent session', () => {
@@ -156,6 +156,12 @@ describe('workbench persistence', () => {
     expect(restored.tabs[0]).toMatchObject({content: 'fresh content', viewState: {editorScroll: 780, cursor: 6}})
     s.closeTab('terminal:1')
     expect(useStore.getState().sessions['1']).toBeDefined()
+    expect(useStore.getState().hiddenSessions).toContain(completionKey(useStore.getState().sessions['1']))
+    expect(useStore.getState()._viewerState[key].tabs.some(t=>t.id==='terminal:1')).toBe(false)
+    expect(JSON.parse(localStorage.getItem('agentboard.hiddenSessions')!)).toEqual(useStore.getState().hiddenSessions)
+    s.setActive('1')
+    expect(useStore.getState().hiddenSessions).not.toContain(completionKey(useStore.getState().sessions['1']))
+    expect(useStore.getState()._viewerState[key].tabs.some(t=>t.id==='terminal:1')).toBe(true)
     vi.restoreAllMocks()
   })
   it('keeps PDF position isolated between workspaces and accepts drops after a target', () => {
@@ -303,4 +309,61 @@ it('persists the actual Chromium location in its owning workspace', () => {
   const saved=JSON.parse(localStorage.getItem(`agentboard.viewer.${key}`)!)
   expect(saved.tabs[0]).toMatchObject({id,name:'Internal page',browser:{history:['https://example.com/internal'],index:0}})
   expect(useStore.getState().workspaceCwd).toBe('/beta')
+})
+
+describe('closed session tabs stay closed',()=>{
+  it('does not restore a terminal closed while a file read is pending',async()=>{
+    const s=useStore.getState()
+    s.upsertSession({id:'1',cwd:'/project',cmd:'codex'})
+    s.setActive('1');s.openTab(tab)
+    const key=viewerKey(useStore.getState())
+    let finish!:(value:any)=>void
+    const read=vi.spyOn(api,'readFile').mockImplementation(()=>new Promise(resolve=>{finish=resolve}))
+    const restoring=s.restoreViewerTabs(key)
+    s.closeTab('terminal:1',key)
+    finish({content:'restored',version:'v2'})
+    await restoring
+    s.ensureSessionTabs(key)
+    expect(useStore.getState()._viewerState[key].tabs.map(t=>t.id)).toEqual([tab.id])
+    expect(workspaceEntries(useStore.getState()).flatMap(e=>e.ids)).not.toContain('1')
+    expect(useStore.getState().activeId).toBeNull()
+    read.mockRestore()
+  })
+  it.each(['spawned','sessions'])('keeps a closed provisional session hidden after %s',kind=>{
+    const s=useStore.getState()
+    s.upsertSession({id:'1',cwd:'/project',cmd:'codex'});s.setActive('1')
+    const key=viewerKey(useStore.getState())
+    s.closeTab('terminal:1',key)
+    if(kind==='spawned')s.handleMessage({type:'spawned',id:'1',sessionName:'term-1',cwd:'/project',cmd:'codex',status:'running'})
+    else s.setSessions([{...useStore.getState().sessions['1'],sessionName:'term-1'}])
+    s.ensureSessionTabs(key)
+    expect(useStore.getState()._viewerState[key].tabs).toHaveLength(0)
+    expect(workspaceEntries(useStore.getState()).flatMap(e=>e.ids)).not.toContain('1')
+    s.setActive('1')
+    expect(workspaceEntries(useStore.getState()).flatMap(e=>e.ids)).toContain('1')
+    expect(useStore.getState()._viewerState[key].tabs.map(t=>t.id)).toEqual(['terminal:1'])
+  })
+  it('selects the same remaining terminal on both sides after closing the active one',()=>{
+    const s=useStore.getState()
+    for(const id of ['1','2']){s.upsertSession({id,cwd:'/project',cmd:'codex'});s.setActive(id)}
+    const key=viewerKey(useStore.getState())
+    s.closeTab('terminal:2',key)
+    expect(useStore.getState().activeId).toBe('1')
+    expect(useStore.getState()._viewerState[key].activeTabId).toBe('terminal:1')
+  })
+})
+
+it('applies shared close, reopen and order without replacing file tabs or switching workspace',()=>{
+  const s=useStore.getState()
+  for(const id of ['1','2'])s.upsertSession({id,cwd:'/project',cmd:'codex'})
+  s.setActive('1');s.ensureSessionTabs(viewerKey(useStore.getState()));s.openTab(tab)
+  const key=viewerKey(useStore.getState()),one=completionKey(useStore.getState().sessions['1']),two=completionKey(useStore.getState().sessions['2'])
+  s.applySessionView({revision:1,visibility:{[one]:true},orders:{}})
+  expect(useStore.getState()._viewerState[key].tabs.map(t=>t.id)).toEqual(['terminal:2',tab.id])
+  expect(workspaceEntries(useStore.getState()).flatMap(e=>e.ids)).not.toContain('1')
+  s.applySessionView({revision:2,visibility:{[one]:false},orders:{[key]:[two,one]}})
+  expect(useStore.getState()._viewerState[key].tabs.filter(t=>t.type==='terminal').map(t=>t.id)).toEqual(['terminal:2','terminal:1'])
+  expect(useStore.getState()._viewerState[key].tabs.find(t=>t.id===tab.id)?.content).toBe('original')
+  s.applySessionView({revision:1,visibility:{[one]:true},orders:{}})
+  expect(useStore.getState().hiddenSessions).not.toContain(one)
 })

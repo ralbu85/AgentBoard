@@ -14,10 +14,13 @@ export async function writeClipboard(text:string):Promise<void> {
   const selection=window.getSelection()
   const ranges=selection?Array.from({length:selection.rangeCount},(_,i)=>selection.getRangeAt(i).cloneRange()):[]
   const input=document.createElement('textarea')
-  input.value=text;input.readOnly=true;input.style.cssText='position:fixed;left:-10000px;top:0'
+  // A visible-position, 16px read-only field avoids iOS focus zoom/sideways
+  // scrolling while allowing the legacy copy path on LAN HTTP connections.
+  input.value=text;input.readOnly=true;input.style.cssText='position:fixed;left:0;top:0;width:1px;height:1px;opacity:0;font-size:16px;pointer-events:none'
   document.body.appendChild(input)
   try{
     input.select()
+    input.setSelectionRange(0,input.value.length)
     if(!document.execCommand('copy'))throw Error('복사할 수 없습니다. 텍스트 선택 창에서 복사해 주세요.')
   }finally{
     input.remove();focused?.focus({preventScroll:true})

@@ -41,6 +41,24 @@ jobs:
           done
           echo "server failed to start" && exit 1
 
+  browser:
+    # Non-root runner with the browser sandbox enabled. A blocked sandbox is a
+    # failed check, never grounds for weakening kernel/container restrictions.
+    runs-on: ubuntu-22.04
+    defaults:
+      run: { working-directory: frontend }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm, cache-dependency-path: frontend/package-lock.json }
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: test "$(id -u)" != 0 && unshare -Ur true
+      - run: npm run test:browser
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with: { name: synthetic-browser-tests, path: frontend/test-results, retention-days: 7 }
+
   docker:
     runs-on: ubuntu-latest
     steps:

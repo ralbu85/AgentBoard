@@ -37,9 +37,9 @@ export function ProfileEditor() {
         </div>
         <div className="spawn-body">
           <div className="pe-hint">
-            "+" 버튼에 뜨는 세션 실행 프로필입니다. 명령에 플래그·env를 넣을 수 있어요
+            고급 옵션에서 선택하는 실행 프로필입니다. 명령에 플래그·env를 넣을 수 있어요
             (예: <code>claude --dangerously-skip-permissions</code>, <code>claude --resume</code>).
-            ◉ = 기본(“+” 클릭 시 실행).
+            새 터미널은 항상 깨끗한 Bash로 시작합니다. ◉ 표시는 프로필의 기본값입니다.
           </div>
           <div className="pe-head">
             <span style={{ width: 22 }}></span>

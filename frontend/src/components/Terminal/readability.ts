@@ -8,13 +8,22 @@ export function loadTerminalPreferences(mobile = window.innerWidth <= 768): Term
     return {
       fontSize: Number.isFinite(saved?.fontSize) ? Math.min(22, Math.max(12, saved.fontSize)) : fallback.fontSize,
       lineHeight: 1, // Compact spacing also replaces the previous persisted 1.25 default.
-      adaptiveColumns: mobile || (typeof saved?.adaptiveColumns === 'boolean' ? saved.adaptiveColumns : true),
+      adaptiveColumns: (typeof saved?.adaptiveColumns === 'boolean' ? saved.adaptiveColumns : true),
     }
   } catch { return { ...fallback } }
 }
-export function terminalGeometry(width: number, height: number, cellWidth: number, cellHeight: number, adaptive: boolean) {
-  return {
-    cols: adaptive ? Math.max(30, Math.min(80, Math.floor(Math.max(0, width) / cellWidth))) : 80,
-    rows: Math.max(40, Math.min(200, Math.floor(Math.max(0, height) / cellHeight))),
-  }
+// Viewport scaling never changes the terminal's source columns or rows.
+export function viewportScale(width:number,gridWidth:number,fit:boolean){
+  return fit&&gridWidth>0?Math.min(1,Math.max(0.1,width/gridWidth)):1
+}
+
+// Extra display rows show scrollback above the source screen.
+export function viewportRows(height:number,cellHeight:number,scale:number,sourceRows:number,expand:boolean) {
+  if(!expand||cellHeight<=0||scale<=0)return sourceRows
+  return Math.max(sourceRows,Math.min(200,Math.floor(height/(cellHeight*scale))))
+}
+
+
+export function desktopColumns(width:number,cellWidth:number) {
+  return cellWidth>0?Math.max(80,Math.min(240,Math.floor(width/cellWidth))):80
 }

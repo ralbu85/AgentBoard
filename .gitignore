@@ -21,3 +21,14 @@ yarn.lock
 .browser-state/
 .notebook-state/
 desktop/release/
+
+.session-view.json
+.session-view.tmp
+
+# Private browser worker connection path
+deploy/browser/*.secret
+.conversation-bindings.*
+.security-audit/
+frontend/test-results/
+frontend/playwright-report/
+.releases/

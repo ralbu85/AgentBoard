@@ -24,7 +24,7 @@ async function newPage(browser, name) {
 }
 
 ;(async () => {
-  const browser = await chromium.launch({ executablePath: '/usr/bin/google-chrome', args: ['--no-sandbox', '--disable-dev-shm-usage'] })
+  const browser = await require('./safe-browser.cjs').launchBrowser(chromium)
 
   // ── Clip 1: files tour ──
   {

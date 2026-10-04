@@ -1,5 +1,8 @@
+import {api} from '../../api'
+import {useToasts} from '../../toasts'
+import {NotebookCellInsert} from './NotebookCellInsert'
 import { useState, useEffect, useMemo } from 'react'
-import { renderMarkdown } from '../../markdown'
+import { renderMarkdown, type MarkdownAttachments } from '../../markdown'
 import { sanitize } from '../../sanitize'
 import { getHljs } from './FileContent'
 import {useStore, type ViewerTab} from '../../store'
@@ -23,6 +26,7 @@ interface NbOutput {
 }
 interface NbCell {
   cell_type: string
+  attachments?: MarkdownAttachments
   source?: string | string[]
   input?: string | string[]                  // nbformat 3
   outputs?: NbOutput[]
@@ -46,6 +50,7 @@ function parseNotebook(content: string): { cells: NbCell[]; lang: string } | { e
 export function NotebookView({tab,ownerKey}:{tab:ViewerTab;ownerKey:string}) {
   const record=useNotebooks(s=>s.records[tab.path])
   const [error,setError]=useState('')
+  const [copying,setCopying]=useState(false)
   const [openRetry,setOpenRetry]=useState(0)
   const [kernels,setKernels]=useState(false)
   const [environmentOpen,setEnvironmentOpen]=useState(false)
@@ -54,7 +59,30 @@ export function NotebookView({tab,ownerKey}:{tab:ViewerTab;ownerKey:string}) {
   const local=JSON.parse(ownerKey)[0]==='local'
   const supported=useMemo(()=>{try{const nb=JSON.parse(tab.content);return nb.nbformat===4&&Array.isArray(nb.cells)}catch{return false}},[tab.content])
   useEffect(()=>{
-    if(!local||!supported)return
+    const duplicate=async()=>{
+    if(copying||!record||record.operation||notebookBusy((record.observed||record.server).state))return
+    const content=record.content
+    setCopying(true);setError('')
+    try{
+      const dir=tab.path.slice(0,tab.path.lastIndexOf('/'))||'/'
+      const stem=tab.name.replace(/\.ipynb$/i,'')
+      const listing=await api.files(dir)
+      const names=new Set((listing.entries||[]).map((entry:{name:string})=>entry.name))
+      let suggested=`${stem}-copy.ipynb`,number=2
+      while(names.has(suggested))suggested=`${stem}-copy-${number++}.ipynb`
+      const answer=prompt('복사본 파일 이름 (현재 편집 내용과 출력 포함)',suggested)
+      if(answer===null)return
+      let name=answer.trim()
+      if(!name||/[\/\\\x00]/.test(name)||name==='.'||name==='..')throw Error('폴더 경로 없이 파일 이름을 입력하세요.')
+      if(!/\.ipynb$/i.test(name))name+='.ipynb'
+      const result=await api.upload(dir,new File([content],name,{type:'application/x-ipynb+json'}))
+      if(!result.ok||!result.path)throw Error(result.error||'복사본을 만들지 못했습니다.')
+      useStore.getState().openTab({id:result.path,path:result.path,name,content,type:'notebook',lang:'json',dirty:false},ownerKey)
+      useToasts.getState().push(`복사본 생성: ${name}`)
+    }catch(e){setError(e instanceof Error?e.message:'복사 실패')}
+    finally{setCopying(false)}
+  }
+  if(!local||!supported)return
     let alive=true
     void openNotebook(tab.path,tab.content,!!tab.dirty).then(()=>{if(alive)setError('');return refreshNotebook(tab.path)}).catch(e=>{if(alive)setError(e.message)})
     const timer=setInterval(()=>void refreshNotebook(tab.path),700)
@@ -80,17 +108,40 @@ export function NotebookView({tab,ownerKey}:{tab:ViewerTab;ownerKey:string}) {
     const blob=new Blob([record?.content||tab.content],{type:'application/x-ipynb+json'})
     const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download=tab.name;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000)
   }
-  if(!local||!supported)return <><div className="nb-runtime-bar">{!local?'원격 머신의 노트북은 현재 읽기만 지원합니다.':'실행·편집은 nbformat 4 노트북에서 지원합니다.'}</div><NotebookPreview content={tab.content}/></>
+  const duplicate=async()=>{
+    if(copying||!record||record.operation||notebookBusy((record.observed||record.server).state))return
+    const content=record.content
+    setCopying(true);setError('')
+    try{
+      const dir=tab.path.slice(0,tab.path.lastIndexOf('/'))||'/'
+      const stem=tab.name.replace(/\.ipynb$/i,'')
+      const listing=await api.files(dir)
+      const names=new Set((listing.entries||[]).map((entry:{name:string})=>entry.name))
+      let suggested=`${stem}-copy.ipynb`,number=2
+      while(names.has(suggested))suggested=`${stem}-copy-${number++}.ipynb`
+      const answer=prompt('복사본 파일 이름 (현재 편집 내용과 출력 포함)',suggested)
+      if(answer===null)return
+      let name=answer.trim()
+      if(!name||/[\/\\\x00]/.test(name)||name==='.'||name==='..')throw Error('폴더 경로 없이 파일 이름을 입력하세요.')
+      if(!/\.ipynb$/i.test(name))name+='.ipynb'
+      const result=await api.upload(dir,new File([content],name,{type:'application/x-ipynb+json'}))
+      if(!result.ok||!result.path)throw Error(result.error||'복사본을 만들지 못했습니다.')
+      useStore.getState().openTab({id:result.path,path:result.path,name,content,type:'notebook',lang:'json',dirty:false},ownerKey)
+      useToasts.getState().push(`복사본 생성: ${name}`)
+    }catch(e){setError(e instanceof Error?e.message:'복사 실패')}
+    finally{setCopying(false)}
+  }
+  if(!local||!supported)return <><div className="nb-runtime-bar">{!local?'원격 머신의 노트북은 현재 읽기만 지원합니다.':'실행·편집은 nbformat 4 노트북에서 지원합니다.'}</div><NotebookPreview content={tab.content} filePath={local?tab.path:undefined}/></>
   if(!record)return <div className="nb-runtime-bar" role="status">{error||'노트북 연결 중…'}{error&&<button onClick={()=>{setError('');setOpenRetry(v=>v+1)}}>다시 연결</button>}</div>
   const state=record.observed||record.server
-  const busy=notebookBusy(state.state), disabled=busy||!!record.operation
+  const busy=notebookBusy(state.state), disabled=busy||!!record.operation||copying
   const operation=record.operation
-  const actionText=operation?({'connect-environment':'선택한 환경에 연결 중…','select-environment':'실행 환경 선택 중…',connect:'커널 연결 중…',execute:`셀 ${(operation.cell??0)+1} 실행 준비 중…`,'run-all':'전체 실행 준비 중…',interrupt:'실행 중단 요청 중…',restart:'커널 재시작 중…',shutdown:'커널 종료 중…',save:'결과 저장 중…',reload:'원본 불러오는 중…'} as Record<string,string>)[operation.action]:''
-  const statusText=actionText||(busy?`${kernelStateLabel(state.state)}${state.cell!==null?` · 셀 ${state.cell+1}`:''}`:record.pending?'편집 동기화 중…':record.notice||kernelStateLabel(state.state))
+  const actionText=operation?({'connect-environment':'선택한 환경에 연결 중…','select-environment':'실행 환경 선택 중…',connect:'커널 연결 중…',execute:`셀 ${(operation.cell??0)+1} 실행 준비 중…`,'run-all':'전체 실행 준비 중…','run-to-cell':`셀 ${(operation.cell??0)+1}까지 실행 준비 중…`,interrupt:'실행 중단 요청 중…',restart:'커널 재시작 중…',shutdown:'커널 종료 중…',reset:'노트북 초기화 중…',save:'결과 저장 중…',reload:'원본 불러오는 중…'} as Record<string,string>)[operation.action]:''
+  const statusText=(copying?'복사본 만드는 중…':actionText)||(busy?`${kernelStateLabel(state.state)}${state.cell!==null?` · 셀 ${state.cell+1}`:''}`:record.notice||kernelStateLabel(state.state))
   const notebook=JSON.parse(record.content)
   const change=(index:number,source:string)=>{const nb=JSON.parse(record.content);nb.cells[index].source=source;editNotebook(tab.path,JSON.stringify(nb,null,1)+'\n')}
-  const add=(kind:string)=>{
-    const nb=JSON.parse(record.content);nb.cells.push({id:uiId(),cell_type:kind,metadata:{},source:'',...(kind==='code'?{execution_count:null,outputs:[]}:{} )});editNotebook(tab.path,JSON.stringify(nb,null,1)+'\n')
+  const add=(kind:string,index=notebook.cells.length)=>{
+    const nb=JSON.parse(record.content);nb.cells.splice(index,0,{id:uiId(),cell_type:kind,metadata:{},source:'',...(kind==='code'?{execution_count:null,outputs:[]}:{} )});editNotebook(tab.path,JSON.stringify(nb,null,1)+'\n')
   }
   const dirty=record.server.dirty||record.content!==record.server.content
   const reloadFile=()=>{
@@ -100,8 +151,8 @@ export function NotebookView({tab,ownerKey}:{tab:ViewerTab;ownerKey:string}) {
   }
   return <div className="nb-interactive">
     <div className="nb-runtime-bar">
-      <div className="nb-live-status" role="status" aria-live="polite" aria-busy={busy||!!operation}>
-        <span className={`nb-spinner ${busy||operation||record.pending?'':'nb-spinner-idle'}`} aria-hidden="true"/>
+      <div className="nb-live-status" role="status" aria-live="polite" aria-busy={busy||!!operation||copying}>
+        <span className={`nb-spinner ${busy||operation||copying?'':'nb-spinner-idle'}`} aria-hidden="true"/>
         <strong title={record.server.python}>{state.kernelName||'Python'} · {statusText}</strong>
         {operation&&<span>{Math.max(0,Math.floor((now-operation.started)/1000))}초</span>}
         {operation&&state.state==='starting'&&<span>Python 커널을 시작하고 있습니다.</span>}
@@ -113,8 +164,10 @@ export function NotebookView({tab,ownerKey}:{tab:ViewerTab;ownerKey:string}) {
       <button disabled={disabled} onClick={()=>void run('run-all')}>{operation?.action==='run-all'?'실행 준비 중…':'전체 실행'}</button>
       <button disabled={!!operation||!['running','interrupting'].includes(state.state)} onClick={()=>void run('interrupt')}>■ 중단</button>
       <button disabled={disabled||!record.server.kernel} onClick={()=>{if(confirm('커널을 재시작할까요? 메모리의 변수는 초기화되고 셀과 출력은 유지됩니다.'))void run('restart')}}>재시작</button>
+      <button disabled={disabled} title="코드와 마크다운은 유지하고 출력·실행 번호·커널 변수를 초기화합니다." onClick={()=>{if(confirm('노트북을 초기화할까요?\n코드와 마크다운은 유지합니다. 모든 출력·실행 번호와 커널 변수는 지워집니다.\n원본 파일에 반영하려면 초기화 후 저장하세요.'))void run('reset')}}>노트북 초기화</button>
       <button disabled={record.pending||!record.server.kernel} onClick={()=>{if(confirm('이 노트북의 커널을 종료할까요? 실행 중인 작업과 변수는 종료됩니다.'))void run('shutdown')}}>커널 종료</button>
       <button disabled={disabled||!dirty} onClick={()=>void run('save')}>{dirty?'저장 · 변경 있음':'저장됨'}</button>
+      <button disabled={disabled} onClick={()=>void duplicate()}>복사본 만들기</button>
       <button onClick={download}>다운로드</button>
       <button onClick={()=>setKernels(true)}>커널 목록</button>
       <button disabled={disabled} onClick={reloadFile}>{operation?.action==='reload'?'불러오는 중…':'↻ 파일 새로고침'}</button>
@@ -126,21 +179,23 @@ export function NotebookView({tab,ownerKey}:{tab:ViewerTab;ownerKey:string}) {
     {environmentOpen&&<NotebookEnvironment path={tab.path} onClose={()=>setEnvironmentOpen(false)}/>}
     {kernels&&<NotebookKernels onClose={()=>setKernels(false)}/>}
     <div className="nb-wrap">
-      {notebook.cells.map((cell:NbCell,index:number)=>cell.cell_type==='markdown'?<NotebookMarkdownCell key={(cell as NbCell&{id?:string}).id||index} content={joinSrc(cell.source)} index={index} disabled={disabled} onChange={source=>change(index,source)} onSave={()=>{if(!disabled)void run('save')}} onDelete={()=>{if(!confirm(`셀 ${index+1}을 삭제할까요?`))return;const nb=JSON.parse(record.content);nb.cells.splice(index,1);editNotebook(tab.path,JSON.stringify(nb,null,1)+'\n')}}/>:<section className={`nb-edit-cell ${record.server.cell===index?'nb-cell-running':''}`} key={(cell as NbCell&{id?:string}).id||index}>
+      {notebook.cells.length===0&&<div className="nb-cell-actions"><button disabled={disabled} onClick={()=>add('code')}>＋ 코드</button><button disabled={disabled} onClick={()=>add('markdown')}>＋ 마크다운</button></div>}
+      {notebook.cells.map((cell:NbCell,index:number)=>cell.cell_type==='markdown'?<NotebookMarkdownCell key={(cell as NbCell&{id?:string}).id||index} insertControl={<NotebookCellInsert index={index} disabled={disabled} onInsert={add}/>} content={joinSrc(cell.source)} filePath={tab.path} attachments={cell.attachments} index={index} disabled={disabled} onChange={source=>change(index,source)} onSave={()=>{if(!disabled)void run('save')}} onDelete={()=>{if(!confirm(`셀 ${index+1}을 삭제할까요?`))return;const nb=JSON.parse(record.content);nb.cells.splice(index,1);editNotebook(tab.path,JSON.stringify(nb,null,1)+'\n')}}/>:<section className={`nb-edit-cell ${record.server.cell===index?'nb-cell-running':''}`} key={(cell as NbCell&{id?:string}).id||index}>
         <div className="nb-cell-actions"><span>{cell.cell_type==='code'?`In [${record.server.cell===index?'*':cell.execution_count??' '}]`:'Markdown'} · 셀 {index+1}</span>
-          {cell.cell_type==='code'&&<button disabled={disabled} onClick={()=>void run('execute',index)}>{operation?.action==='execute'&&operation.cell===index?'실행 준비 중…':state.cell===index&&busy?'실행 중…':'▶ 셀 실행'}</button>}
-          <button disabled={disabled} onClick={()=>{if(!confirm(`셀 ${index+1}을 삭제할까요?`))return;const nb=JSON.parse(record.content);nb.cells.splice(index,1);editNotebook(tab.path,JSON.stringify(nb,null,1)+'\n')}}>삭제</button>
+          {cell.cell_type==='code'&&<button disabled={disabled} title="셀 실행 (Ctrl+Enter / Shift+Enter)" onClick={()=>void run('execute',index)}>{operation?.action==='execute'&&operation.cell===index?'실행 준비 중…':state.cell===index&&busy?'실행 중…':'▶ 셀 실행'}</button>}
+          {cell.cell_type==='code'&&<button disabled={disabled} title={`첫 코드 셀부터 셀 ${index+1}까지 순서대로 실행합니다. 이미 실행한 셀도 다시 실행합니다.`} onClick={()=>void run('run-to-cell',index)}>여기까지 실행</button>}
+          <button disabled={disabled} onClick={()=>{if(!confirm(`셀 ${index+1}을 삭제할까요?`))return;const nb=JSON.parse(record.content);nb.cells.splice(index,1);editNotebook(tab.path,JSON.stringify(nb,null,1)+'\n')}}>셀 삭제</button>
+          <NotebookCellInsert index={index} disabled={disabled} onInsert={add}/>
         </div>
-        <CodeEditor compact ariaLabel={`셀 ${index+1} 코드`} content={joinSrc(cell.source)} lang={cell.cell_type==='code'?'python':cell.cell_type==='markdown'?'markdown':''} readOnly={busy||!!operation} onChange={source=>change(index,source)} onSave={()=>{if(!disabled)void run('save')}} onRun={cell.cell_type==='code'?()=>{if(!disabled)void run('execute',index)}:undefined}/>
+        <CodeEditor compact ariaLabel={`셀 ${index+1} 코드`} content={joinSrc(cell.source)} lang={cell.cell_type==='code'?'python':cell.cell_type==='markdown'?'markdown':''} readOnly={disabled} onChange={source=>change(index,source)} onSave={()=>{if(!disabled)void run('save')}} onRun={cell.cell_type==='code'?()=>{if(!disabled)void run('execute',index)}:undefined}/>
 
         {(cell.outputs||[]).map((output,i)=><Output key={i} out={output}/>)}
       </section>)}
-      <div className="nb-cell-actions"><button disabled={disabled} onClick={()=>add('code')}>＋ 코드 셀</button><button disabled={disabled} onClick={()=>add('markdown')}>＋ Markdown 셀</button></div>
     </div>
   </div>
 }
 
-export function NotebookPreview({ content }: { content: string }) {
+export function NotebookPreview({ content, filePath }: { content: string; filePath?: string }) {
   const parsed = useMemo(() => parseNotebook(content), [content])
   const [hljs, setHljs] = useState<any>(null)
   useEffect(() => { getHljs().then(setHljs).catch(() => {}) }, [])
@@ -153,18 +208,18 @@ export function NotebookPreview({ content }: { content: string }) {
       {parsed.cells.map((cell, i) =>
         cell.cell_type === 'code'
           ? <CodeCell key={i} cell={cell} lang={parsed.lang} hljs={hljs} />
-          : <TextCell key={i} cell={cell} />
+          : <TextCell key={i} cell={cell} filePath={filePath} />
       )}
     </div>
   )
 }
 
 /** markdown / raw cells */
-function TextCell({ cell }: { cell: NbCell }) {
+function TextCell({ cell, filePath }: { cell: NbCell; filePath?: string }) {
   const src = joinSrc(cell.source ?? cell.input)
   const html = useMemo(
-    () => cell.cell_type === 'markdown' ? renderMarkdown(src) : '',
-    [src, cell.cell_type],
+    () => cell.cell_type === 'markdown' ? renderMarkdown(src, filePath, cell.attachments) : '',
+    [src, cell.cell_type, filePath, cell.attachments],
   )
   return (
     <div className="nb-cell">

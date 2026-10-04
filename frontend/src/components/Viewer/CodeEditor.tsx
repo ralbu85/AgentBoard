@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { EditorView, keymap, lineNumbers, highlightActiveLine, Decoration, type DecorationSet } from '@codemirror/view'
-import { EditorState, type Extension, StateField, StateEffect, Compartment } from '@codemirror/state'
-import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'
+import { EditorState, type Extension, StateField, StateEffect, Compartment, Prec } from '@codemirror/state'
+import { defaultKeymap, history, historyKeymap, indentWithTab, insertNewline } from '@codemirror/commands'
 import { search, searchKeymap, highlightSelectionMatches } from '@codemirror/search'
 import {bracketMatching, indentOnInput, foldGutter, HighlightStyle, syntaxHighlighting} from '@codemirror/language'
 import {tags} from '@lezer/highlight'
@@ -123,7 +123,8 @@ export function CodeEditor({ content, lang, memos, onChange, onSave, onContextMe
 
     const extensions: Extension[] = [
       lineNumbers(),
-      bracketMatching(), indentOnInput(), foldGutter(),
+      bracketMatching(), ...(compact ? [] : [indentOnInput()]), foldGutter(),
+      ...(compact ? [Prec.highest(keymap.of([{key:'Enter',run:view=>{if(!view.state.readOnly)insertNewline(view);return true}}]))] : []),
       readonlyComp.current.of(EditorState.readOnly.of(readOnly)),
       EditorView.contentAttributes.of({'aria-label':ariaLabel||'코드 편집기'}),
       highlightActiveLine(),
@@ -133,6 +134,7 @@ export function CodeEditor({ content, lang, memos, onChange, onSave, onContextMe
       fontComp.of(fontTheme(readFs())),
       keymap.of([
         {key: 'Shift-Enter',run:()=>{if(!cbRef.current.onRun)return false;if(!viewRef.current?.state.readOnly)cbRef.current.onRun();return true}},
+        {key: 'Ctrl-Enter',run:()=>{if(!cbRef.current.onRun)return false;if(!viewRef.current?.state.readOnly)cbRef.current.onRun();return true}},
         indentWithTab,
         ...searchKeymap,   // Ctrl+F find, Ctrl+H replace, F3 next
         ...defaultKeymap,

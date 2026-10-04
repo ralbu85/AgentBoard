@@ -11,8 +11,7 @@ from typing import Callable, Optional
 from . import config, tmux
 from .logger import log
 
-# Tmux pane size is FIXED at these values for every session.
-# Clients (desktop + mobile) never resize — they always render this canonical size.
+# Initial source grid. One desktop viewport may control columns; rows stay fixed.
 CANONICAL_COLS = 80
 CANONICAL_ROWS = 40
 
@@ -34,8 +33,12 @@ class Session:
     alt_screen: bool = False   # full-screen app active → no scrollback
     cols: int = CANONICAL_COLS
     rows: int = CANONICAL_ROWS
+    grid_revision: int = field(default_factory=lambda: time.time_ns() // 1000)
+    resizing: bool = False
+    geometry_verified: bool = True
+    resize_lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)
     display_rows: int = CANONICAL_ROWS
-    display_cols: int = CANONICAL_COLS   # the viewer's requested width (mobile narrows it)
+    display_cols: int = CANONICAL_COLS   # authoritative source grid, independent of browser viewport
 
     def to_dict(self) -> dict:
         return {
@@ -61,6 +64,7 @@ class SessionStore:
         self.sessions: dict[str, Session] = {}
         self._next_id = 1
         self._titles: dict[str, str] = {}
+        self._title_owners: dict[str, list] = {}
         self._broadcast: Callable | None = None
         self._load_titles()
 
@@ -77,7 +81,14 @@ class SessionStore:
         if not config.TITLES_FILE.exists():
             return
         try:
-            self._titles = json.loads(config.TITLES_FILE.read_text())
+            data = json.loads(config.TITLES_FILE.read_text())
+            if data.get('version') == 2 and isinstance(data.get('titles'), dict):
+                self._titles = data['titles']
+                self._title_owners = data.get('owners', {})
+            else:
+                # Preserve legacy labels, but their numeric IDs cannot prove
+                # which tmux incarnation they belonged to.
+                self._titles = data
         except Exception as e:
             # Don't silently overwrite an unreadable file — a save right after
             # would erase the (likely truncated) JSON for good. Move it aside
@@ -99,22 +110,31 @@ class SessionStore:
         # contents are fully on disk.
         try:
             tmp = config.TITLES_FILE.with_name(config.TITLES_FILE.name + ".tmp")
-            tmp.write_text(json.dumps(self._titles))
+            tmp.write_text(json.dumps({'version': 2, 'titles': self._titles, 'owners': self._title_owners}))
             os.replace(tmp, config.TITLES_FILE)
         except Exception as e:
             log.warning("titles file save failed: %s", e)
 
+    def _title_identity(self, session):
+        return [session.session_name, session.cwd, session.created_at]
+
     def set_title(self, id: str, title: str | None):
+        session = self.get(id)
+        if not session:
+            return
         if title:
+            self._title_owners[id] = self._title_identity(session)
             self._titles[id] = title
         else:
             self._titles.pop(id, None)
+            self._title_owners.pop(id, None)
         self._save_titles()
         self.broadcast({"type": "title", "id": id, "title": title or ""})
 
     @property
     def titles(self) -> dict:
-        return dict(self._titles)
+        return {id: self._titles.get(id, '') if self._title_owners.get(id) == self._title_identity(s) else ''
+                for id, s in self.sessions.items()}
 
     # ── Session CRUD ──
 
@@ -134,6 +154,7 @@ class SessionStore:
     def remove(self, id: str):
         self.sessions.pop(id, None)
         self._titles.pop(id, None)
+        self._title_owners.pop(id, None)
         self._save_titles()
 
     async def spawn(self, cwd: str, cmd: str = "", req_id: str | None = None) -> Session:
@@ -214,8 +235,9 @@ class SessionStore:
         tmux_sessions = await tmux.list_sessions()
         for ts in tmux_sessions:
             name = ts["sessionName"]
-            # Force every recovered session to canonical size
-            await tmux.resize_window(name, CANONICAL_COLS, CANONICAL_ROWS)
+            # Recovery must not reflow an already running application's output.
+            # Adopt its actual grid instead of briefly forcing every pane to 80.
+            actual = await tmux.pane_size(name)
             if name.startswith("term-"):
                 try:
                     num = int(name.split("-", 1)[1])
@@ -231,6 +253,11 @@ class SessionStore:
                 # Non-term sessions (attached externally)
                 s = self.add(name, ts["cwd"], name)
                 s.cmd = name
+            if actual and 30 <= actual[0] <= 240 and 1 <= actual[1] <= 200:
+                s.display_cols, s.display_rows = actual
+            else:
+                # Never send a frame with guessed dimensions after a read failure.
+                s.geometry_verified = False
 
 
 store = SessionStore()

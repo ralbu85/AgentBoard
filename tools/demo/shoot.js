@@ -10,7 +10,7 @@ async function prep(context) {
 }
 
 ;(async () => {
-  const browser = await chromium.launch({ executablePath: '/usr/bin/google-chrome', args: ['--no-sandbox', '--disable-dev-shm-usage'] })
+  const browser = await require('./safe-browser.cjs').launchBrowser(chromium)
 
   // ── Mobile: waiting session with the quick-approve bar ──
   const mob = await browser.newContext({
