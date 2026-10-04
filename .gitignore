@@ -24,6 +24,8 @@ desktop/release/
 
 .session-view.json
 .session-view.tmp
+.session-state.json
+.session-state-*
 
 # Private browser worker connection path
 deploy/browser/*.secret

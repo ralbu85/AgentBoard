@@ -253,6 +253,7 @@ class SessionStore:
                 # Non-term sessions (attached externally)
                 s = self.add(name, ts["cwd"], name)
                 s.cmd = name
+            s.created_at = int(ts.get('createdAt') or 0)
             if actual and 30 <= actual[0] <= 240 and 1 <= actual[1] <= 200:
                 s.display_cols, s.display_rows = actual
             else:

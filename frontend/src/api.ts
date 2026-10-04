@@ -44,6 +44,8 @@ async function get(url: string) {
 }
 
 export const api = {
+  sessionState: () => get('/api/session-state'),
+  acknowledgeCompletion: (id: string, event: string) => post('/api/session-state/acknowledge', {id, event}),
   sessionView: () => get('/api/session-view'),
   changeSessionView: (change:object) => post('/api/session-view',change),
   login: (pw: string) => post('/api/login', { pw }),

@@ -87,6 +87,8 @@ async def handle_agent_ws(ws: WebSocket):
                 log.warning("agent %s sent oversized frame (%d bytes), dropping", host, len(raw))
                 continue
             msg = json.loads(raw)
+            if registry.get(host) is not conn:
+                break
             mt = msg.get("type")
             if mt == "pong":
                 continue
@@ -94,7 +96,10 @@ async def handle_agent_ws(ws: WebSocket):
                 await ws.send_text(json.dumps({"type": "pong"}))
                 continue
             conn.update_from(msg)
-            broadcast(prefix_msg(host, label, msg))
+            if mt == 'session-inventory':
+                broadcast({'type': 'host-connection', 'host': host, 'online': True})
+            else:
+                broadcast(prefix_msg(host, label, msg))
     except WebSocketDisconnect:
         pass
     except Exception:

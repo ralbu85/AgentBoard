@@ -82,6 +82,13 @@ def broadcast(msg: dict):
     for ws in dead:
         clients.discard(ws)
 
+    if msg.get('type') in {'spawned', 'removed', 'status', 'aiState', 'info', 'cwd', 'activity', 'host-connection'}:
+        try:
+            from .session_state import snapshot
+            broadcast(snapshot())
+        except (OSError, ValueError):
+            log.warning('Shared session state could not be synchronized')
+
 
 async def _safe_send(ws: WebSocket, data: str):
     try:
@@ -107,6 +114,9 @@ async def handle_ws(ws: WebSocket):
             "type": "sessions",
             "sessions": [s.to_dict() for s in store.all()] + registry.mirror(),
         }))
+
+        from .session_state import snapshot
+        await ws.send_text(json.dumps(snapshot()))
 
         from .routes_session_view import get_state
         await ws.send_text(json.dumps({'type':'session-view', **(await get_state())}))
@@ -145,6 +155,13 @@ async def handle_ws(ws: WebSocket):
 async def _handle_msg(msg: dict, ws: WebSocket):
     msg_type = msg.get("type", "")
     host, local_id = split_id(msg.get("id", ""))
+
+    if msg_type == 'session-sync':
+        from .session_state import snapshot
+        from .routes_session_view import get_state
+        await ws.send_text(json.dumps(snapshot()))
+        await ws.send_text(json.dumps({'type': 'session-view', **(await get_state())}))
+        return
 
     # `active` needs cross-host coordination (only one fast-polled session per
     # machine), so it's handled specially rather than blindly forwarded.

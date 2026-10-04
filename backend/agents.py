@@ -49,7 +49,10 @@ class AgentConn:
         """Fold an ingested agent message into the per-session mirror."""
         mtype = msg.get("type", "")
         mid = msg.get("id", "")
-        if mtype == "spawned":
+        if mtype == 'session-inventory':
+            self.sessions = {s['id']: {k: v for k, v in s.items() if k not in ('id', 'host', 'hostLabel', 'online')}
+                             for s in msg.get('sessions', [])[:MAX_SESSIONS_PER_HOST] if isinstance(s, dict) and isinstance(s.get('id'), str)}
+        elif mtype == "spawned":
             if mid not in self.sessions and len(self.sessions) >= MAX_SESSIONS_PER_HOST:
                 return  # mirror full — drop (agent misbehaving); do not grow unbounded
             self.sessions[mid] = {
@@ -57,9 +60,10 @@ class AgentConn:
                 "cwd": msg.get("cwd", ""),
                 "cmd": msg.get("cmd", ""),
                 "status": msg.get("status", "running"),
-                "aiState": None,
-                "process": "",
-                "createdAt": 0,
+                "aiState": msg.get('aiState'),
+                "completionId": msg.get('completionId', ''),
+                "process": msg.get('process', ''),
+                "createdAt": msg.get('createdAt', 0),
                 "memKB": 0,
                 "altScreen": False,
             }
@@ -84,6 +88,8 @@ class AgentConn:
                 s["lastActivityAt"] = msg.get("lastActivityAt", 0)
             elif mtype == "status":
                 s["status"] = msg.get("status", s["status"])
+                if s['status'] in ('completed', 'stopped'):
+                    s['aiState'] = None
             elif mtype == "cwd":
                 s["cwd"] = msg.get("cwd", s["cwd"])
             elif mtype == "aiState":
@@ -100,14 +106,19 @@ class AgentConn:
 class AgentRegistry:
     def __init__(self):
         self._agents: dict[str, AgentConn] = {}
+        self._offline: dict[str, AgentConn] = {}
 
     def register(self, host: str, label: str, ws: WebSocket) -> AgentConn:
         conn = AgentConn(host, label, ws)
         self._agents[host] = conn
+        self._offline.pop(host, None)
         return conn
 
     def unregister(self, host: str) -> AgentConn | None:
-        return self._agents.pop(host, None)
+        conn = self._agents.pop(host, None)
+        if conn:
+            self._offline[host] = conn
+        return conn
 
     def get(self, host: str) -> AgentConn | None:
         return self._agents.get(host)
@@ -122,12 +133,13 @@ class AgentRegistry:
     def mirror(self) -> list[dict]:
         """All known remote sessions as browser-facing dicts (prefixed ids)."""
         out: list[dict] = []
-        for c in self._agents.values():
+        for c in [*self._offline.values(), *self._agents.values()]:
             for local_id, s in c.sessions.items():
                 d = dict(s)
                 d["id"] = prefix_id(c.host, local_id)
                 d["host"] = c.host
                 d["hostLabel"] = c.label
+                d['online'] = c.host in self._agents
                 out.append(d)
         return out
 

@@ -11,6 +11,8 @@ export interface Session {
   online?: boolean
   lastActivityAt?: number
   completionId?: string
+  completionEvent?: string
+  completionUnread?: boolean
   autoTitle?: string
   altScreen?: boolean     // full-screen app (vim/TUI) active → no scrollback
   host: string            // 'local' for the hub's own machine, else the agent's host id
@@ -40,7 +42,14 @@ export interface FileEntry {
 
 // WebSocket messages server → client.
 // Remote (agent) messages additionally carry host/hostLabel, added by the hub.
+export interface SessionStateSnapshot {
+  type: 'session-state'
+  revision: number
+  sessions: Session[]
+}
+
 export type WsMessage =
+  | SessionStateSnapshot
   | { type: 'sessions'; sessions: Session[] }
   | { type: 'host-connection'; host: string; online: boolean }
   | { type: 'activity'; id: string; lastActivityAt: number }

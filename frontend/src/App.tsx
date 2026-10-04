@@ -46,10 +46,10 @@ export function App() {
 
   useEffect(() => {
     setLoadingMsg('Loading sessions...')
-    api.workers()
-      .then(async(sessions) => {
-        setLoadingMsg(`${sessions.length} sessions loaded`)
-        useStore.getState().setSessions(sessions)
+    api.sessionState()
+      .then(async(snapshot) => {
+        setLoadingMsg(`${snapshot.sessions.length} sessions loaded`)
+        useStore.getState().applySessionState(snapshot)
         useStore.getState().loadProfiles()
         try{
           const view=await api.changeSessionView({action:'seed',items:useStore.getState().hiddenSessions})
@@ -139,9 +139,9 @@ export function App() {
   )
   if (!authed) return <Login onLogin={() => {
     setLoadingMsg('Loading sessions...')
-    api.workers().then((sessions) => {
-      setLoadingMsg(`${sessions.length} sessions loaded`)
-      useStore.getState().setSessions(sessions)
+    api.sessionState().then((snapshot) => {
+      setLoadingMsg(`${snapshot.sessions.length} sessions loaded`)
+      useStore.getState().applySessionState(snapshot)
       setAuthed(true)
     })
   }} />

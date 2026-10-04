@@ -84,7 +84,7 @@ export function FolderList({ onSelect }: Props) {
         <b>{counts[value]}</b><span>{label}</span>
       </button>)}
     </div>
-    {statusFilter==='completed'&&<div className="workspace-completion-hint">미확인 결과 · 세션을 선택하면 확인 처리됩니다.</div>}
+    {statusFilter==='completed'&&<div className="workspace-completion-hint">미확인 결과 · 선택하면 모든 기기에서 확인 처리됩니다.</div>}
 
     {visible.map(entry => {
       const name = entry.cwd.split('/').filter(Boolean).pop() || entry.cwd

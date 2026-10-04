@@ -5,6 +5,34 @@ let ws: WebSocket | null = null
 let _pendingActive: string | null = null
 const _pendingSend: object[] = []
 let _retryDelay = 1000  // ms; doubles per failure up to 30s
+let syncTimer: ReturnType<typeof setTimeout> | undefined
+let syncDeadline: ReturnType<typeof setTimeout> | undefined
+let wakeListenersInstalled = false
+
+function requestSessionSync() {
+  clearTimeout(syncTimer)
+  if (!ws || ws.readyState !== WebSocket.OPEN || document.visibilityState === 'hidden') return
+  if (syncDeadline) return
+  const socket = ws
+  socket.send(JSON.stringify({type: 'session-sync'}))
+  syncDeadline = setTimeout(() => {
+    syncDeadline = undefined
+    if (ws !== socket) return
+    useStore.setState({connection: 'offline'})
+    // Closing a dead mobile TCP link may itself never emit onclose. Replace
+    // the socket explicitly; its late callbacks are guarded by identity.
+    ws = null
+    socket.close()
+    initWs()
+  }, 8000)
+}
+
+function receivedSessionState() {
+  clearTimeout(syncDeadline)
+  syncDeadline = undefined
+  clearTimeout(syncTimer)
+  syncTimer = setTimeout(requestSessionSync, 15000)
+}
 
 // Terminal write callbacks — set by TerminalManager
 export const terminalHandlers = {
@@ -18,14 +46,31 @@ export const terminalHandlers = {
 window.__wsDebug = { screenCount: 0, lastScreenId: '', lastScreenLen: 0, snapshotCount: 0 }
 
 export function initWs() {
+  if (!wakeListenersInstalled) {
+    wakeListenersInstalled = true
+    const wake = () => {
+      if (document.visibilityState === 'hidden') {
+        clearTimeout(syncTimer)
+        clearTimeout(syncDeadline)
+        syncDeadline = undefined
+        return
+      }
+      if (!ws || ws.readyState === WebSocket.CLOSED) initWs()
+      else requestSessionSync()
+    }
+    document.addEventListener('visibilitychange', wake)
+    window.addEventListener('pageshow', wake)
+    window.addEventListener('online', wake)
+    window.addEventListener('focus', wake)
+  }
   if (ws && (ws.readyState === WebSocket.CONNECTING || ws.readyState === WebSocket.OPEN)) return
   useStore.setState({connection: 'connecting'})
   const proto = location.protocol === 'https:' ? 'wss' : 'ws'
   ws = new WebSocket(`${proto}://${location.host}/ws`)
+  const socket = ws
 
   ws.onopen = () => {
-    useStore.setState({connection: 'online'})
-    document.getElementById('status-dot')?.classList.remove('off')
+    if (ws !== socket) return
     _retryDelay = 1000  // reset backoff on successful connect
     // Always re-send current active session on (re)connect
     const activeId = _pendingActive || useStore.getState().activeId
@@ -39,9 +84,14 @@ export function initWs() {
       const msg = _pendingSend.shift()!
       ws!.send(JSON.stringify(msg))
     }
+    requestSessionSync()
   }
 
   ws.onclose = (e) => {
+    if (ws !== socket) return
+    clearTimeout(syncTimer)
+    clearTimeout(syncDeadline)
+    syncDeadline = undefined
     useStore.setState({connection: 'offline'})
     document.getElementById('status-dot')?.classList.add('off')
     ws = null
@@ -55,7 +105,13 @@ export function initWs() {
   }
 
   ws.onmessage = (e) => {
+    if (ws !== socket) return
     const msg: WsMessage = JSON.parse(e.data)
+    if (msg.type === 'session-state') {
+      receivedSessionState()
+      useStore.setState({connection: 'online'})
+      document.getElementById('status-dot')?.classList.remove('off')
+    }
 
     // Route terminal data to xterm.js (outside React render).
     //  - snapshot: full pane + 2000 lines of scrollback. Sent on session switch,

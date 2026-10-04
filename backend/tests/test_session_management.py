@@ -69,6 +69,23 @@ def test_remote_replay_keeps_completion_and_activity_metadata(monkeypatch):
     assert next(e for e in events if e['type']=='info')['autoTitle'] == 'Research'
 
 
+def test_remote_completion_during_inventory_replay_is_buffered(monkeypatch):
+    from agent import client
+    from types import SimpleNamespace
+    agent = client.AgentClient()
+    ws = SimpleNamespace(send=AsyncMock(), recv=AsyncMock(return_value='{"type":"register-ack"}'))
+    completed = {'type': 'aiState', 'id': '1', 'state': 'idle', 'completionId': 'new-turn'}
+    async def replay(socket):
+        # Streamer can finish a turn during any await inside initial replay.
+        agent.enqueue(completed)
+    async def reader(socket):
+        assert list(agent._buf) == [completed]
+    monkeypatch.setattr(agent, '_replay', replay)
+    monkeypatch.setattr(agent, '_reader', reader)
+    asyncio.run(agent._session(ws))
+    assert agent._ws is None
+
+
 def test_saved_titles_are_bound_to_session_incarnation(tmp_path, monkeypatch):
     import json
     path = tmp_path / 'titles.json'

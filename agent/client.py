@@ -103,8 +103,16 @@ class AgentClient:
             raise RuntimeError(f"unexpected hub reply: {ack}")
         print(f"[agent] connected to hub as host={config.HOST_ID}", flush=True)
 
-        await self._replay(ws)              # full state before any live frames
-        self._ws = ws                       # enqueue() goes live only now
+        # Buffer changes made while the initial inventory is being sent. If
+        # enqueue stays disabled here, a completion during replay is lost and
+        # the hub can remain stuck on the older working state indefinitely.
+        self._drain()
+        self._ws = ws
+        try:
+            await self._replay(ws)          # writer starts after the inventory
+        except BaseException:
+            self._ws = None
+            raise
 
         writer = asyncio.create_task(self._writer(ws))
         keep = asyncio.create_task(self._keepalive())
@@ -117,11 +125,11 @@ class AgentClient:
 
     async def _replay(self, ws):
         """Send the hub this machine's current sessions (in order, before frames)."""
+        await ws.send(json.dumps({'type': 'session-inventory', 'sessions': [s.to_dict() for s in store.all()]}))
         for s in store.all():
             await ws.send(json.dumps({
                 "type": "spawned",
-                "id": s.id, "cwd": s.cwd, "cmd": s.cmd,
-                "status": s.status, "sessionName": s.session_name,
+                **s.to_dict(),
             }))
             if s.status != "stopped":
                 await ws.send(json.dumps({"type": "status", "id": s.id, "status": s.status}))

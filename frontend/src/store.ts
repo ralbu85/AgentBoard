@@ -1,7 +1,6 @@
-import {observeCompletion} from './completions'
 import {uiId} from './uiId'
 import { create } from 'zustand'
-import type { Session, WsMessage, SpawnProfile } from './types'
+import type { Session, WsMessage, SpawnProfile, SessionStateSnapshot } from './types'
 import { useToasts } from './toasts'
 import { browserUrl } from './components/Viewer/browserUrl'
 import { api } from './api'
@@ -21,6 +20,8 @@ export interface ViewerTab {
 }
 
 interface AppState {
+  _sessionStateRevision: number
+  applySessionState: (snapshot: SessionStateSnapshot) => void
   _sessionViewRevision:number
   _sessionViewReady:boolean
   _sessionOrders:Record<string,string[]>
@@ -45,11 +46,12 @@ interface AppState {
   // Completion flash tracking
   _completedAt: Record<string, number>
   unreadCompletions: string[]
-  acknowledgeCompletion: (id: string) => void
+  acknowledgeCompletion: (id: string) => Promise<void>
 
   // Correlation map for spawns: reqId -> new session id (so the spawner can
   // match its own session, even amid concurrent spawns on the same host).
   _spawnReqs: Record<string, string>
+  _pendingSpawnReqs: Record<string, string>
 
   // Spawn modal open state + optional pre-fill (folder/host), so any component
   // (e.g. a folder header's "+ new session here") can launch it pre-filled.
@@ -187,6 +189,18 @@ function publishSessionView(change:object){
 }
 
 export const useStore = create<AppState>((set, get) => ({
+  _sessionStateRevision: -1,
+  applySessionState: snapshot => {
+    if (snapshot.revision <= get()._sessionStateRevision) return
+    set({_sessionStateRevision: snapshot.revision})
+    get().setSessions(snapshot.sessions)
+    const state = get(), pending = {...state._pendingSpawnReqs}, ready = {...state._spawnReqs}
+    for (const [request, id] of Object.entries(pending)) if (state.sessions[id]) {
+      ready[request] = id
+      delete pending[request]
+    }
+    set({_spawnReqs: ready, _pendingSpawnReqs: pending})
+  },
   _sessionViewRevision:-1,
   _sessionViewReady:false,
   _sessionOrders:{},
@@ -237,16 +251,17 @@ export const useStore = create<AppState>((set, get) => ({
   _viewerState: {},
   _restoredWorkspaces: {},
   _completedAt: {},
-  unreadCompletions: readStringList('agentboard.unreadCompletions'),
-  acknowledgeCompletion: (id) => set(state => {
-    const session = state.sessions[id]
-    if (!session) return {}
-    const unread = state.unreadCompletions.filter(key => key !== completionKey(session))
-    persistList('agentboard.unreadCompletions', unread)
-    const completed = { ...state._completedAt }; delete completed[id]
-    return { unreadCompletions: unread, _completedAt: completed }
-  }),
+  unreadCompletions: [],
+  acknowledgeCompletion: async id => {
+    const session = get().sessions[id]
+    if (!session?.completionUnread || !session.completionEvent) return
+    // Apply only the server's receipt. A failed request must remain unread,
+    // and an old click must not clear a newer completion on any device.
+    const result = await api.acknowledgeCompletion(id, session.completionEvent)
+    if (result.ok !== false) get().applySessionState(result)
+  },
   _spawnReqs: {},
+  _pendingSpawnReqs: {},
   spawnOpen: false,
   spawnPreset: {},
   workspaceCwd: null,
@@ -589,7 +604,6 @@ export const useStore = create<AppState>((set, get) => ({
     const state = get()
     const { [id]: _, ...rest } = state.sessions
     const unread = state.unreadCompletions.filter(key => !state.sessions[id] || key !== completionKey(state.sessions[id]))
-    persistList('agentboard.unreadCompletions', unread)
     const updates: Partial<AppState> = { sessions: rest, unreadCompletions: unread }
     if (state.activeId === id) {
       const ids = Object.keys(rest).filter(id => rest[id].cwd === state.workspaceCwd && (rest[id].host || 'local') === state.workspaceHost)
@@ -599,18 +613,17 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   setSessions: (sessions) => {
-    const state = get(), unread = new Set(state.unreadCompletions)
+    const state = get(), unread: string[] = []
     const hidden = new Set(state.hiddenSessions)
     const map: Record<string, Session> = {}
     for (const s of sessions) {
       map[s.id] = { ...s, host: s.host || 'local', online: s.online !== false }
       const previous=state.sessions[s.id]
       if(previous && !previous.sessionName && hidden.has(completionKey(previous)))hidden.add(completionKey(map[s.id]))
-      if (s.completionId && observeCompletion(map[s.id], s.completionId, true)) unread.add(completionKey(map[s.id]))
+      if (s.completionUnread) unread.push(completionKey(map[s.id]))
     }
     // A missing remote host is disconnected, not a terminated process.
-    for (const s of Object.values(state.sessions)) if (s.host !== 'local' && !map[s.id]) map[s.id] = {...s, online:false}
-    persistList('agentboard.unreadCompletions', [...unread])
+    if (state._sessionStateRevision < 0) for (const s of Object.values(state.sessions)) if (s.host !== 'local' && !map[s.id]) map[s.id] = {...s, online:false}
     persistList('agentboard.hiddenSessions', [...hidden])
     set({ sessions: map, hiddenSessions:[...hidden], unreadCompletions: [...unread], ...(state.activeId && !map[state.activeId] ? {activeId: Object.values(map).find(s=>s.cwd===state.workspaceCwd && s.host===state.workspaceHost && !state.hiddenSessions.includes(completionKey(s)))?.id || null} : {}) })
   },
@@ -618,7 +631,23 @@ export const useStore = create<AppState>((set, get) => ({
   handleMessage: (msg) => {
     const state = get()
 
+    // Once synchronized, only versioned hub snapshots may set status. Legacy
+    // frames remain on the wire for older clients, but cannot roll us back.
+    if (state._sessionStateRevision >= 0 && ['sessions', 'host-connection', 'status', 'aiState', 'info', 'cwd', 'activity', 'removed'].includes(msg.type)) return
+    if (state._sessionStateRevision >= 0 && msg.type === 'spawned') {
+      if (msg.reqId) {
+        // The spawn dialog may select the new session immediately when this
+        // resolves. Wait until the authoritative inventory contains it.
+        if (state.sessions[msg.id]) set({_spawnReqs: {...state._spawnReqs, [msg.reqId]: msg.id}})
+        else set({_pendingSpawnReqs: {...state._pendingSpawnReqs, [msg.reqId]: msg.id}})
+      }
+      return
+    }
+
     switch (msg.type) {
+      case 'session-state':
+        state.applySessionState(msg)
+        break
       case 'session-view':
         state.applySessionView(msg)
         break
@@ -670,7 +699,6 @@ export const useStore = create<AppState>((set, get) => ({
         if (!state.sessions[msg.id]) break
         const { [msg.id]: _, ...rest } = state.sessions
         const unread = state.unreadCompletions.filter(key => key !== completionKey(state.sessions[msg.id]))
-        persistList('agentboard.unreadCompletions', unread)
         const updates: Partial<AppState> = { sessions: rest, unreadCompletions: unread }
         if (state.activeId === msg.id) {
           const ids = Object.keys(rest).filter(id => rest[id].cwd === state.workspaceCwd && (rest[id].host || 'local') === state.workspaceHost)
@@ -683,23 +711,11 @@ export const useStore = create<AppState>((set, get) => ({
       case 'status': {
         const s = state.sessions[msg.id]
         if (!s) break
-        const prev = s.aiState
         const updated = { ...s, status: msg.status as Session['status'] }
-        if (msg.status === 'completed') updated.aiState = null
-
-        const unread = new Set(state.unreadCompletions)
-        if (msg.status === 'completed' && s.status !== 'completed') unread.add(completionKey(s))
-        persistList('agentboard.unreadCompletions', [...unread])
-        // Track completion time for flash
-        const ca = { ...state._completedAt }
-        if (prev === 'working' && msg.status === 'completed') {
-          ca[msg.id] = Date.now()
-        }
+        if (msg.status === 'completed' || msg.status === 'stopped') updated.aiState = null
 
         set({
           sessions: { ...state.sessions, [msg.id]: updated },
-          _completedAt: ca,
-          unreadCompletions: [...unread],
         })
         break
       }
@@ -713,18 +729,8 @@ export const useStore = create<AppState>((set, get) => ({
       case 'aiState': {
         const s = state.sessions[msg.id]
         if (!s) break
-        const ca = { ...state._completedAt }
-        const unread = new Set(state.unreadCompletions)
-        const newCompletion = msg.state === 'idle' && (msg.completionId ? observeCompletion(s, msg.completionId) : msg.completionId == null && s.aiState === 'working')
-        if (newCompletion) {
-          ca[msg.id] = Date.now()
-          unread.add(completionKey(s))
-          persistList('agentboard.unreadCompletions', [...unread])
-        }
         set({
           sessions: { ...state.sessions, [msg.id]: { ...s, aiState: msg.state, completionId: msg.completionId ?? s.completionId } },
-          _completedAt: ca,
-          unreadCompletions: [...unread],
         })
         break
       }

@@ -11,6 +11,7 @@ from .logger import log
 from .sessions import store
 from .routes_session import router as session_router
 from .routes_session_view import router as session_view_router
+from .routes_session_state import router as session_state_router
 from .routes_conversation import router as conversation_router
 from .routes_browser import router as browser_router
 from .routes_desktop import router as desktop_router
@@ -66,6 +67,7 @@ app.add_middleware(AuditMiddleware)
 
 app.include_router(session_router)
 app.include_router(session_view_router)
+app.include_router(session_state_router)
 app.include_router(conversation_router)
 app.include_router(browser_router)
 app.include_router(desktop_router)
