@@ -1,4 +1,6 @@
 import pytest
+from types import SimpleNamespace
+from backend import release as module
 from backend.release import publish, validate
 
 
@@ -26,3 +28,16 @@ def test_invalid_build_is_rejected_before_replacing_live_index(tmp_path):
     with pytest.raises(ValueError):validate(stage)
     (stage/'assets').mkdir();(stage/'assets/missing.js').symlink_to('/etc/passwd')
     with pytest.raises(ValueError):validate(stage)
+
+
+def test_saved_stopped_notebooks_do_not_block_restart(monkeypatch):
+    monkeypatch.setattr(module,'get_json',lambda path:{'sessions':[{'kernel':False,'dirty':False,'state':'stopped'}]} if path=='/api/notebooks' else {'tabs':[]})
+    monkeypatch.setattr(module.subprocess,'run',lambda *a,**k:SimpleNamespace(returncode=0,stdout='agentboard RUNNING'))
+    module.restart_ready()
+
+
+@pytest.mark.parametrize('document',[{'kernel':True,'dirty':False,'state':'idle'},
+    {'kernel':False,'dirty':True,'state':'stopped'}, {'kernel':False,'dirty':False,'state':'starting'}, {}])
+def test_live_unsaved_or_unverifiable_notebooks_block_restart(monkeypatch,document):
+    monkeypatch.setattr(module,'get_json',lambda _: {'sessions':[document]})
+    with pytest.raises(RuntimeError,match='Active notebook'):module.restart_ready()

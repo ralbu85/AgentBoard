@@ -68,7 +68,9 @@ def get_json(path):
 
 
 def restart_ready():
-    if get_json('/api/notebooks')['sessions'] or get_json('/api/browser/tabs')['tabs']:
+    notebooks=get_json('/api/notebooks')['sessions']
+    active=any(item.get('kernel',True) or item.get('dirty',True) or item.get('state')!='stopped' for item in notebooks)
+    if active or get_json('/api/browser/tabs')['tabs']:
         raise RuntimeError('Active notebook/browser sessions; stop them explicitly before backend restart')
     result = subprocess.run(['supervisorctl','status','agentboard'], capture_output=True, text=True)
     if result.returncode or 'RUNNING' not in result.stdout:

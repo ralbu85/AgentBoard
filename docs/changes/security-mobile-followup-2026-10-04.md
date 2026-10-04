@@ -42,7 +42,7 @@ Use unit tests and `npm --prefix frontend run build` for local verification.
 The synthetic browser suite is `npm --prefix frontend run test:browser` and has
 a non-root CI job. A phone viewport in Chromium is not a physical iPhone test.
 
-Local results after dependency updates: frontend 165 passed; backend 161 passed
+Local results after dependency updates: frontend 165 passed; backend 166 passed
 and 1 skipped; desktop policy/unit tests 4 passed; TypeScript/Vite build passed.
 The non-root runner discovered 8 browser cases but did not execute a browser.
 `npm audit` reports zero known findings for the frontend dependency tree and
@@ -75,6 +75,8 @@ remain in the separate October 2 audit directory and are never part of Git.
 be committed. Each deployment writes `$AGENTBOARD_STATE_DIR/.releases/<release>/`
 with `receipt.json` (commit and served asset hashes) and `previous-dist/`.
 Only the service named `agentboard` is restarted; there is no kill-by-port fallback.
+Saved notebook documents with no kernel and a stopped state can be reopened after
+restart. Live kernels, unsaved documents, transitions and unknown states block it.
 
 To recover the frontend, validate the chosen `previous-dist`, copy its assets
 first, then atomically replace `frontend/dist/index.html`; retain other versioned
