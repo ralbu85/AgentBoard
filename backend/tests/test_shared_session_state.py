@@ -97,20 +97,27 @@ def test_corrupt_or_failed_receipt_storage_does_not_report_success(tmp_path, mon
 
 
 def test_two_authenticated_clients_share_receipts_and_both_receive_broadcast(monkeypatch):
+    from backend.security_audit import AuditMiddleware, audit
+    monkeypatch.setattr(audit, 'write', lambda *args, **kwargs: None)
     records = [session()]
     monkeypatch.setattr(session_state, 'sessions', lambda: records)
     events = []
     monkeypatch.setattr(ws, 'broadcast', events.append)
     app = FastAPI()
+    app.add_middleware(AuditMiddleware)
     app.include_router(routes_session_state.router)
     with TestClient(app) as phone, TestClient(app) as desktop:
         assert phone.get('/api/session-state').status_code == 401
         for client in (phone, desktop):
             client.cookies.set('token', config.AUTH_TOKEN)
-        before = desktop.get('/api/session-state').json()
+        initial = desktop.get('/api/session-state')
+        assert initial.headers['cache-control'] == 'no-store'
+        before = initial.json()
         receipt = {'id': '1', 'event': before['sessions'][0]['completionEvent']}
         assert phone.post('/api/session-state/acknowledge', json=receipt, headers={'origin': 'https://foreign.test'}).status_code == 403
-        done = phone.post('/api/session-state/acknowledge', json=receipt).json()
+        response = phone.post('/api/session-state/acknowledge', json=receipt)
+        assert response.headers['cache-control'] == 'no-store'
+        done = response.json()
         assert not done['sessions'][0]['completionUnread']
         assert desktop.get('/api/session-state').json() == done == events[-1]
         records[0]['completionId'] = 'turn-b'

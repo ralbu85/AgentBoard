@@ -102,7 +102,7 @@ class AuditMiddleware:
             nonlocal status
             if message['type'] == 'http.response.start':
                 status = message['status']
-                if scope.get('path', '').startswith('/api/conversations/'):
+                if scope.get('path', '').startswith(('/api/conversations/', '/api/session-state')):
                     message = {**message, 'headers': [*(h for h in message.get('headers', []) if h[0].lower() != b'cache-control'),
                                                     (b'cache-control', b'no-store')]}
             elif message['type'] == 'websocket.accept':
