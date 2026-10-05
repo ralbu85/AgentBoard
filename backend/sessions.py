@@ -37,6 +37,7 @@ class Session:
     resizing: bool = False
     geometry_verified: bool = True
     resize_lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)
+    input_lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)
     display_rows: int = CANONICAL_ROWS
     display_cols: int = CANONICAL_COLS   # authoritative source grid, independent of browser viewport
 

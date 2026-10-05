@@ -181,22 +181,24 @@ async def apply_command(store, streamer, tmux, msg: dict,
             await streamer.poll_now(mid)
         return None
 
-    if mtype == "input":
+    if mtype in ('input', 'paste'):
         s = store.get(mid)
-        if s:
+        if not s or getattr(s, 'status', 'running') in ('stopped', 'completed'):
+            raise ValueError('세션이 종료되어 입력을 전달하지 못했습니다.')
+        lock = getattr(s, 'input_lock', None)
+        if lock is None:
+            s.input_lock = lock = asyncio.Lock()
+        # A Send is one message, including empty lines and trailing newlines.
+        # Keep paste + final Enter together when devices send concurrently.
+        async with lock:
             s.submission_id = uuid.uuid4().hex
-            for line in msg.get("text", "").split("\n"):
-                await tmux.send_keys(s.session_name, line, literal=True)
-                await tmux.send_keys(s.session_name, "Enter")
-            await streamer.poll_now(mid)
-        return None
-
-    if mtype == "paste":
-        s = store.get(mid)
-        if s:
-            s.submission_id = uuid.uuid4().hex
-            await tmux.paste_text(s.session_name, msg.get("text", ""))
-            await streamer.poll_now(mid)
+            text = msg.get('text', '').replace('\r\n', '\n').replace('\r', '\n')
+            if '\n' in text or mtype == 'paste':
+                await tmux.paste_text(s.session_name, text)
+            elif text:
+                await tmux.send_keys(s.session_name, text, literal=True)
+            await tmux.send_keys(s.session_name, 'Enter')
+        await streamer.poll_now(mid)
         return None
 
     log.debug("apply_command: unknown type %r", mtype)

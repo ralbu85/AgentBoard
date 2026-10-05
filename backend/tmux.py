@@ -4,7 +4,7 @@ import asyncio
 import os
 import shlex
 import re
-from pathlib import Path
+import uuid
 from wcwidth import wcwidth
 
 from . import config
@@ -13,20 +13,31 @@ from .terminal_geometry import FrameText
 TMUX_TIMEOUT = 5.0
 
 
-async def tmux_run(args: list[str], timeout: float = TMUX_TIMEOUT) -> str:
+class TmuxInputError(RuntimeError):
+    pass
+
+
+async def tmux_run(args: list[str], timeout: float = TMUX_TIMEOUT, *,
+                   input_data: bytes | None = None, check: bool = False) -> str:
     proc = await asyncio.create_subprocess_exec(
         "tmux", *args,
+        stdin=asyncio.subprocess.PIPE if input_data is not None else asyncio.subprocess.DEVNULL,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
     try:
-        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+        stdout, _ = await asyncio.wait_for(proc.communicate(input_data), timeout=timeout)
+        if check and proc.returncode != 0:
+            raise TmuxInputError('터미널에 입력을 전달하지 못했습니다. 연결 상태를 확인해 주세요.')
         return stdout.decode("utf-8", errors="replace") if proc.returncode == 0 else ""
     except asyncio.TimeoutError:
         try:
             proc.kill()
         except ProcessLookupError:
             pass  # exited between the timeout and the kill — nothing to reap
+        await proc.wait()
+        if check:
+            raise TmuxInputError('터미널 입력 전송 시간이 초과됐습니다. 입력창 내용을 유지합니다.') from None
         return ""
 
 
@@ -147,7 +158,7 @@ async def send_keys(session_name: str, keys: str, literal: bool = False) -> None
     # End tmux options: literal '--' must be sent, and '--help' is text.
     args.append("--")
     args.append(keys)
-    await tmux_run(args)
+    await tmux_run(args, check=True)
 
 
 async def resize_window(session_name: str, cols: int, rows: int) -> None:
@@ -255,12 +266,18 @@ async def kill_session(session_name: str) -> None:
 
 
 async def paste_text(session_name: str, text: str) -> None:
-    """Paste multi-line text into a pane via tmux buffer (sends as single block)."""
-    tmp = Path(f"/tmp/agentboard-paste-{session_name}")
-    tmp.write_text(text)
-    await tmux_run(["load-buffer", str(tmp)])
-    await tmux_run(["paste-buffer", "-t", session_name, "-d"])
-    tmp.unlink(missing_ok=True)
+    """Paste one block, preserving newlines and the application's paste mode."""
+    # A private named buffer prevents concurrent sends using another request's
+    # text. stdin also avoids writing prompts to predictable temporary files.
+    buffer = 'agentboard-input-' + uuid.uuid4().hex
+    try:
+        await tmux_run(['load-buffer', '-b', buffer, '-'], input_data=text.encode('utf-8'), check=True)
+        # Default paste-buffer converts LF to CR (submit). -r preserves LF;
+        # -p brackets the block when the application requests bracketed paste.
+        await tmux_run(['paste-buffer', '-b', buffer, '-t', session_name, '-d', '-p', '-r'], check=True)
+    except BaseException:
+        await tmux_run(['delete-buffer', '-b', buffer])
+        raise
 
 
 async def pane_size(session_name: str) -> tuple[int, int] | None:

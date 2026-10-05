@@ -143,18 +143,24 @@ async def input_text(req: InputRequest, _=Depends(verify)):
     if host != LOCAL:
         ok = await registry.send(host, {"type": "input", "id": local_id, "text": req.text})
         return {"ok": ok}
-    await commands.apply_command(store, streamer, tmux, {"type": "input", "id": local_id, "text": req.text})
+    try:
+        await commands.apply_command(store, streamer, tmux, {"type": "input", "id": local_id, "text": req.text})
+    except (tmux.TmuxInputError, ValueError) as exc:
+        raise HTTPException(503, str(exc)) from exc
     return {"ok": True}
 
 
 @router.post("/paste")
 async def paste_text(req: InputRequest, _=Depends(verify)):
-    """Paste multi-line text as a single block (no line-by-line splitting)."""
+    """Legacy Send endpoint: submit the entire pasted block once."""
     host, local_id = split_id(req.id)
     if host != LOCAL:
         ok = await registry.send(host, {"type": "paste", "id": local_id, "text": req.text})
         return {"ok": ok}
-    await commands.apply_command(store, streamer, tmux, {"type": "paste", "id": local_id, "text": req.text})
+    try:
+        await commands.apply_command(store, streamer, tmux, {"type": "paste", "id": local_id, "text": req.text})
+    except (tmux.TmuxInputError, ValueError) as exc:
+        raise HTTPException(503, str(exc)) from exc
     return {"ok": True}
 
 

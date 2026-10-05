@@ -30,6 +30,7 @@ export function InputCard({ sessionId }: Props) {
   const text = useDrafts(s => s.drafts[draftKey] || '')
   const setText = (value: string | ((previous: string) => string)) => useDrafts.getState().write(draftKey, value)
   const [sending, setSending] = useState(false)
+  const sendingRef = useRef(false)
   const [showFiles, setShowFiles] = useState(false)
   const [dragOver, setDragOver] = useState(false)
   const [uploading, setUploading] = useState(0)
@@ -83,13 +84,14 @@ export function InputCard({ sessionId }: Props) {
   }, [text])
 
   const doSend = async () => {
-    if (sending) return
-    const sent = text
+    if (sendingRef.current) return
+    const sent = textareaRef.current?.value ?? text
+    sendingRef.current = true
     setSending(true)
     try {
-      const result = sent.includes('\n') ? await api.paste(sessionId, sent) : await api.input(sessionId, sent)
+      const result = await api.input(sessionId, sent)
       if (result?.ok !== false) setText(current => current === sent ? '' : current)
-    } finally { setSending(false) }
+    } finally { sendingRef.current = false; setSending(false) }
   }
 
   const onKeyDown = (e: KeyboardEvent) => {

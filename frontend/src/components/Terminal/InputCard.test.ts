@@ -38,9 +38,30 @@ it('mobile Send transmits a multiline draft exactly once and clears it only on s
   act(()=>useDrafts.getState().write(key,'첫째\n둘째'))
   const button=host.querySelector<HTMLButtonElement>('.send-btn')!
   await act(async()=>button.click())
-  expect(api.paste).toHaveBeenCalledExactlyOnceWith('input-test','첫째\n둘째')
-  expect(api.input).not.toHaveBeenCalled()
+  expect(api.input).toHaveBeenCalledExactlyOnceWith('input-test','첫째\n둘째')
+  expect(api.paste).not.toHaveBeenCalled()
   expect(useDrafts.getState().drafts[key]).toBeUndefined()
+})
+
+it('keeps multiline drafts when the terminal rejects the send',async()=>{
+  act(()=>useDrafts.getState().write(key,'첫째\n\n  둘째\n'))
+  vi.mocked(api.input).mockResolvedValueOnce({ok:false})
+  await act(async()=>host.querySelector<HTMLButtonElement>('.send-btn')!.click())
+  expect(host.querySelector('textarea')!.value).toBe('첫째\n\n  둘째\n')
+  expect(useDrafts.getState().drafts[key]).toBe('첫째\n\n  둘째\n')
+})
+
+it('sends a double tap only once and preserves edits made while the send is pending',async()=>{
+  const sent='첫째\n둘째'
+  act(()=>useDrafts.getState().write(key,sent))
+  let finish!:(value:{ok:boolean})=>void
+  vi.mocked(api.input).mockImplementationOnce(()=>new Promise(resolve=>{finish=resolve}))
+  const button=host.querySelector<HTMLButtonElement>('.send-btn')!
+  await act(async()=>{button.click();button.click()})
+  expect(api.input).toHaveBeenCalledExactlyOnceWith('input-test',sent)
+  act(()=>useDrafts.getState().write(key,'전송 중 새로 작성한\n메시지'))
+  await act(async()=>finish({ok:true}))
+  expect(host.querySelector('textarea')!.value).toBe('전송 중 새로 작성한\n메시지')
 })
 
 it('desktop Enter still submits while Shift+Enter and IME composition do not',async()=>{

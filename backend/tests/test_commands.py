@@ -143,16 +143,30 @@ def test_seq_map_covers_backspace_variants():
     assert SEQ_MAP["\x7f"] == "BSpace" and SEQ_MAP["\x08"] == "BSpace"
 
 
-def test_input_sends_each_line_plus_enter():
+def test_input_preserves_multiline_message_and_submits_only_once():
     s = make_session("1")
     _, _, _, tmux = run({"type": "input", "id": "1", "text": "a\nb"}, {"1": s})
-    assert tmux.sent == [("a", True), ("Enter", False), ("b", True), ("Enter", False)]
+    assert tmux.pastes == ['a\nb']
+    assert tmux.sent == [('Enter', False)]
 
 
-def test_paste_goes_through_buffer_not_keys():
+def test_legacy_paste_send_submits_the_entire_buffer_once():
     s = make_session("1")
     _, _, _, tmux = run({"type": "paste", "id": "1", "text": "x\ny"}, {"1": s})
-    assert tmux.pastes == ["x\ny"] and tmux.sent == []
+    assert tmux.pastes == ["x\ny"] and tmux.sent == [('Enter', False)]
+
+
+def test_send_normalizes_crlf_without_losing_blank_lines_or_indentation():
+    s = make_session('1')
+    _, _, _, tmux = run({'type': 'input', 'id': '1', 'text': '첫째\r\n\r\n  둘째\r마지막\n'}, {'1': s})
+    assert tmux.pastes == ['첫째\n\n  둘째\n마지막\n']
+    assert tmux.sent == [('Enter', False)]
+
+
+def test_plain_and_empty_send_each_submit_once():
+    for text, expected in [('hello', [('hello', True), ('Enter', False)]), ('', [('Enter', False)])]:
+        _, _, _, tmux = run({'type': 'input', 'id': '1', 'text': text}, {'1': make_session('1')})
+        assert tmux.sent == expected and tmux.pastes == []
 
 
 # ── resize bounds ──
