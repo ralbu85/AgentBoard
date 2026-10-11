@@ -289,3 +289,82 @@ describe('dynamic source width',()=>{
     expect(bufText(inst)).toContain('current-40')
   })
 })
+
+describe('session navigation',()=>{
+  it('reveals the last source rows in a short desktop split pane as well as xterm history',async()=>{
+    const inst=makeOpened('short-return'),container=document.createElement('div')
+    Object.defineProperty(inst.el,'clientHeight',{value:300})
+    Object.defineProperty(inst.el,'scrollHeight',{value:600})
+    TM.mountInto(inst.id,container)
+    TM.writeSnapshot(inst.id,lines('latest',150));await flush(inst)
+    expect(atBottom(inst)).toBe(true)
+    expect(TM.isScrolledUp(inst.id)).toBe(false)
+    inst.el.scrollTop=0
+    expect(TM.isScrolledUp(inst.id)).toBe(true)
+    TM.writeSnapshot(inst.id,lines('new',180));await flush(inst)
+    expect(bufText(inst)).not.toContain('new-180')
+    TM.scrollToBottom(inst.id);await flush(inst)
+    expect(bufText(inst)).toContain('new-180')
+    expect(TM.isScrolledUp(inst.id)).toBe(false)
+  })
+
+  it('reopens a retained terminal at its latest output and catches up deferred history',async()=>{
+    const inst=makeOpened('return-latest')
+    const old=document.createElement('div'),next=document.createElement('div')
+    old.append(inst.el)
+    TM.writeSnapshot(inst.id,lines('old',100));await flush(inst)
+    inst.term.scrollLines(-30)
+    TM.writeSnapshot(inst.id,lines('latest',150))
+    TM.unmountFrom(inst.id,old)
+    expect(old.contains(inst.el)).toBe(false)
+    TM.mountInto(inst.id,next);await flush(inst)
+    expect(bufText(inst)).toContain('latest-150')
+    expect(atBottom(inst)).toBe(true)
+    TM.writeSnapshot(inst.id,lines('fresh',180));await flush(inst)
+    expect(bufText(inst)).toContain('fresh-180')
+    expect(atBottom(inst)).toBe(true)
+  })
+
+  it('ignores scroll restoration queued for a previous mount',async()=>{
+    const inst=makeOpened('return-resize'),old=document.createElement('div'),next=document.createElement('div')
+    Object.defineProperty(old,'clientWidth',{value:800})
+    Object.defineProperty(old,'clientHeight',{value:900,configurable:true})
+    ;(inst.term as any)._core._renderService={dimensions:{css:{cell:{width:8,height:15}}}}
+    old.append(inst.el)
+    TM.writeSnapshot(inst.id,lines('history',150),80,40,true);await flush(inst)
+    inst.term.scrollLines(-30)
+    Object.defineProperty(old,'clientHeight',{value:630})
+    TM.refit(inst.id) // queues the old reading offset in xterm's write callback
+    TM.unmountFrom(inst.id,old)
+    TM.mountInto(inst.id,next)
+    await flush(inst)
+    expect(atBottom(inst)).toBe(true)
+  })
+
+  it('lets a new reading gesture cancel activation follow before the fresh snapshot arrives',async()=>{
+    const inst=makeOpened('return-reading'),container=document.createElement('div')
+    TM.writeSnapshot(inst.id,lines('old',150));await flush(inst)
+    const frames:FrameRequestCallback[]=[]
+    vi.stubGlobal('requestAnimationFrame',(cb:FrameRequestCallback)=>{frames.push(cb);return frames.length})
+    try{
+      TM.mountInto(inst.id,container);await flush(inst)
+      TM.pageView(inst.id,true)
+      const position=viewportY(inst)
+      frames.forEach(cb=>cb(0))
+      TM.writeSnapshot(inst.id,lines('new',180));await flush(inst)
+      expect(viewportY(inst)).toBe(position)
+      expect(bufText(inst)).not.toContain('new-180')
+      TM.scrollToBottom(inst.id);await flush(inst)
+      expect(bufText(inst)).toContain('new-180')
+    }finally{vi.unstubAllGlobals()}
+  })
+
+  it('does not unmount a terminal that already moved into a different split pane',()=>{
+    const inst=makeOpened('moved-pane'),old=document.createElement('div'),next=document.createElement('div')
+    old.append(inst.el)
+    TM.mountInto(inst.id,next)
+    TM.unmountFrom(inst.id,old)
+    expect(next.contains(inst.el)).toBe(true)
+    expect(inst.el.style.display).toBe('')
+  })
+})

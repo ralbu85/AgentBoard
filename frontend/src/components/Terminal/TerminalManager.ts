@@ -75,6 +75,25 @@ interface TermInstance {
   nativeFrames?: {snapshot?:FrameArgs;screen?:FrameArgs;version?:number}
   nativeRefit?: boolean
   nativeMeasure?: boolean
+  followOnReveal?: boolean
+  scrollEpoch?: number
+}
+
+// Only explicit navigation/reading changes this generation. A queued xterm
+// write or resize callback from the previous view must not restore its offset.
+function readingIntent(t:TermInstance){
+  t.followOnReveal=false
+  t.scrollEpoch=(t.scrollEpoch||0)+1
+}
+
+function pinBottom(t:TermInstance){
+  if(t.mobileView)t.mobileView.bottom()
+  else {
+    t.term.scrollToBottom()
+    // Short desktop split panes can clip the source screen outside xterm's
+    // own history viewport. Both scroll surfaces must show the latest row.
+    t.el.scrollTop=t.el.scrollHeight
+  }
 }
 
 type FrameArgs=Parameters<typeof writeSnapshot>
@@ -219,6 +238,10 @@ export function open(id: string, container: HTMLElement) {
     if(isMobile)t.mobileView=new MobileTerminalView(t.el)
     else t.term.open(t.el)
     t.opened = true
+    t.el.addEventListener('pointerdown',()=>readingIntent(t),{passive:true})
+    t.el.addEventListener('keydown',event=>{
+      if(['PageUp','PageDown','Home','End'].includes(event.key))readingIntent(t)
+    })
     t.term.resize(CANONICAL_COLS, CANONICAL_ROWS)
     if (touchTerminal) {
       t.nativeSelection=new NativeTerminalSelection(t.el,()=>resumeNative(t))
@@ -228,7 +251,7 @@ export function open(id: string, container: HTMLElement) {
     t.term.reset()
     refit(id)
     setTimeout(() => {
-      if(terminals.get(id)!==t||!t.opened)return
+      if(terminals.get(id)!==t||!t.opened||!t.el.isConnected||t.el.style.display==='none')return
       refit(id)
       send({ type: 'resync', id })
       const pending = _pendingSnapshots.get(id) || _pendingScreens.get(id)
@@ -319,6 +342,8 @@ export function refit(id: string) {
   const container = t.el.parentElement
   if (!container || container.clientWidth<=0 || container.clientHeight<=0) return
   const grid=grids.get(id)||{cols:CANONICAL_COLS,rows:CANONICAL_ROWS}
+  const epoch=t.scrollEpoch
+  const outerScroll=t.el.scrollTop
   const cell=t.mobileView?.measure(preferences.fontSize,preferences.lineHeight)||(t.term as any)._core?._renderService?.dimensions?.css?.cell
   const cellW=cell?.width
   if(!cellW)return
@@ -328,7 +353,7 @@ export function refit(id: string) {
     const cols=Math.max(2,Math.min(240,Math.floor(container.clientWidth/cellW)))
     if(grid.dynamic)requestViewport(id,cols)
     if(t.term.cols!==cols){
-      const scrolled=isScrolledUp(id),position=t.term.buffer.active.viewportY
+      const scrolled=!t.followOnReveal&&isScrolledUp(id),position=t.term.buffer.active.viewportY
       t.term.resize(cols,t.term.rows)
       if(t.snapshot!==undefined&&!t.needsSnapshot){
         const data=t.screen===undefined?t.snapshot:replaceFrameScreen(t.snapshot,t.screen,grid.rows)
@@ -346,18 +371,20 @@ export function refit(id: string) {
   }
   const scale=viewportScale(container.clientWidth,grid.cols*cellW,true)
   const scaleChanged=t.el.dataset.scale!==undefined&&Number(t.el.dataset.scale)!==scale
-  const followOutput=!isScrolledUp(id),scrollPosition=t.term.buffer.active.viewportY
+  const followOutput=!!t.followOnReveal||!isScrolledUp(id),scrollPosition=t.term.buffer.active.viewportY
   const preserveZoomScroll=scaleChanged&&!t.needsSnapshot
   if(grid.dynamic)requestViewport(id,desktopColumns(container.clientWidth,cellW))
   const rows=viewportRows(container.clientHeight,cell.height,scale,grid.rows,!isMobile&&!!grid.fullRows)
   if(t.term.cols!==grid.cols||t.term.rows!==rows){
-    const scrolled=isScrolledUp(id),position=t.term.buffer.active.viewportY
+    const scrolled=!t.followOnReveal&&isScrolledUp(id),position=t.term.buffer.active.viewportY
     t.term.resize(grid.cols,rows)
     // Rebuild from applied frames so extra rows contain history, not duplicates.
     const snapshot=t.snapshot,latest=t.screen
     if(snapshot!==undefined)_applySnapshot(t,snapshot)
     if(latest!==undefined)_writeScreen(t,latest)
-    if(scrolled)t.term.write('',()=>t.term.scrollToLine(position))
+    if(scrolled)t.term.write('',()=>{
+      if(t.scrollEpoch===epoch){t.term.scrollToLine(position);t.el.scrollTop=outerScroll}
+    })
   }
   const screen=t.el.querySelector<HTMLElement>('.xterm')
   if(screen){screen.style.zoom=String(scale);screen.style.width=`${grid.cols*cellW}px`}
@@ -369,9 +396,9 @@ export function refit(id: string) {
   // logical buffer position after layout instead of letting it jump to history.
   // A new grid needs its fresh snapshot to choose the position instead.
   if(preserveZoomScroll)requestAnimationFrame(()=>{
-    if(terminals.get(id)!==t||Number(t.el.dataset.scale)!==scale||t.needsSnapshot||grids.get(id)?.version!==grid.version)return
-    if(followOutput)t.term.scrollToBottom()
-    else t.term.scrollToLine(scrollPosition)
+    if(terminals.get(id)!==t||t.scrollEpoch!==epoch||Number(t.el.dataset.scale)!==scale||t.needsSnapshot||grids.get(id)?.version!==grid.version)return
+    if(followOutput)pinBottom(t)
+    else {t.term.scrollToLine(scrollPosition);t.el.scrollTop=outerScroll}
   })
   // Only a desktop viewer negotiates the process's source columns.
 }
@@ -383,6 +410,7 @@ function _setupWheelPaging(id: string, t: TermInstance) {
   let accum = 0
   let lastSend = 0
   t.el.addEventListener('wheel', (e) => {
+    readingIntent(t)
     if (!_isAltScreen(id)) return  // normal session → native scrollback
     // Pan a clipped source grid before navigating the application's history.
     const before=t.el.scrollTop
@@ -404,6 +432,7 @@ function _setupMobileScroll(_id: string, t: TermInstance) {
   let x=0,y=0,moved=false
   t.el.addEventListener('touchstart',e=>{
     if(e.touches.length!==1)return
+    readingIntent(t)
     x=e.touches[0].clientX;y=e.touches[0].clientY;moved=false
     t.nativeSelection?.beginPress()
   },{passive:true})
@@ -418,8 +447,9 @@ function _setupMobileScroll(_id: string, t: TermInstance) {
 // scrollback → scroll locally (sending PageUp to the app would be a no-op).
 // Alt-screen apps own their history → caller should send the key instead.
 export function pageView(id: string, up: boolean): boolean {
-  if (_isAltScreen(id)) return false
   const t = terminals.get(id)
+  if(t)readingIntent(t)
+  if (_isAltScreen(id)) return false
   if (!t?.opened) return false
   t.nativeSelection?.clear()
   if(t.mobileView)t.mobileView.page(up)
@@ -431,6 +461,7 @@ export function scrollToBottom(id: string) {
   const t = terminals.get(id)
   if (!t?.opened) return
   t.nativeSelection?.clear()
+  t.scrollEpoch=(t.scrollEpoch||0)+1
   const deferred = _deferredSnapshots.get(id)
   if (deferred !== undefined) {
     // Apply the held-back snapshot instead of just jumping: it rebuilds the
@@ -439,8 +470,7 @@ export function scrollToBottom(id: string) {
     _applySnapshot(t, deferred)
     return
   }
-  t.term.scrollToBottom()
-  if(isMobile)t.el.scrollTop=t.el.scrollHeight
+  pinBottom(t)
 }
 
 export function isScrolledUp(id?: string) {
@@ -449,7 +479,7 @@ export function isScrolledUp(id?: string) {
   if (!t?.opened) return false
   if(t.mobileView)return t.mobileView.scrolledUp
   const buf = t.term.buffer.active
-  return buf.viewportY < buf.baseY || (isMobile&&t.el.scrollHeight-t.el.clientHeight-t.el.scrollTop>2)
+  return buf.viewportY < buf.baseY || t.el.scrollHeight-t.el.clientHeight-t.el.scrollTop>2
 }
 
 // \x1b[3J trims xterm's scrollback, \x1b[2J clears the visible rows,
@@ -466,8 +496,9 @@ function _applySnapshot(t: TermInstance, frame: SourceFrame,follow=true) {
   if(isMobile){_renderMobileSnapshot(t,frame,follow);return}
   const grid=grids.get(t.id)
   t.sourceTop=grid?.fullRows?Math.max(0,Math.min(t.term.rows-grid.rows,data.split('\n').length-grid.rows)):0
+  const epoch=t.scrollEpoch
   t.term.write('\x1b[0m\x1b[3J\x1b[2J\x1b[H' + data, () => {
-    t.term.scrollToBottom()
+    if(follow&&t.scrollEpoch===epoch)pinBottom(t)
   })
 }
 
@@ -507,13 +538,14 @@ export function writeSnapshot(id: string, data: string, cols?:number, rows?:numb
   // continuously while a session streams (history keeps growing). Hold only
   // the LATEST snapshot and apply it once the viewport returns to the bottom
   // (flushDeferred / scrollToBottom / next writeScreen at bottom).
-  if (isScrolledUp(id)&&!t.needsSnapshot) {
+  if (isScrolledUp(id)&&!t.needsSnapshot&&!t.followOnReveal) {
     _deferredSnapshots.set(id, frame)
     return
   }
   _deferredSnapshots.delete(id)
   _pendingSnapshots.delete(id);_pendingScreens.delete(id)
-  _applySnapshot(t, frame,!t.mobileView?.scrolledUp)
+  _applySnapshot(t, frame,!!t.followOnReveal||!t.mobileView?.scrolledUp)
+  t.followOnReveal=false
 }
 
 // Apply a held-back snapshot once the user has scrolled back to the bottom.
@@ -558,7 +590,7 @@ function _writeScreen(t:TermInstance,data:SourceFrame){
   t.screen=data
   if(isMobile){
     const sourceRows=grids.get(t.id)?.rows||CANONICAL_ROWS
-    if(isScrolledUp(t.id)){
+    if(isScrolledUp(t.id)&&!t.followOnReveal){
       // Freeze all screen updates while reading, not only tables. A changing
       // prompt height must never move the text under the user's finger.
       const snapshot=_deferredSnapshots.get(t.id)??t.snapshot
@@ -604,18 +636,44 @@ export function reveal(id: string) {
   if (t) t.el.style.display = ''
 }
 
-// Mount a session's terminal into a grid tile: open (create/re-parent), make
-// visible, and fit it to the tile. Used by SessionGrid for each tile.
+// A newly selected session opens at the latest output. Ordinary refits and
+// updates while it stays visible continue to preserve an intentional read.
 export function mountInto(id: string, container: HTMLElement) {
   open(id, container)
+  const t=terminals.get(id)!
+  t.followOnReveal=true
   reveal(id)
+  // Reparenting can reset native scrollTop, and an inactive terminal may have
+  // held a newer snapshot while the old view was reading. Catch up before fit.
+  scrollToBottom(id)
   refit(id)
+  const epoch=t.scrollEpoch
+  const pin=()=>{
+    if(terminals.get(id)!==t||t.el.parentElement!==container||t.scrollEpoch!==epoch)return
+    pinBottom(t)
+  }
+  // xterm parses queued writes asynchronously; native scroll layout may also
+  // settle after mounting. Both callbacks belong only to this activation.
+  t.term.write('',pin)
+  requestAnimationFrame(pin)
+  send({type:'resync',id})
+}
+
+export function unmountFrom(id:string,container:HTMLElement){
+  const t=terminals.get(id)
+  if(!t||t.el.parentElement!==container)return
+  t.nativeSelection?.clear()
+  readingIntent(t)
+  releaseViewport(id)
+  t.el.style.display='none'
+  t.el.remove()
 }
 
 export function search(id: string, q: string) {
   const t = terminals.get(id)
   if (!t?.searchAddon) return
   t.nativeSelection?.clear()
+  readingIntent(t)
   if(t.mobileView){t.mobileView.search(q);return}
   if (q) t.searchAddon.findNext(q)
   else t.searchAddon.clearDecorations()

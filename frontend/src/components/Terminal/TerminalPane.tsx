@@ -37,18 +37,14 @@ export function TerminalPane({ sessionId }: { sessionId?: string }) {
 
   useEffect(() => {
     if (!activeId || !containerRef.current || conversation) return
-    TM.open(activeId, containerRef.current)
-    TM.reveal(activeId)
-    // The terminal element may have been sized for a different container
-    // (rotation, split-pane drag, mobile keyboard) before this session was
-    // last viewed. Recompute now that it's visible again.
-    TM.refit(activeId)
+    const container=containerRef.current
+    TM.mountInto(activeId, container)
     // Every session switch funnels through here (both layouts mount TerminalPane).
     // Re-assert active so the backend returns a fresh snapshot that fully clears
     // this terminal's old buffer — otherwise switch paths that don't call
     // notifyActive themselves (e.g. kill/remove auto-select) leave stale content.
     if (useStore.getState().activeId === activeId) notifyActive(activeId)
-    return()=>{TM.clearNativeSelection(activeId);TM.releaseViewport(activeId)}
+    return()=>TM.unmountFrom(activeId,container)
   }, [activeId,conversation])
 
   // Poll scroll state for button visibility

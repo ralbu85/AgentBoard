@@ -156,3 +156,54 @@ it('uses native scrolling in the actual mobile mount and keeps DOM stable during
     expect(inst.mobileView!.content.textContent).toContain('AFTER COPY')
   }finally{TM.destroy(id);container.remove()}
 })
+
+it('reopens mobile history at the latest output even when DOM reattachment resets the offset',async()=>{
+  const id='native-return',inst=TM.create(id);instances.push(inst)
+  const old=document.createElement('div'),next=document.createElement('div')
+  for(const container of [old,next]){
+    document.body.append(container)
+    Object.defineProperty(container,'clientWidth',{value:360})
+    Object.defineProperty(container,'clientHeight',{value:500})
+  }
+  try{
+    TM.open(id,old)
+    Object.defineProperty(inst.el,'clientHeight',{value:500})
+    Object.defineProperty(inst.el,'scrollHeight',{value:1600})
+    inst.el.scrollTop=1100
+    TM.writeSnapshot(id,'HISTORY\r\n'+source('ORIGINAL'),160,40,true,1,true)
+    inst.el.scrollTop=200
+    TM.writeSnapshot(id,'GROWN HISTORY\r\n'+source('MISSED OUTPUT'),160,40,true,1,true)
+    TM.unmountFrom(id,old)
+    inst.el.scrollTop=0 // detached native elements can lose their old offset
+    TM.mountInto(id,next);await flush(inst)
+    expect(TM.getBufferText(id)).toContain('MISSED OUTPUT')
+    expect(inst.mobileView?.scrolledUp).toBe(false)
+    inst.el.scrollTop=0 // model a delayed mobile layout adjustment
+    TM.writeSnapshot(id,'NEW HISTORY\r\n'+source('LATEST OUTPUT'),160,40,true,1,true)
+    expect(TM.getBufferText(id)).toContain('LATEST OUTPUT')
+    expect(inst.mobileView?.scrolledUp).toBe(false)
+    // Once visible, an actual reading gesture still freezes content in place.
+    inst.el.dispatchEvent(new Event('pointerdown'))
+    inst.el.scrollTop=180
+    TM.writeSnapshot(id,source('AFTER READING'),160,40,true,1,true)
+    expect(inst.el.scrollTop).toBe(180)
+    expect(TM.getBufferText(id)).toContain('LATEST OUTPUT')
+    TM.scrollToBottom(id)
+    expect(TM.getBufferText(id)).toContain('AFTER READING')
+  }finally{TM.destroy(id);old.remove();next.remove()}
+})
+
+it('keeps only the selected terminal mounted when the mobile pane is reused',async()=>{
+  const container=document.createElement('div');document.body.append(container)
+  Object.defineProperty(container,'clientWidth',{value:360});Object.defineProperty(container,'clientHeight',{value:500})
+  const first=TM.create('native-first'),second=TM.create('native-second');instances.push(first,second)
+  try{
+    TM.mountInto(first.id,container)
+    TM.unmountFrom(first.id,container)
+    TM.mountInto(second.id,container)
+    await flush(second)
+    expect(container.querySelectorAll('.xterm-wrap')).toHaveLength(1)
+    expect(container.firstElementChild).toBe(second.el)
+    expect(first.el.isConnected).toBe(false)
+  }finally{TM.destroy(first.id);TM.destroy(second.id);container.remove()}
+})

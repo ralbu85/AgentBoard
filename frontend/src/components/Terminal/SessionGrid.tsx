@@ -28,9 +28,8 @@ function GridTile({ id }: { id: string }) {
     const el = ref.current
     if (!el) return
     TM.mountInto(id, el)
-    send({ type: 'resync', id })
     const t = setTimeout(() => TM.refit(id), 130)
-    return () => {clearTimeout(t);TM.releaseViewport(id)}
+    return () => {clearTimeout(t);TM.unmountFrom(id,el)}
   }, [id])
 
   const focus = () => { setActive(id); useStore.getState().acknowledgeCompletion(id); notifyActive(id) }
