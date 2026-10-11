@@ -9,9 +9,12 @@ export const plainText=(text:string)=>text.replace(/\x1b\[[0-?]*[ -/]*[@-~]|\x1b
 export const textWidth=(text:string)=>Array.from(plainText(text)).reduce((n,char)=>n+cellWidth(char),0)
 const Segmenter=(Intl as unknown as {Segmenter?:new(locales?:string,options?:{granularity:string})=>{segment(text:string):Iterable<{segment:string}>}}).Segmenter
 const graphemes=Segmenter?new Segmenter(undefined,{granularity:'grapheme'}):undefined
+export function textGraphemes(text:string):string[]{
+  return graphemes&&/[\p{Mark}\u200d\u1100-\u11ff\u{1f1e6}-\u{1f1ff}\u{1f3fb}-\u{1f3ff}]/u.test(text)?Array.from(graphemes.segment(text),g=>g.segment):Array.from(text)
+}
 function displayTokens(text:string):string[]{
   return (text.match(/\x1b\[[0-?]*[ -/]*[@-~]|\x1b[()][0-2A-Z]|[^\x1b]+/gu)||[]).flatMap(part=>
-    part.startsWith('\x1b')?[part]:graphemes&&/[\p{Mark}\u200d\u1100-\u11ff\u{1f1e6}-\u{1f1ff}\u{1f3fb}-\u{1f3ff}]/u.test(part)?Array.from(graphemes.segment(part),g=>g.segment):Array.from(part))
+    part.startsWith('\x1b')?[part]:textGraphemes(part))
 }
 
 // Captured cells can inherit SGR attributes from preceding rows/cells. Keep a

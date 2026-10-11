@@ -1,6 +1,7 @@
-import {plainText,AnsiStyle} from './terminalText'
+import {plainText,AnsiStyle,textWidth,textGraphemes} from './terminalText'
 import type {CopyRow} from './reflow'
 import {selectedSource,textLinks} from './mobileCopy'
+import {isMobileTableRow} from './mobileTables'
 
 type Cursor={row:number;col:number;visible:boolean}
 const palette=['#7c8495','#ef6b6b','#45d483','#e5a63e','#7c9df0','#b89cf0','#4dd4c0','#ececf1','#9ca3af','#f09090','#6ee6a0','#efc060','#9db8f0','#d0b4f0','#60e8d0','#f5f5fa']
@@ -36,6 +37,26 @@ function attributes(sgr:string){
   }
   if(inverse){const fg=style.color||'#ececf1';style.color=style.backgroundColor||'#101014';style.backgroundColor=fg}
   return style
+}
+
+function gridText(span:HTMLElement,text:string){
+  // ASCII runs stay compact (especially long links). Fallback-font graphemes
+  // occupy explicit terminal columns, without splitting emoji/combining marks.
+  const runs:{text:string;width:number}[]=[]
+  for(const glyph of textGraphemes(text)){
+    const width=textWidth(glyph),last=runs[runs.length-1]
+    if(last&&(width===0||(/^[\x20-\x7e]+$/.test(glyph)&&/^[\x20-\x7e]+$/.test(last.text)))){
+      last.text+=glyph;last.width+=width
+    }else runs.push({text:glyph,width})
+  }
+  span.classList.add('mobile-terminal-grid-run')
+  span.style.gridTemplateColumns=`repeat(${Math.max(1,textWidth(text))}, minmax(0, 1fr))`
+  let column=1
+  for(const run of runs){
+    const cell=document.createElement('span');cell.textContent=run.text
+    cell.style.gridColumn=`${column} / span ${Math.max(1,run.width)}`
+    cell.style.gridRow='1';span.append(cell);column+=run.width
+  }
 }
 
 // A normal DOM document is the phone's scroll/selection surface. It does not
@@ -82,6 +103,7 @@ export class MobileTerminalView {
     probe.style.cssText='position:absolute;visibility:hidden;white-space:pre;pointer-events:none'
     this.content.append(probe)
     const width=probe.getBoundingClientRect().width/100;probe.remove()
+    this.content.style.setProperty('--mobile-cell-width',(width||fontSize/2)+'px')
     return this.metrics={width:width||fontSize/2,height:fontSize*lineHeight}
   }
   invalidateMeasure(){this.metrics=undefined}
@@ -103,10 +125,16 @@ export class MobileTerminalView {
       const oldLinkSource=this.linkSources[i]
       if(this.source[i]===lines[i]&&oldLinkSource?.text===copy.source.text&&oldLinkSource.start===copy.start)continue
       const row=document.createElement('span');row.className='mobile-terminal-line'
+      const grid=isMobileTableRow(lines[i])?document.createElement('span'):undefined
+      if(grid){
+        grid.className='mobile-terminal-grid'
+        grid.style.gridTemplateColumns=`repeat(${Math.max(1,textWidth(lines[i]))}, var(--mobile-cell-width, .5em))`
+        row.append(grid)
+      }
       const state=new AnsiStyle()
       if(!links.has(copy.source))links.set(copy.source,textLinks(copy.source.text))
       const rowLinks=links.get(copy.source)!
-      let position=copy.start
+      let position=copy.start,column=1
       for(const token of lines[i].match(/\x1b\[[0-?]*[ -/]*[@-~]|\x1b[()][0-2A-Z]|[^\x1b]+/g)||[]){
         if(token.startsWith('\x1b')){state.feed(token);continue}
         const end=position+token.length
@@ -116,7 +144,13 @@ export class MobileTerminalView {
           const until=Math.min(end,link?.end??next?.start??end)
           const span=document.createElement(link?'a':'span')
           if(link){const anchor=span as HTMLAnchorElement;anchor.href=link.url;anchor.target='_blank';anchor.rel='noopener noreferrer';anchor.referrerPolicy='no-referrer'}
-          Object.assign(span.style,attributes(state.prefix));span.textContent=token.slice(position-(end-token.length),until-(end-token.length));row.append(span)
+          Object.assign(span.style,attributes(state.prefix))
+          const text=token.slice(position-(end-token.length),until-(end-token.length))
+          if(grid){
+            const width=textWidth(text)
+            span.style.gridColumn=`${column} / span ${Math.max(1,width)}`;span.style.gridRow='1'
+            gridText(span,text);grid.append(span);column+=width
+          }else {span.textContent=text;row.append(span)}
           position=until
         }
       }

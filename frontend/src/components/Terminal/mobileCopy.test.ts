@@ -55,3 +55,16 @@ it('does not intercept copying outside the terminal or after disposal',()=>{
   const range=document.createRange();range.selectNodeContents(view.content)
   expect(copy(range)).toEqual({text:undefined,prevented:false})
 })
+
+it('preserves native partial copy, search and links inside fixed-column table rows',()=>{
+  const text='│ 한글 🙂 e\u0301 │ https://example.org │',view=render(text,80)
+  const row=view.content.querySelector('.mobile-terminal-line')!,range=document.createRange()
+  expect(row.querySelector('.mobile-terminal-grid')).not.toBeNull()
+  const start=text.indexOf('한글'),end=text.indexOf(' │',start)
+  range.setStart(...offset(row,start));range.setEnd(...offset(row,end))
+  expect(copy(range).text).toBe('한글 🙂 e\u0301')
+  expect(all(view)).toBe(text+'\n')
+  expect(row.querySelector('a')?.href).toBe('https://example.org/')
+  view.search('🙂 e\u0301');expect(window.getSelection()?.toString()).toBe('🙂 e\u0301')
+  expect(copy(window.getSelection()!.getRangeAt(0)).text).toBe('🙂 e\u0301')
+})

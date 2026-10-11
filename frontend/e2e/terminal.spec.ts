@@ -48,3 +48,28 @@ test('phone links retain their full destination across wrapped rows',async({page
   expect(await page.evaluate(()=>(window as any).fixture.text())).toContain('curl --header    "한글 test" https://example.org/very/long/resource')
   expect(await page.evaluate(()=>(window as any).fixture.columns())).toBe('100')
 })
+
+test('phone table borders align across font sizes and rotation with no second wrapping',async({page},info)=>{
+  test.skip(info.project.name!=='phone')
+  await page.evaluate(()=>document.fonts.ready)
+  for(const width of [390,430,844])for(const fontSize of [12,13])for(const wide of [false,true]){
+    await page.setViewportSize({width,height:844})
+    await page.evaluate(({wide,fontSize})=>(window as any).fixture.table(wide,fontSize),{wide,fontSize})
+    await expect(page.locator('.mobile-terminal-grid')).toHaveCount(6)
+    const layout=await page.evaluate(()=>{
+      const root=document.querySelector<HTMLElement>('.mobile-output-scroll')!
+      const grids=[...root.querySelectorAll<HTMLElement>('.mobile-terminal-grid')]
+      return {overflow:root.scrollWidth-root.clientWidth,right:root.getBoundingClientRect().right,
+        rows:grids.map(grid=>({right:grid.getBoundingClientRect().right,top:grid.getBoundingClientRect().top,
+          joints:[...grid.querySelectorAll<HTMLElement>('.mobile-terminal-grid-run > span')]
+            .filter(cell=>/^[│┌┬┐└┴┘]$/.test(cell.textContent!)).map(cell=>cell.getBoundingClientRect().left)}))}
+    })
+    expect(layout.overflow).toBeLessThanOrEqual(1)
+    for(const [i,row] of layout.rows.entries()){
+      expect(row.right).toBeLessThanOrEqual(layout.right+.1)
+      expect(row.joints).toHaveLength(3)
+      row.joints.forEach((x,j)=>expect(Math.abs(x-layout.rows[0].joints[j])).toBeLessThan(.1))
+      if(i)expect(Math.abs(row.top-layout.rows[i-1].top-fontSize)).toBeLessThan(.1)
+    }
+  }
+})

@@ -33,6 +33,11 @@ function parse(line:string):TableLine|undefined{
     ...(markdownRule?{joints:Array(cells.length+1).fill('|'),rule:'-'}:{})}
 }
 
+// A fixed cell grid only changes glyph placement; it does not reinterpret text.
+// Include fitting/partial rows too, which need no width projection but can still
+// drift when the browser uses fallback fonts for symbols, Hangul or emoji.
+export const isMobileTableRow=(line:string)=>parse(line)!==undefined
+
 function allocate(desired:number[],minimums:number[],budget:number):number[]{
   const widths=[...minimums]
   // Keep short names, statuses and numbers on one line before spending the
@@ -69,7 +74,8 @@ export function mobileTables(lines:string[],cols:number,cursor?:{row:number;visi
     const verified=first.family==='|'?hasRule:hasRule||data.length>=2
     const editing=cursor?.visible&&cursor.row>=start&&cursor.row<end
     const sourceWidth=Math.max(...block.map(p=>textWidth(p.prefix)+p.widths.reduce((a,b)=>a+b,0)+count+1))
-    if(!data.length||!verified||editing||sourceWidth<=cols){start=end;continue}
+    const aligned=block.every(p=>p.widths.every((width,i)=>width===first.widths[i]))
+    if(!data.length||!verified||editing||(sourceWidth<=cols&&aligned)){start=end;continue}
     const desired=Array.from({length:count},(_,i)=>Math.max(2,...data.map(p=>textWidth(plainText(p.cells[i]).trim()))))
     const minimums=Array.from({length:count},(_,i)=>Math.min(desired[i],Math.max(2,...data.flatMap(p=>
       plainText(p.cells[i]).trim().split(/\s+/u).map(word=>Math.min(12,textWidth(word)))))))

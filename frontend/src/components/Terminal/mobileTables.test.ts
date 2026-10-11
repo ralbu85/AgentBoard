@@ -32,6 +32,28 @@ it('keeps fitting tables unchanged and does not mistake shell pipelines for tabl
   expect(mobileTables(['cat file | sort | head','| expression | other expression |'],12).size).toBe(0)
 })
 
+it('repairs uneven source padding even when the entire table fits on the phone',()=>{
+  const lines=['┌─────────┬─────────┐','│ 이름    │ 결과    │','├─────────┼─────────┤','│ A │ 성공🙂 │','└─────────┴─────────┘']
+  const result=flatten(mobileTables(lines,48))
+  expect(result).toHaveLength(lines.length)
+  expect(new Set(result.map(textWidth)).size).toBe(1)
+  const divisions=result.map(line=>{
+    const joint=line.search(/[┬┼┴]/)
+    return textWidth(line.slice(0,joint>=0?joint:line.indexOf('│',1)))
+  })
+  expect(new Set(divisions).size).toBe(1)
+  expect(result.join('\n')).toContain('성공🙂')
+})
+
+it('aligns compact Markdown tables containing differently sized values',()=>{
+  const lines=['| 이름 | 결과 |','| --- | --- |','| A | 완료 |','| 긴 항목 | 진행 중 |']
+  const result=flatten(mobileTables(lines,48))
+  expect(result).toHaveLength(lines.length)
+  expect(new Set(result.map(textWidth)).size).toBe(1)
+  expect(new Set(result.map(line=>textWidth(line.slice(0,line.indexOf('|',1))))).size).toBe(1)
+  expect(result.join('\n')).toContain('긴 항목')
+})
+
 it('adapts Markdown tables without splitting escaped pipes or pipes inside inline code',()=>{
   const lines=['| 이름 | 설명 |','| --- | --- |','| A | `left | right` and escaped \\| value '+ 'long '.repeat(9)+'|']
   const result=flatten(mobileTables(lines,35))

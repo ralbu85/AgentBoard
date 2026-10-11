@@ -2015,6 +2015,12 @@ html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 .mobile-terminal-text * { -webkit-user-select:text; user-select:text; -webkit-touch-callout:default; }
 .mobile-terminal-text ::selection { background:#494173; color:#fff; }
 .mobile-terminal-text a { color:inherit; text-decoration:underline; text-underline-offset:2px; }
+/* The projection has already wrapped each table to this device's columns.
+   Grid tracks share the measured Latin cell width, so fallback glyph advances
+   and fractional font metrics cannot push later borders into another column. */
+.mobile-terminal-grid { display:inline-grid; grid-template-rows:1em; height:1em; vertical-align:top; white-space:pre; overflow-wrap:normal; letter-spacing:0; word-spacing:0; font-kerning:none; }
+.mobile-terminal-grid-run { display:grid; min-width:0; grid-template-rows:1em; }
+.mobile-terminal-grid-run > span { min-width:0; }
 .mobile-terminal-caret { position:absolute; height:1em; width:1px; background:#ececf1; pointer-events:none; -webkit-user-select:none; user-select:none; }
 .terminal-reading-mode { display:flex; flex-shrink:0; border:1px solid var(--border); border-radius:4px; overflow:hidden; }
 .terminal-reading-mode button { border:0; background:transparent; color:var(--text-secondary); padding:4px 7px; font-size:11px; cursor:pointer; }

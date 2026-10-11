@@ -2,6 +2,7 @@ import {createRoot} from 'react-dom/client'
 import {InputCard} from '../src/components/Terminal/InputCard'
 import * as terminal from '../src/components/Terminal/TerminalManager'
 import {useStore} from '../src/store'
+import {textWidth} from '../src/components/Terminal/terminalText'
 import '../src/index.css'
 import '@xterm/xterm/css/xterm.css'
 
@@ -23,4 +24,12 @@ window.addEventListener('resize',()=>terminal.refit(id))
   update(){terminal.writeSnapshot(id,source.replace('History 159:','History 159 (updated):'),100,40,true,1,false)},
   text:()=>terminal.getBufferText(id),
   columns:()=>output.querySelector<HTMLElement>('.xterm-wrap')?.dataset.sourceCols,
+  table(wide:boolean,fontSize:number){
+    terminal.setReadability({fontSize})
+    const widths=wide?[14,52]:[10,16]
+    const values=[['이름','결과'],['\x1b[1;32m한글\x1b[0m','완료🙂'],['e\u0301','👩🏽‍💻'],['가','✓ → ·']]
+    const rule=(left:string,middle:string,right:string)=>left+widths.map(w=>'─'.repeat(w+2)).join(middle)+right
+    const table=[rule('┌','┬','┐'),...values.map(row=>'│'+row.map((value,c)=>' '+value+' '.repeat(widths[c]-textWidth(value))+' │').join('')),rule('└','┴','┘')]
+    terminal.writeSnapshot(id,table.join('\r\n')+'\r\x1b[?25l',100,40,true,1,false)
+  },
 }
