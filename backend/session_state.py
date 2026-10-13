@@ -67,6 +67,7 @@ class SessionState:
                     record = {'event': event, 'unread': True, 'seen': [*seen, event], 'updated': time.time()}
                     updated[owner] = record
             decorated.append({**session, 'completionEvent': record.get('event', ''),
+                              'completionAt': record.get('updated', 0),
                               'completionUnread': record.get('unread', False)})
         if updated != records:
             self._save(updated)
@@ -99,4 +100,11 @@ def sessions():
 
 
 def snapshot():
-    return state.snapshot(sessions())
+    result = state.snapshot(sessions())
+    from . import recent_work
+    from .sessions import store
+    from .agents import registry
+    try:
+        return {**result, 'recentWork': recent_work.state.sync(result['sessions'], {**store.titles, **registry.mirror_titles()})}
+    except (OSError, ValueError):
+        return {**result, 'recentWorkError': '최근 작업 기록을 읽거나 저장하지 못했습니다.'}

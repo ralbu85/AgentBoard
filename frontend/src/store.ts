@@ -1,6 +1,6 @@
 import {uiId} from './uiId'
 import { create } from 'zustand'
-import type { Session, WsMessage, SpawnProfile, SessionStateSnapshot } from './types'
+import type { Session, WsMessage, SpawnProfile, SessionStateSnapshot, RecentWork } from './types'
 import { useToasts } from './toasts'
 import { browserUrl } from './components/Viewer/browserUrl'
 import { api } from './api'
@@ -22,6 +22,9 @@ export interface ViewerTab {
 interface AppState {
   _sessionStateRevision: number
   applySessionState: (snapshot: SessionStateSnapshot) => void
+  recentWork: RecentWork[]
+  _recentWorkRevision: number
+  recentWorkError: string
   _sessionViewRevision:number
   _sessionViewReady:boolean
   _sessionOrders:Record<string,string[]>
@@ -190,7 +193,17 @@ function publishSessionView(change:object){
 
 export const useStore = create<AppState>((set, get) => ({
   _sessionStateRevision: -1,
+  recentWork: [],
+  _recentWorkRevision: -1,
+  recentWorkError: '',
   applySessionState: snapshot => {
+    // Work titles can change without changing session status. Their own server
+    // revision protects a newer cross-device history from delayed HTTP frames.
+    if(snapshot.recentWork&&snapshot.recentWork.revision>=get()._recentWorkRevision){
+      set({recentWork:snapshot.recentWork.items.slice(0,5),_recentWorkRevision:snapshot.recentWork.revision,recentWorkError:''})
+    }else if(snapshot.recentWorkError&&snapshot.revision>=get()._sessionStateRevision){
+      set({recentWorkError:snapshot.recentWorkError})
+    }
     if (snapshot.revision <= get()._sessionStateRevision) return
     set({_sessionStateRevision: snapshot.revision})
     get().setSessions(snapshot.sessions)

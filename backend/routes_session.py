@@ -10,7 +10,7 @@ from .models import (
 )
 from .agents import registry
 from .namespace import LOCAL, split_id
-from . import config, tmux, streamer, commands, push, profiles
+from . import config, tmux, streamer, commands, push, profiles, recent_work
 from .security_audit import audit, peer
 
 router = APIRouter(prefix="/api")
@@ -139,28 +139,36 @@ async def scan(_=Depends(verify)):
 
 @router.post("/input")
 async def input_text(req: InputRequest, _=Depends(verify)):
+    context = recent_work.prepare_input(req.id, req.text)
     host, local_id = split_id(req.id)
     if host != LOCAL:
         ok = await registry.send(host, {"type": "input", "id": local_id, "text": req.text})
+        if ok:
+            recent_work.finish_input(context)
         return {"ok": ok}
     try:
         await commands.apply_command(store, streamer, tmux, {"type": "input", "id": local_id, "text": req.text})
     except (tmux.TmuxInputError, ValueError) as exc:
         raise HTTPException(503, str(exc)) from exc
+    recent_work.finish_input(context)
     return {"ok": True}
 
 
 @router.post("/paste")
 async def paste_text(req: InputRequest, _=Depends(verify)):
     """Legacy Send endpoint: submit the entire pasted block once."""
+    context = recent_work.prepare_input(req.id, req.text)
     host, local_id = split_id(req.id)
     if host != LOCAL:
         ok = await registry.send(host, {"type": "paste", "id": local_id, "text": req.text})
+        if ok:
+            recent_work.finish_input(context)
         return {"ok": ok}
     try:
         await commands.apply_command(store, streamer, tmux, {"type": "paste", "id": local_id, "text": req.text})
     except (tmux.TmuxInputError, ValueError) as exc:
         raise HTTPException(503, str(exc)) from exc
+    recent_work.finish_input(context)
     return {"ok": True}
 
 

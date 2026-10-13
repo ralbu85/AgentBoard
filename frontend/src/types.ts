@@ -12,6 +12,7 @@ export interface Session {
   lastActivityAt?: number
   completionId?: string
   completionEvent?: string
+  completionAt?: number
   completionUnread?: boolean
   autoTitle?: string
   altScreen?: boolean     // full-screen app (vim/TUI) active → no scrollback
@@ -46,6 +47,23 @@ export interface SessionStateSnapshot {
   type: 'session-state'
   revision: number
   sessions: Session[]
+  recentWork?: {revision:number;items:RecentWork[]}
+  recentWorkError?: string
+}
+
+export interface RecentWork {
+  id:string
+  sessionId:string
+  sessionName:string
+  createdAt:number
+  host:string
+  cwd:string
+  title:string
+  command:string
+  at:number
+  status:'submitted'|'working'|'waiting'|'completed'|'stopped'|'idle'|'previous'
+  event:string
+  unread:boolean
 }
 
 export type WsMessage =

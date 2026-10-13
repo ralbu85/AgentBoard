@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { AgentIcon } from '../AgentIcon'
 import { useStore, completionKey, sessionLabel, workspaceEntries, type WorkspaceEntry } from '../../store'
+import { RecentWork } from './RecentWork'
 
 interface Props { onSelect?: () => void }
 type StatusFilter = 'all' | 'working' | 'waiting' | 'completed'
@@ -77,8 +78,10 @@ export function FolderList({ onSelect }: Props) {
         value={filter} onChange={e => setFilter(e.target.value)} />
     </div>
 
+    <RecentWork onSelect={()=>{setFilter('');setStatusFilter('all');onSelect?.()}}/>
+
     <div className="workspace-state-filters" role="group" aria-label="세션 상태 필터">
-      {([['all','전체'],['working','작업 중'],['waiting','입력 대기'],['completed','완료']] as const).map(([value,label])=><button key={value}
+      {([['all','전체'],['working','작업 중'],['waiting','입력 대기'],['completed','미확인']] as const).map(([value,label])=><button key={value}
         className={`workspace-state-filter filter-${value}`} aria-label={`${label} ${counts[value]}개${value==='completed'?' · 미확인 결과':''}`} title={value==='completed'?'아직 확인하지 않은 완료 결과':`${label} 세션`}
         aria-pressed={statusFilter===value} onClick={()=>setStatusFilter(value)}>
         <b>{counts[value]}</b><span>{label}</span>

@@ -155,6 +155,8 @@ async def handle_ws(ws: WebSocket):
 async def _handle_msg(msg: dict, ws: WebSocket):
     msg_type = msg.get("type", "")
     host, local_id = split_id(msg.get("id", ""))
+    from . import recent_work
+    context = recent_work.prepare_input(msg.get('id', ''), msg.get('text', '')) if msg_type in ('input', 'paste') else None
 
     if msg_type == 'session-sync':
         from .session_state import snapshot
@@ -182,7 +184,8 @@ async def _handle_msg(msg: dict, ws: WebSocket):
         m["id"] = local_id
         if msg_type in ('viewport', 'viewport-release'):
             m["wsId"] = id(ws)
-        await registry.send(host, m)
+        if await registry.send(host, m):
+            recent_work.finish_input(context)
         return
 
     async def reply(m: dict):
@@ -194,6 +197,7 @@ async def _handle_msg(msg: dict, ws: WebSocket):
     m = dict(msg)
     m["id"] = local_id
     await commands.apply_command(store, streamer, tmux, m, reply=reply, ws_id=id(ws))
+    recent_work.finish_input(context)
 
 
 async def _handle_active(host: str, local_id: str, ws: WebSocket):
