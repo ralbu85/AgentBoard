@@ -1,6 +1,6 @@
 import {uiId} from './uiId'
 import { create } from 'zustand'
-import type { Session, WsMessage, SpawnProfile, SessionStateSnapshot, RecentWork } from './types'
+import type { Session, WsMessage, SpawnProfile, SessionStateSnapshot } from './types'
 import { useToasts } from './toasts'
 import { browserUrl } from './components/Viewer/browserUrl'
 import { api } from './api'
@@ -22,9 +22,9 @@ export interface ViewerTab {
 interface AppState {
   _sessionStateRevision: number
   applySessionState: (snapshot: SessionStateSnapshot) => void
-  recentWork: RecentWork[]
-  _recentWorkRevision: number
-  recentWorkError: string
+  workspaceActivity: Record<string, number>
+  workspaceOrderBaseline: Record<string, number>
+  activityError: string
   _sessionViewRevision:number
   _sessionViewReady:boolean
   _sessionOrders:Record<string,string[]>
@@ -146,10 +146,18 @@ function persistList(key: string, value: string[]) {
   try { localStorage.setItem(key, JSON.stringify(value)) } catch { /* storage disabled */ }
 }
 
+function readWorkspaceBaseline(): Record<string, number> {
+  try {
+    const value = JSON.parse(localStorage.getItem('agentboard.workspaceOrderBaseline') || '{}')
+    return Object.fromEntries(Object.entries(value).filter(([, at]) => typeof at === 'number' && Number.isFinite(at))) as Record<string, number>
+  } catch { return {} }
+}
+
 export function sessionLabel(session: Session, titles: Record<string, string>): string {
   const manual = titles[session.id]?.trim()
   const generic = /^(?:(?:claude|codex|terminal|bash|zsh)\s*[·# ]*\d+|#\d+\s*(?:claude|codex|terminal|bash|zsh))$/i
   if (manual && !generic.test(manual)) return manual
+  if (session.requestTitle?.trim()) return session.requestTitle.trim()
   if (session.autoTitle?.trim()) return session.autoTitle.trim()
   if (/^(bash(?: --noprofile --norc)?|zsh)$/.test(session.cmd)) return '터미널'
   return `${session.cmd || session.process || '터미널'} · 제목 대기`
@@ -159,7 +167,7 @@ export const completionKey = (session: Session) => JSON.stringify([session.host 
 
 export const workspaceId = (cwd: string, host = 'local') => JSON.stringify([host, cwd])
 export interface WorkspaceEntry { key: string; cwd: string; host: string; ids: string[] }
-export function workspaceEntries(state: Pick<AppState, 'sessions' | 'workspaceFolders' | 'workspaceOrder' | 'hiddenWorkspaces' | 'hiddenSessions'>, includeHidden = false): WorkspaceEntry[] {
+export function workspaceEntries(state: Pick<AppState, 'sessions' | 'workspaceFolders' | 'workspaceOrder' | 'hiddenWorkspaces' | 'hiddenSessions'> & Partial<Pick<AppState, 'workspaceActivity' | 'workspaceOrderBaseline'>>, includeHidden = false): WorkspaceEntry[] {
   const entries = new Map<string, WorkspaceEntry>()
   const add = (cwd: string, host = 'local', id?: string) => {
     const key = workspaceId(cwd, host)
@@ -176,8 +184,15 @@ export function workspaceEntries(state: Pick<AppState, 'sessions' | 'workspaceFo
     try { const [host, cwd] = JSON.parse(key); if (typeof host === 'string' && typeof cwd === 'string') add(cwd, host) } catch {}
   }
   const rank = new Map(state.workspaceOrder.map((key, i) => [key, i]))
+  // Dragging preserves the chosen order until a subsequent request/completion.
+  // Viewing a workspace, output streaming and unread acknowledgement do not
+  // update the server's activity timestamps.
+  const activity = (key: string) => {
+    const at = state.workspaceActivity?.[key] || 0
+    return at > (state.workspaceOrderBaseline?.[key] || 0) ? at : 0
+  }
   return [...entries.values()].filter(e => includeHidden || !state.hiddenWorkspaces.includes(e.key))
-    .sort((a, b) => (rank.get(a.key) ?? Infinity) - (rank.get(b.key) ?? Infinity) || a.cwd.localeCompare(b.cwd) || a.host.localeCompare(b.host))
+    .sort((a, b) => activity(b.key) - activity(a.key) || (rank.get(a.key) ?? Infinity) - (rank.get(b.key) ?? Infinity) || a.cwd.localeCompare(b.cwd) || a.host.localeCompare(b.host))
 }
 
 const restoringViewers = new Set<string>()
@@ -193,19 +208,14 @@ function publishSessionView(change:object){
 
 export const useStore = create<AppState>((set, get) => ({
   _sessionStateRevision: -1,
-  recentWork: [],
-  _recentWorkRevision: -1,
-  recentWorkError: '',
+  workspaceActivity: {},
+  workspaceOrderBaseline: readWorkspaceBaseline(),
+  activityError: '',
   applySessionState: snapshot => {
-    // Work titles can change without changing session status. Their own server
-    // revision protects a newer cross-device history from delayed HTTP frames.
-    if(snapshot.recentWork&&snapshot.recentWork.revision>=get()._recentWorkRevision){
-      set({recentWork:snapshot.recentWork.items.slice(0,5),_recentWorkRevision:snapshot.recentWork.revision,recentWorkError:''})
-    }else if(snapshot.recentWorkError&&snapshot.revision>=get()._sessionStateRevision){
-      set({recentWorkError:snapshot.recentWorkError})
-    }
     if (snapshot.revision <= get()._sessionStateRevision) return
-    set({_sessionStateRevision: snapshot.revision})
+    set({_sessionStateRevision: snapshot.revision,
+      ...(snapshot.workspaceActivity ? {workspaceActivity: snapshot.workspaceActivity} : {}),
+      activityError: snapshot.activityError || ''})
     get().setSessions(snapshot.sessions)
     const state = get(), pending = {...state._pendingSpawnReqs}, ready = {...state._spawnReqs}
     for (const [request, id] of Object.entries(pending)) if (state.sessions[id]) {
@@ -340,7 +350,9 @@ export const useStore = create<AppState>((set, get) => ({
     const next = keys.filter(k => k !== key)
     next.splice(next.indexOf(before) + (after ? 1 : 0), 0, key)
     persistList('agentboard.workspaceOrder', next)
-    return { workspaceOrder: next }
+    const baseline = {...state.workspaceActivity}
+    try { localStorage.setItem('agentboard.workspaceOrderBaseline', JSON.stringify(baseline)) } catch {}
+    return { workspaceOrder: next, workspaceOrderBaseline: baseline }
   }),
   restoreWorkspace: (key) => set(state => {
     const hidden = state.hiddenWorkspaces.filter(k => k !== key)

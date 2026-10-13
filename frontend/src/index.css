@@ -1850,37 +1850,10 @@ html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 .workspace-picker-list { padding:0 6px 8px; }
 .workspace-picker-list .folder-list-head { padding:8px 5px 5px; }
 .workspace-picker-list .fl-title { letter-spacing:0; font-size:12px; }
+.workspace-order-hint { margin-left:auto; margin-right:8px; font-size:11px; color:var(--text-muted); white-space:nowrap; }
+.workspace-activity-error { margin:4px 6px; font-size:12px; color:var(--text-muted); overflow-wrap:anywhere; }
 .workspace-session-group { margin:5px 0; border:1px solid #3d4656; border-radius:5px; background:#191e27; padding-bottom:2px; }
 .workspace-session-group.active-workspace { border-color:#817aa8; }
-.recent-work { flex-shrink:0; min-width:0; margin:2px 2px 7px; border-bottom:1px solid var(--border); padding-bottom:5px; }
-.recent-work-heading { width:100%; display:flex; align-items:center; justify-content:space-between; border:0; padding:5px 3px; background:transparent; color:var(--text-secondary); font-size:11.5px; cursor:pointer; }
-.recent-work-heading b { margin-left:4px; font-size:10px; font-weight:500; color:var(--text-muted); }
-.recent-work-list { list-style:none; margin:0; padding:0; }
-.recent-work-item { display:flex; min-width:0; border-radius:4px; border-left:2px solid transparent; }
-.recent-work-item[data-unread=true] { border-left-color:#ac98de; background:#272334; }
-.recent-work-item:hover { background:var(--bg-hover); }
-.recent-work-open { flex:1; min-width:0; display:flex; flex-direction:column; gap:2px; padding:5px 4px; border:0; background:transparent; text-align:left; color:var(--text-primary); cursor:pointer; }
-.recent-work-context,.recent-work-detail { display:flex; align-items:center; gap:6px; min-width:0; width:100%; line-height:16px; }
-.recent-work-context strong { font-size:11.5px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.recent-work-context small { max-width:60px; font-size:10px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--text-muted); }
-.recent-work-context time { margin-left:auto; flex-shrink:0; color:var(--text-muted); font-size:10px; }
-.recent-work-context .agent-icon { width:14px; height:14px; background:transparent; }
-.recent-work-context .agent-icon svg { width:13px; height:13px; }
-.recent-work-title { flex:1; min-width:0; font-size:11.5px; color:var(--text-secondary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.recent-work-status { display:inline-flex; align-items:center; gap:3px; flex-shrink:0; color:var(--text-muted); font-size:10px; white-space:nowrap; }
-.recent-work-status.working { color:#9de4c7; }
-.recent-work-status.waiting { color:#f1d394; }
-.recent-work-status.completed { color:#c4b7f0; }
-.recent-work-status i { width:5px; height:5px; border-radius:50%; background:#c4b7f0; }
-.recent-work-rename { flex:0 0 23px; border:0; color:var(--text-muted); background:transparent; cursor:pointer; font-size:13px; }
-.recent-work-rename:hover { color:var(--text-primary); }
-.recent-work-edit { display:flex; flex-wrap:wrap; gap:4px; min-width:0; width:100%; padding:5px 3px; }
-.recent-work-edit input { flex:1 1 100%; min-width:0; padding:5px; font-size:12px; background:var(--bg-primary); color:var(--text-primary); border:1px solid var(--border); border-radius:4px; }
-.recent-work-edit button { padding:3px 8px; background:var(--bg-tertiary); border:1px solid var(--border); border-radius:3px; color:var(--text-secondary); cursor:pointer; }
-.recent-work-empty,.recent-work-error { padding:4px 3px; font-size:11px; line-height:17px; color:var(--text-muted); overflow-wrap:anywhere; }
-.recent-work-error { color:#efc060; }
-.recent-work button:focus-visible { outline:1px solid var(--accent); outline-offset:-1px; }
-@media(max-width:768px){.recent-work-open{min-height:48px;padding-top:6px;padding-bottom:6px}.recent-work-rename{flex-basis:30px}.recent-work-title,.recent-work-context strong{font-size:12px}.recent-work-edit input{font-size:16px}.recent-work-heading{min-height:34px}}
 .workspace-session-group .workspace-picker-row { min-height:32px; border:0; border-bottom:1px solid #3d4656; border-radius:0; background:#293140; }
 .workspace-session-group .workspace-picker-row.active { background:#34354c; border-bottom-color:#595577; box-shadow:inset 3px 0 #b1a4ed; }
 .workspace-sidebar .workspace-picker-select { grid-template-columns:minmax(0,1fr) auto; gap:0 6px; padding:5px 2px; align-items:center; }

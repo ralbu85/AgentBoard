@@ -5,7 +5,7 @@ import { useStore, viewerKey, workspaceEntries, workspaceId, completionKey, sess
 const tab: ViewerTab = { id: '/project/a.py', path: '/project/a.py', name: 'a.py', type: 'code', lang: 'python', content: 'original', version: 'v1' }
 beforeEach(() => {
   localStorage.clear()
-  useStore.setState({ _sessionStateRevision:-1,_sessionViewReady:false,_sessionViewRevision:-1,_sessionOrders:{}, connection: 'online', hiddenSessions: [], sessions: {}, activeId: null, workspaceCwd: '/project', workspaceHost: 'local', _viewerState: {}, _restoredWorkspaces: {}, _completedAt: {}, workspaceFolders: [], workspaceOrder: [], hiddenWorkspaces: [], unreadCompletions: [] })
+  useStore.setState({ _sessionStateRevision:-1,workspaceActivity:{},workspaceOrderBaseline:{},_sessionViewReady:false,_sessionViewRevision:-1,_sessionOrders:{}, connection: 'online', hiddenSessions: [], sessions: {}, activeId: null, workspaceCwd: '/project', workspaceHost: 'local', _viewerState: {}, _restoredWorkspaces: {}, _completedAt: {}, workspaceFolders: [], workspaceOrder: [], hiddenWorkspaces: [], unreadCompletions: [] })
 })
 describe('workspace files', () => {
   it('opens and edits without an agent session', () => {
@@ -157,6 +157,48 @@ it('uses agent titles instead of legacy numbered command labels', () => {
   expect(sessionLabel(session, {'1':'claude #1'})).toBe('문서 구조 개선')
   expect(sessionLabel(session, {'1':'내가 지정한 제목'})).toBe('내가 지정한 제목')
   expect(sessionLabel({...session, autoTitle:''}, {})).toBe('claude · 제목 대기')
+})
+
+it('uses the latest request immediately, preserving deliberate names and rejecting stale snapshots', () => {
+  const s = useStore.getState(); s.upsertSession({id:'1', cwd:'/project', cmd:'codex'})
+  const session = {...useStore.getState().sessions['1'], createdAt:10, autoTitle:'오래된 에이전트 제목', requestTitle:'방금 보낸 요청'}
+  s.applySessionState({type:'session-state', revision:2, sessions:[session]})
+  expect(sessionLabel(useStore.getState().sessions['1'], {})).toBe('방금 보낸 요청')
+  expect(sessionLabel(session, {'1':'내가 지정한 이름'})).toBe('내가 지정한 이름')
+  expect(sessionLabel(session, {'1':'codex #1'})).toBe('방금 보낸 요청')
+  s.applySessionState({type:'session-state', revision:1, sessions:[{...session, requestTitle:'이전 요청'}]})
+  expect(sessionLabel(useStore.getState().sessions['1'], {})).toBe('방금 보낸 요청')
+})
+
+it('moves workspaces for shared request/completion times but not clicks, output or acknowledgements', () => {
+  const s = useStore.getState(), a = workspaceId('/a'), b = workspaceId('/b')
+  s.upsertSession({id:'1',cwd:'/a',cmd:'codex'}); s.upsertSession({id:'2',cwd:'/b',cmd:'codex'})
+  const sessions = Object.values(useStore.getState().sessions)
+  s.applySessionState({type:'session-state',revision:1,sessions,workspaceActivity:{[a]:120,[b]:110}})
+  const order = () => workspaceEntries(useStore.getState()).map(e=>e.key)
+  expect(order()).toEqual([a,b])
+  s.setActive('2')
+  s.applySessionState({type:'session-state',revision:2,sessions:sessions.map(s=>({...s,lastActivityAt:999,completionUnread:false})),workspaceActivity:{[a]:120,[b]:110}})
+  expect(order()).toEqual([a,b])
+  s.applySessionState({type:'session-state',revision:3,sessions,workspaceActivity:{[a]:120,[b]:130}})
+  expect(order()).toEqual([b,a])
+  s.applySessionState({type:'session-state',revision:2,sessions,workspaceActivity:{[a]:120,[b]:110}})
+  expect(order()).toEqual([b,a])
+})
+
+it('retains drag order until subsequent work and does not resurrect closed sessions', () => {
+  const s = useStore.getState(), a = workspaceId('/a'), b = workspaceId('/b')
+  s.upsertSession({id:'1',cwd:'/a',cmd:'codex'}); s.upsertSession({id:'2',cwd:'/b',cmd:'codex'})
+  const sessions = Object.values(useStore.getState().sessions)
+  s.applySessionState({type:'session-state',revision:1,sessions,workspaceActivity:{[a]:120,[b]:110}})
+  s.reorderWorkspace(b,a)
+  expect(workspaceEntries(useStore.getState()).map(e=>e.key)).toEqual([b,a])
+  expect(JSON.parse(localStorage.getItem('agentboard.workspaceOrderBaseline')!)).toEqual({[a]:120,[b]:110})
+  s.setSessionHidden('1',true)
+  s.applySessionState({type:'session-state',revision:2,sessions,workspaceActivity:{[a]:130,[b]:110}})
+  expect(workspaceEntries(useStore.getState()).map(e=>e.key)).toEqual([a,b])
+  expect(workspaceEntries(useStore.getState())[0].ids).toEqual([])
+  expect(useStore.getState().hiddenSessions).toContain(completionKey(sessions[0]))
 })
 
 it('prepares every workspace session as a separate tab without replacing the active file', () => {

@@ -17,7 +17,7 @@ beforeEach(()=>{
   device.mobile=true;vi.clearAllMocks()
   vi.spyOn(navigator,'userAgent','get').mockImplementation(()=>device.mobile?'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)':'Mozilla/5.0 (Windows NT 10.0; Win64; x64)')
   vi.spyOn(navigator,'platform','get').mockImplementation(()=>device.mobile?'iPhone':'Win32')
-  useStore.setState({sessions:{'input-test':{id:'input-test',host:'local',cwd:'/test'}}} as never)
+  useStore.setState({_sessionStateRevision:-1,sessions:{'input-test':{id:'input-test',host:'local',cwd:'/test'}}} as never)
   useDrafts.setState({drafts:{[key]:'first line'}})
   host=document.createElement('div');document.body.append(host);root=createRoot(host)
   act(()=>root.render(createElement(InputCard,{sessionId:'input-test'})))
@@ -47,6 +47,16 @@ it('mobile Send transmits a multiline draft exactly once and clears it only on s
   expect(api.input).toHaveBeenCalledExactlyOnceWith('input-test','첫째\n둘째')
   expect(api.paste).not.toHaveBeenCalled()
   expect(useDrafts.getState().drafts[key]).toBeUndefined()
+})
+
+it('applies the successful send response immediately when the websocket update is delayed',async()=>{
+  const session={...useStore.getState().sessions['input-test'],requestTitle:'방금 보낸 작업'}
+  vi.mocked(api.input).mockResolvedValueOnce({ok:true,sessionState:{type:'session-state',revision:10,sessions:[session],workspaceActivity:{'["local","/test"]':100}}})
+  await act(async()=>host.querySelector<HTMLButtonElement>('.send-btn')!.click())
+  expect(useStore.getState().sessions['input-test'].requestTitle).toBe('방금 보낸 작업')
+  expect(useStore.getState().workspaceActivity['["local","/test"]']).toBe(100)
+  act(()=>useStore.getState().applySessionState({type:'session-state',revision:9,sessions:[{...session,requestTitle:'이전 요청'}]}))
+  expect(useStore.getState().sessions['input-test'].requestTitle).toBe('방금 보낸 작업')
 })
 
 it('keeps multiline drafts when the terminal rejects the send',async()=>{

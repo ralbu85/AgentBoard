@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { useStore, completionKey } from '../../store'
+import { useStore, completionKey, sessionLabel } from '../../store'
 import { notifyActive, send } from '../../ws'
 import * as TM from './TerminalManager'
 import '@xterm/xterm/css/xterm.css'
@@ -17,12 +17,12 @@ function GridTile({ id }: { id: string }) {
   const ref = useRef<HTMLDivElement>(null)
   const s = useStore((st) => st.sessions[id])
   const unread = useStore(st => !!st.sessions[id] && st.unreadCompletions.includes(completionKey(st.sessions[id])))
-  const rawTitle = useStore((st) => st.titles[id])
+  const titles = useStore((st) => st.titles)
   const state = useStore((st) => st.effectiveState(id)) || 'running'
   const activeId = useStore((st) => st.activeId)
   const setActive = useStore((st) => st.setActive)
   const isActive = activeId === id
-  const title = rawTitle || `#${id} ${s?.cmd || ''}`
+  const title = s ? sessionLabel(s, titles) : '터미널'
 
   useEffect(() => {
     const el = ref.current

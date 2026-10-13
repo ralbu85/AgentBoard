@@ -15,6 +15,7 @@ export interface Session {
   completionAt?: number
   completionUnread?: boolean
   autoTitle?: string
+  requestTitle?: string
   altScreen?: boolean     // full-screen app (vim/TUI) active → no scrollback
   host: string            // 'local' for the hub's own machine, else the agent's host id
   hostLabel?: string      // human-friendly machine name
@@ -47,23 +48,8 @@ export interface SessionStateSnapshot {
   type: 'session-state'
   revision: number
   sessions: Session[]
-  recentWork?: {revision:number;items:RecentWork[]}
-  recentWorkError?: string
-}
-
-export interface RecentWork {
-  id:string
-  sessionId:string
-  sessionName:string
-  createdAt:number
-  host:string
-  cwd:string
-  title:string
-  command:string
-  at:number
-  status:'submitted'|'working'|'waiting'|'completed'|'stopped'|'idle'|'previous'
-  event:string
-  unread:boolean
+  workspaceActivity?: Record<string, number>
+  activityError?: string
 }
 
 export type WsMessage =

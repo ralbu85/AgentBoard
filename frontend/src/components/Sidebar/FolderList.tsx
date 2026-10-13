@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { AgentIcon } from '../AgentIcon'
 import { useStore, completionKey, sessionLabel, workspaceEntries, type WorkspaceEntry } from '../../store'
-import { RecentWork } from './RecentWork'
 
 interface Props { onSelect?: () => void }
 type StatusFilter = 'all' | 'working' | 'waiting' | 'completed'
@@ -71,6 +70,7 @@ export function FolderList({ onSelect }: Props) {
   return <div className="folder-list workspace-picker-list">
     <div className="folder-list-head">
       <span className="fl-title">워크스페이스 · {entries.length}</span>
+      <span className="workspace-order-hint" title="요청을 보내거나 작업이 완료되면 맨 위로 이동합니다. 드래그한 순서는 다음 작업까지 유지됩니다.">최근 작업순</span>
       <button className="fl-add" title="워크스페이스 폴더 열기" onClick={state.openWorkspaceModal}>＋</button>
     </div>
     <div className="folder-filter-wrap">
@@ -78,8 +78,7 @@ export function FolderList({ onSelect }: Props) {
         value={filter} onChange={e => setFilter(e.target.value)} />
     </div>
 
-    <RecentWork onSelect={()=>{setFilter('');setStatusFilter('all');onSelect?.()}}/>
-
+    {state.activityError && <p className="workspace-activity-error" role="status">{state.activityError}</p>}
     <div className="workspace-state-filters" role="group" aria-label="세션 상태 필터">
       {([['all','전체'],['working','작업 중'],['waiting','입력 대기'],['completed','미확인']] as const).map(([value,label])=><button key={value}
         className={`workspace-state-filter filter-${value}`} aria-label={`${label} ${counts[value]}개${value==='completed'?' · 미확인 결과':''}`} title={value==='completed'?'아직 확인하지 않은 완료 결과':`${label} 세션`}

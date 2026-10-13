@@ -91,7 +91,10 @@ export function InputCard({ sessionId }: Props) {
     setSending(true)
     try {
       const result = await api.input(sessionId, sent)
-      if (result?.ok !== false) setText(current => current === sent ? '' : current)
+      if (result?.ok !== false) {
+        if (result?.sessionState) useStore.getState().applySessionState(result.sessionState)
+        setText(current => current === sent ? '' : current)
+      }
     } finally { sendingRef.current = false; setSending(false) }
   }
 

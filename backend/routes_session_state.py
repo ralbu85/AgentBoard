@@ -30,25 +30,3 @@ async def acknowledge(body: Receipt):
     from .ws import broadcast
     broadcast(result)
     return result
-
-
-class WorkTitle(BaseModel):
-    id: str = Field(min_length=1, max_length=128)
-    title: str = Field(min_length=1, max_length=120)
-
-
-@router.post('/recent-work/title')
-async def rename_work(body: WorkTitle):
-    from . import recent_work
-    try:
-        recent_work.state.rename(body.id, body.title)
-        result = session_state.snapshot()
-    except KeyError as exc:
-        raise HTTPException(404, '최근 작업 목록이 바뀌었습니다. 다시 확인해 주세요.') from exc
-    except ValueError as exc:
-        raise HTTPException(400, '작업명을 저장하지 못했습니다.') from exc
-    except OSError as exc:
-        raise HTTPException(503, '최근 작업 기록을 저장하지 못했습니다.') from exc
-    from .ws import broadcast
-    broadcast(result)
-    return result

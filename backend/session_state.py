@@ -101,10 +101,9 @@ def sessions():
 
 def snapshot():
     result = state.snapshot(sessions())
-    from . import recent_work
-    from .sessions import store
-    from .agents import registry
+    from . import session_activity
     try:
-        return {**result, 'recentWork': recent_work.state.sync(result['sessions'], {**store.titles, **registry.mirror_titles()})}
+        activity = session_activity.state.sync(result['sessions'])
+        return {**result, **activity, 'revision': max(result['revision'], activity['revision'])}
     except (OSError, ValueError):
-        return {**result, 'recentWorkError': '최근 작업 기록을 읽거나 저장하지 못했습니다.'}
+        return {**result, 'activityError': '최근 요청 제목과 작업순서를 동기화하지 못했습니다.'}
