@@ -73,3 +73,21 @@ it('desktop Enter still submits while Shift+Enter and IME composition do not',as
   expect((await enter()).defaultPrevented).toBe(true)
   expect(api.input).toHaveBeenCalledExactlyOnceWith('input-test','first line')
 })
+
+it.each([true,false])('Ctrl+Enter sends the full draft once with IME and repeat protection (mobile=%s)',async(mobile)=>{
+  device.mobile=mobile
+  const draft='첫째 줄\n\n  둘째 줄'
+  act(()=>{useDrafts.getState().write(key,draft);root.render(createElement(InputCard,{sessionId:'input-test'}))})
+  for(const options of [{isComposing:true},{keyCode:229},{shiftKey:true}]){
+    expect((await enter({ctrlKey:true,...options})).defaultPrevented).toBe(false)
+  }
+  expect(api.input).not.toHaveBeenCalled()
+  expect((await enter({ctrlKey:true})).defaultPrevented).toBe(true)
+  expect(api.input).toHaveBeenCalledExactlyOnceWith('input-test',draft)
+  expect(useDrafts.getState().drafts[key]).toBeUndefined()
+  act(()=>useDrafts.getState().write(key,'새로 작성 중'))
+  expect((await enter({ctrlKey:true,repeat:true})).defaultPrevented).toBe(true)
+  expect(api.input).toHaveBeenCalledTimes(1)
+  expect(host.querySelector('textarea')!.value).toBe('새로 작성 중')
+  expect(api.key).not.toHaveBeenCalled()
+})
