@@ -95,11 +95,9 @@ export function InputCard({ sessionId }: Props) {
   }
 
   const onKeyDown = (e: KeyboardEvent) => {
-    if (e.key !== 'Enter' || e.shiftKey || e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229) return
-    if ((e.ctrlKey && !e.altKey) || !isMobile()) {
-      e.preventDefault()
-      if (!e.repeat) doSend()
-    }
+    if (isMobile() || e.key !== 'Enter' || !e.ctrlKey || e.altKey || e.shiftKey || e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229) return
+    e.preventDefault()
+    if (!e.repeat) doSend()
   }
 
   const onQuickKey = (key: string) => {
@@ -150,15 +148,15 @@ export function InputCard({ sessionId }: Props) {
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={onKeyDown}
-          placeholder={isMobile()?'메시지 입력 · Enter 줄바꿈':'Type command...'}
-          enterKeyHint={isMobile()?'enter':'send'}
+          placeholder={isMobile()?'메시지 입력 · Enter 줄바꿈':'메시지 입력 · Ctrl+Enter 전송'}
+          enterKeyHint="enter"
           rows={1}
           autoCorrect="off"
           autoCapitalize="none"
           autoComplete="off"
           spellCheck={false}
         />
-        <button className="btn send-btn" disabled={sending} onClick={doSend} title="작성한 내용 전송 (Ctrl+Enter)" aria-keyshortcuts="Control+Enter">Send</button>
+        <button className="btn send-btn" disabled={sending} onClick={doSend} title={isMobile()?'작성한 내용 전송':'작성한 내용 전송 (Ctrl+Enter)'} aria-keyshortcuts={isMobile()?undefined:'Control+Enter'}>Send</button>
       </div>
       <div className="quick-keys">
         <button className="btn quick-key" title="입력창에 하이픈 두 개 삽입" onPointerDown={e => e.preventDefault()} onClick={insertDoubleHyphen}>--</button>

@@ -29,9 +29,11 @@ const enter=async(options:KeyboardEventInit={})=>{
 it('mobile Enter leaves native newline insertion enabled and never submits',async()=>{
   const event=await enter()
   expect(event.defaultPrevented).toBe(false)
+  expect((await enter({ctrlKey:true})).defaultPrevented).toBe(false)
   expect(api.input).not.toHaveBeenCalled();expect(api.paste).not.toHaveBeenCalled();expect(api.key).not.toHaveBeenCalled()
   expect(host.querySelector('textarea')!.getAttribute('enterkeyhint')).toBe('enter')
   expect([...host.querySelectorAll('.quick-key')].some(b=>b.textContent==='⏎')).toBe(false)
+  expect(host.querySelector('.send-btn')!.hasAttribute('aria-keyshortcuts')).toBe(false)
 })
 
 it('mobile Send transmits a multiline draft exactly once and clears it only on success',async()=>{
@@ -64,21 +66,21 @@ it('sends a double tap only once and preserves edits made while the send is pend
   expect(host.querySelector('textarea')!.value).toBe('전송 중 새로 작성한\n메시지')
 })
 
-it('desktop Enter still submits while Shift+Enter and IME composition do not',async()=>{
+it('desktop Enter and Shift+Enter leave native newline insertion enabled',async()=>{
   device.mobile=false
   act(()=>root.render(createElement(InputCard,{sessionId:'input-test'})))
   expect((await enter({shiftKey:true})).defaultPrevented).toBe(false)
   expect((await enter({isComposing:true})).defaultPrevented).toBe(false)
+  expect((await enter()).defaultPrevented).toBe(false)
   expect(api.input).not.toHaveBeenCalled()
-  expect((await enter()).defaultPrevented).toBe(true)
-  expect(api.input).toHaveBeenCalledExactlyOnceWith('input-test','first line')
+  expect(host.querySelector('textarea')!.getAttribute('enterkeyhint')).toBe('enter')
 })
 
-it.each([true,false])('Ctrl+Enter sends the full draft once with IME and repeat protection (mobile=%s)',async(mobile)=>{
-  device.mobile=mobile
+it('desktop Ctrl+Enter sends the full draft once with IME and repeat protection',async()=>{
+  device.mobile=false
   const draft='첫째 줄\n\n  둘째 줄'
   act(()=>{useDrafts.getState().write(key,draft);root.render(createElement(InputCard,{sessionId:'input-test'}))})
-  for(const options of [{isComposing:true},{keyCode:229},{shiftKey:true}]){
+  for(const options of [{isComposing:true},{keyCode:229},{shiftKey:true},{altKey:true}]){
     expect((await enter({ctrlKey:true,...options})).defaultPrevented).toBe(false)
   }
   expect(api.input).not.toHaveBeenCalled()
@@ -90,4 +92,5 @@ it.each([true,false])('Ctrl+Enter sends the full draft once with IME and repeat 
   expect(api.input).toHaveBeenCalledTimes(1)
   expect(host.querySelector('textarea')!.value).toBe('새로 작성 중')
   expect(api.key).not.toHaveBeenCalled()
+  expect(host.querySelector('.send-btn')!.getAttribute('aria-keyshortcuts')).toBe('Control+Enter')
 })
