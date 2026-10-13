@@ -10,6 +10,7 @@ export default defineConfig({
   use:{baseURL:'http://127.0.0.1:4179',launchOptions:{chromiumSandbox:true},trace:'retain-on-failure'},
   projects:[
     {name:'desktop',use:{...devices['Desktop Chrome']}},
+    {name:'desktop-touch',use:{...devices['Desktop Chrome'],hasTouch:true}},
     {name:'phone',use:{...devices['iPhone 13'],defaultBrowserType:'chromium'}},
   ],
   webServer:{command:'npx vite --host 127.0.0.1 --port 4179 --strictPort',url:'http://127.0.0.1:4179/e2e/terminal-fixture.html',reuseExistingServer:false},

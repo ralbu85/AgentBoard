@@ -32,13 +32,28 @@ test('phone keeps native selection and reading position while output changes',as
 test('phone Enter inserts a newline and Send submits the full draft once',async({page},info)=>{
   test.skip(info.project.name!=='phone')
   const sent:unknown[]=[]
-  await page.route('**/api/paste',async route=>{sent.push(route.request().postDataJSON());await route.fulfill({json:{ok:true}})})
+  await page.route('**/api/input',async route=>{sent.push(route.request().postDataJSON());await route.fulfill({json:{ok:true}})})
   const input=page.locator('textarea.input-textarea')
   await input.fill('first');await input.press('Enter');await input.pressSequentially('second')
   await expect(input).toHaveValue('first\nsecond');expect(sent).toHaveLength(0)
   await page.getByRole('button',{name:'Send',exact:true}).click()
   await expect.poll(()=>sent.length).toBe(1)
   expect(sent[0]).toMatchObject({text:'first\nsecond'})
+})
+
+test('desktop Ctrl+Enter sends once even with a touch pointer',async({page},info)=>{
+  test.skip(info.project.name==='phone')
+  if(info.project.name==='desktop-touch')expect(await page.evaluate(()=>matchMedia('(pointer: coarse)').matches)).toBe(true)
+  const sent:unknown[]=[]
+  await page.route('**/api/input',async route=>{sent.push(route.request().postDataJSON());await route.fulfill({json:{ok:true}})})
+  const input=page.locator('textarea.input-textarea')
+  await expect(input).toHaveAttribute('placeholder','메시지 입력 · Ctrl+Enter 전송')
+  await input.fill('first');await input.press('Enter');await input.pressSequentially('second')
+  await expect(input).toHaveValue('first\nsecond');expect(sent).toHaveLength(0)
+  await input.press('Control+Enter')
+  await expect.poll(()=>sent.length).toBe(1)
+  expect(sent[0]).toMatchObject({text:'first\nsecond'})
+  await expect(input).toHaveValue('')
 })
 
 test('phone links retain their full destination across wrapped rows',async({page},info)=>{

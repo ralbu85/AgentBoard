@@ -6,19 +6,23 @@ import {api} from '../../api'
 import {useDrafts} from './drafts'
 import {useStore} from '../../store'
 const device=vi.hoisted(()=>({mobile:true}))
-vi.mock('./TerminalManager',()=>({get isMobileViewport(){return device.mobile},pageView:vi.fn()}))
+// Reproduce the reported desktop: the renderer uses the coarse-pointer/mobile
+// path, but desktop chat input must still expose its keyboard shortcut.
+vi.mock('./TerminalManager',()=>({isMobileViewport:true,pageView:vi.fn()}))
 vi.mock('../../api',()=>({api:{input:vi.fn(async()=>({ok:true})),paste:vi.fn(async()=>({ok:true})),key:vi.fn()}}))
 let host:HTMLDivElement,root:Root
 const key=JSON.stringify(['local','input-test','/test'])
 beforeEach(()=>{
   ;(globalThis as any).IS_REACT_ACT_ENVIRONMENT=true
   device.mobile=true;vi.clearAllMocks()
+  vi.spyOn(navigator,'userAgent','get').mockImplementation(()=>device.mobile?'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)':'Mozilla/5.0 (Windows NT 10.0; Win64; x64)')
+  vi.spyOn(navigator,'platform','get').mockImplementation(()=>device.mobile?'iPhone':'Win32')
   useStore.setState({sessions:{'input-test':{id:'input-test',host:'local',cwd:'/test'}}} as never)
   useDrafts.setState({drafts:{[key]:'first line'}})
   host=document.createElement('div');document.body.append(host);root=createRoot(host)
   act(()=>root.render(createElement(InputCard,{sessionId:'input-test'})))
 })
-afterEach(()=>{act(()=>root.unmount());host.remove();useDrafts.setState({drafts:{}})})
+afterEach(()=>{act(()=>root.unmount());host.remove();useDrafts.setState({drafts:{}});vi.restoreAllMocks()})
 const enter=async(options:KeyboardEventInit={})=>{
   const textarea=host.querySelector('textarea')!;textarea.focus()
   const event=new KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true,...options})
@@ -76,7 +80,7 @@ it('desktop Enter and Shift+Enter leave native newline insertion enabled',async(
   expect(host.querySelector('textarea')!.getAttribute('enterkeyhint')).toBe('enter')
 })
 
-it('desktop Ctrl+Enter sends the full draft once with IME and repeat protection',async()=>{
+it('desktop Ctrl+Enter works even when the terminal renderer reports a coarse-pointer device',async()=>{
   device.mobile=false
   const draft='첫째 줄\n\n  둘째 줄'
   act(()=>{useDrafts.getState().write(key,draft);root.render(createElement(InputCard,{sessionId:'input-test'}))})
@@ -93,4 +97,5 @@ it('desktop Ctrl+Enter sends the full draft once with IME and repeat protection'
   expect(host.querySelector('textarea')!.value).toBe('새로 작성 중')
   expect(api.key).not.toHaveBeenCalled()
   expect(host.querySelector('.send-btn')!.getAttribute('aria-keyshortcuts')).toBe('Control+Enter')
+  expect(host.querySelector('textarea')!.placeholder).toBe('메시지 입력 · Ctrl+Enter 전송')
 })

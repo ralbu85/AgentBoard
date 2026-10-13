@@ -5,6 +5,7 @@ import { useDrafts } from './drafts'
 import { useStore } from '../../store'
 import { FilePanel } from '../FilePanel'
 import * as TM from './TerminalManager'
+import { isMobileInputDevice } from './inputDevice'
 
 interface Props {
   sessionId: string
@@ -22,7 +23,7 @@ const QUICK_KEYS = [
   { label: '■ 실행 중단', key: 'C-c' },
 ]
 
-const isMobile = () => TM.isMobileViewport
+const isMobile = isMobileInputDevice
 
 export function InputCard({ sessionId }: Props) {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
