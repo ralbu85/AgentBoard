@@ -17,6 +17,10 @@ class TmuxInputError(RuntimeError):
     pass
 
 
+class TmuxSpawnError(RuntimeError):
+    pass
+
+
 async def tmux_run(args: list[str], timeout: float = TMUX_TIMEOUT, *,
                    input_data: bytes | None = None, check: bool = False) -> str:
     proc = await asyncio.create_subprocess_exec(
@@ -254,12 +258,18 @@ async def new_session(session_name: str, cwd: str, cmd: str) -> None:
     args: list[str] = ["start-server"]
     for c in _global_option_cmds():
         args += [";", *c]
+    # tmux 3.0a does not support new-session -e. Export in the command shell
+    # instead, so the flag reaches the clean terminal and compound profiles
+    # without changing the environment of the server or existing sessions.
     args += [";", "new-session", "-d", "-s", session_name, "-c", cwd,
-             "-e", "AGENTBOARD_SESSION=1", cmd]
+             "export AGENTBOARD_SESSION=1; " + cmd]
     # A cold tmux server (first session ever, or right after the last session
     # died) can take well over the default timeout to fork on a loaded box —
     # the first spawn after "kill all" used to fail spuriously.
-    await tmux_run(args, timeout=15.0)
+    try:
+        await tmux_run(args, timeout=15.0, check=True)
+    except TmuxInputError as exc:
+        raise TmuxSpawnError('터미널을 생성하지 못했습니다. 작업 폴더와 시작 명령을 확인해 주세요.') from exc
 
 
 async def kill_session(session_name: str) -> None:

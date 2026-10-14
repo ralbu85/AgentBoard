@@ -168,6 +168,9 @@ class SessionStore:
         # the first poll would rewrite cwd to the resolved path and the session
         # would jump folder-groups — its tab appearing then vanishing.
         cwd = os.path.realpath(os.path.expanduser(cwd or "~"))
+        if not os.path.isdir(cwd):
+            # Older tmux versions can silently fall back to another directory.
+            raise ValueError('작업 폴더가 없거나 폴더가 아닙니다. 폴더를 확인해 주세요.')
 
         # Reserve the id synchronously (before any await) so concurrent spawns
         # never collide on _next_id or pick the same `term-N` session name.
@@ -181,9 +184,8 @@ class SessionStore:
 
         try:
             await tmux.new_session(session_name, cwd, cmd)
-            # tmux_run swallows failures into "" — verify the session actually
-            # exists (with one short grace retry: a timed-out client call can
-            # still complete server-side a moment later).
+            # A command can exit immediately after successful tmux creation.
+            # Verify that a live terminal remains before publishing the tab.
             if not await tmux.is_alive(session_name):
                 await asyncio.sleep(1.0)
                 if not await tmux.is_alive(session_name):

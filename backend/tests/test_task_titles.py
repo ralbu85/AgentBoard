@@ -182,5 +182,7 @@ def test_new_terminal_remains_clean_shell_with_scoped_marker(monkeypatch):
     call=AsyncMock();monkeypatch.setattr(tmux,'tmux_run',call)
     asyncio.run(tmux.new_session('isolated-test','/project','bash --noprofile --norc'))
     args=call.call_args.args[0]
-    assert args[-3:]==['-e','AGENTBOARD_SESSION=1','bash --noprofile --norc']
+    assert args[-1]=='export AGENTBOARD_SESSION=1; bash --noprofile --norc'
+    assert '-e' not in args
+    assert call.call_args.kwargs['check'] is True
     assert 'claude' not in args and 'codex' not in args
