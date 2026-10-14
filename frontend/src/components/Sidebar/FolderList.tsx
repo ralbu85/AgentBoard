@@ -1,16 +1,11 @@
 import { useState } from 'react'
 import { AgentIcon } from '../AgentIcon'
+import { SessionStatusBadge } from '../SessionStatusBadge'
+import { sessionStatus } from '../../sessionStatus'
 import { useStore, completionKey, sessionLabel, workspaceEntries, type WorkspaceEntry } from '../../store'
 
 interface Props { onSelect?: () => void }
 type StatusFilter = 'all' | 'working' | 'waiting' | 'completed'
-
-const STATUS: Record<string, {label:string; icon:string}> = {
-  working:{label:'작업 중',icon:''}, waiting:{label:'입력 대기',icon:'◆'},
-  idle:{label:'대기',icon:'○'}, completed:{label:'완료',icon:'✓'},
-  stopped:{label:'종료',icon:'■'}, disconnected:{label:'연결 끊김',icon:'×'},
-  running:{label:'확인 중',icon:'…'},
-}
 
 export function FolderList({ onSelect }: Props) {
   const state = useStore()
@@ -79,6 +74,7 @@ export function FolderList({ onSelect }: Props) {
     </div>
 
     {state.activityError && <p className="workspace-activity-error" role="status">{state.activityError}</p>}
+    <div className="workspace-status-key"><span>세션 상태</span><span><i aria-hidden="true" />파란 테두리 · 선택됨</span></div>
     <div className="workspace-state-filters" role="group" aria-label="세션 상태 필터">
       {([['all','전체'],['working','작업 중'],['waiting','입력 대기'],['completed','미확인']] as const).map(([value,label])=><button key={value}
         className={`workspace-state-filter filter-${value}`} aria-label={`${label} ${counts[value]}개${value==='completed'?' · 미확인 결과':''}`} title={value==='completed'?'아직 확인하지 않은 완료 결과':`${label} 세션`}
@@ -120,17 +116,17 @@ export function FolderList({ onSelect }: Props) {
         const session = state.sessions[id]
         const status = statuses[id]
         const pending = isUnread(id)
-        const completed = pending&&(status==='idle'||status==='completed')
-        const displayState = completed?'completed':status
-        const display = STATUS[displayState] || STATUS.running
+        const display = sessionStatus(session, status)
+        const completed = display.state==='completed'
+        const selected = state.activeId === id && active
         return <button key={id} data-state={status} data-unread={pending||undefined} data-completed={completed||undefined} aria-current={state.activeId === id && active ? 'true' : undefined}
-          aria-label={`${sessionLabel(session,state.titles)}, ${display.label}${pending?', 미확인 완료':''}`} className={`workspace-session ${state.activeId === id && active ? 'selected' : ''} ${pending ? 'has-unread' : ''}`}
+          aria-label={`${selected?'선택됨, ':''}${sessionLabel(session,state.titles)}, ${display.label}${pending?', 미확인 완료':''}`} className={`workspace-session ${selected ? 'selected' : ''} ${pending ? 'has-unread' : ''}`}
           title={`${sessionLabel(session, state.titles)}${pending?'\n확인하지 않은 완료 결과 · 선택하면 확인 처리':''}\n${session.cmd || session.process || '터미널'}${session.createdAt ? ' · '+new Date(session.createdAt*1000).toLocaleString('ko-KR') : ''}`} onClick={() => { state.setActive(id); state.acknowledgeCompletion(id); onSelect?.() }}>
-          <span className={`workspace-state-icon icon-${displayState}`} aria-hidden="true">{display.icon}</span>
+          <span className="workspace-selection-mark" aria-hidden="true">{selected?'›':''}</span>
           <AgentIcon session={session} />
           <span className="workspace-session-details"><span className="workspace-session-name">{sessionLabel(session, state.titles)}</span></span>
-          <span className="workspace-session-status">{display.label}</span>
-          {pending&&<span className="workspace-unread-dot" title="확인하지 않은 완료 결과" aria-label="미확인 완료">✓</span>}
+          <SessionStatusBadge status={display} className="workspace-session-status" />
+          {pending&&<span className="workspace-unread-dot" title="새 완료 결과 · 선택하면 확인됩니다" aria-label="미확인 완료" />}
         </button>
       })}</div></div>
     })}

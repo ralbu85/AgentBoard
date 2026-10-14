@@ -6,18 +6,10 @@ import { notifyActive } from '../../ws'
 import * as TM from './TerminalManager'
 import { AgentIcon } from '../AgentIcon'
 import {ConversationView} from './ConversationView'
+import { SessionStatusBadge } from '../SessionStatusBadge'
+import { sessionStatus } from '../../sessionStatus'
 
 import '@xterm/xterm/css/xterm.css'
-
-const STATE_DISPLAY: Record<string, { label: string; icon: string }> = {
-  working:   { label: '작업 중', icon: '●' },
-  waiting:   { label: '입력 대기',   icon: '◆' },
-  completed: { label: '완료',     icon: '✓' },
-  idle:      { label: '대기',     icon: '○' },
-  disconnected: {label: '연결 끊김', icon: '○'},
-  running: {label: '상태 확인 중', icon: '○'},
-  stopped:   { label: '종료',  icon: '■' },
-}
 
 export function TerminalPane({ sessionId }: { sessionId?: string }) {
   const containerRef = useRef<HTMLDivElement>(null)
@@ -30,7 +22,7 @@ export function TerminalPane({ sessionId }: { sessionId?: string }) {
   const isMobile = TM.isMobileViewport
   const currentState = useStore(s => activeId ? s.effectiveState(activeId) : null)
   const agentSession = useStore(s => activeId ? s.sessions[activeId] : undefined)
-  const stateInfo = STATE_DISPLAY[currentState || ''] || STATE_DISPLAY.idle
+  const stateInfo = sessionStatus(agentSession, currentState)
   // Full-screen apps scroll via the app (PageUp forwarded), so xterm's own
   // scroll state can't tell us — always offer the jump-to-bottom button there.
   const btnVisible = showScrollBtn || !!altScreen
@@ -122,10 +114,9 @@ export function TerminalPane({ sessionId }: { sessionId?: string }) {
           <span className="terminal-width-mode" title={isMobile?'글씨 크기를 유지하고 긴 출력을 화면 폭에 맞춰 줄바꿈합니다.':'터미널 영역 너비에 따라 열 수를 자동 조절합니다.'}>{isMobile?'자동 줄바꿈':'자동 폭'}</span>
         </div>
       {activeId && (
-        <div className={`terminal-state-badge tsb-${currentState || 'idle'}`}>
+        <div className="terminal-session-status">
           <AgentIcon session={agentSession} />
-          <span className="state-icon">{stateInfo.icon}</span>
-          {stateInfo.label}
+          <SessionStatusBadge status={stateInfo} />
         </div>
       )}
       {canFullLog && (

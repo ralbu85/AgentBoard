@@ -35,6 +35,25 @@ it('updates existing terminal tabs from shared task summaries without reopening 
   expect(onSelect).not.toHaveBeenCalled()
   expect(onClose).not.toHaveBeenCalled()
 })
+
+it('shows the same activity on tabs and their menu while keeping selection and unread independent',()=>{
+  useStore.setState({_sessionStateRevision:-1,sessions:{},titles:{},connection:'online'})
+  useStore.getState().upsertSession({id:'1',cwd:'/project',cmd:'codex'})
+  const session={...useStore.getState().sessions['1'],aiState:'working',completionEvent:'previous',completionUnread:true}
+  useStore.getState().applySessionState({type:'session-state',revision:1,sessions:[session]})
+  const terminal={...tab('terminal:1','terminal'),sessionId:'1'}
+  act(()=>root.render(createElement(WorkspaceTabs,{tabs:[terminal],paneIds:[terminal.id],activeId:terminal.id,onSelect:vi.fn(),onClose:vi.fn(),onDrop:vi.fn(),actions:null})))
+  expect(host.querySelector('[role=tab]')?.getAttribute('aria-selected')).toBe('true')
+  expect(host.querySelector('.session-status-badge')?.getAttribute('data-status')).toBe('working')
+  expect(host.textContent).not.toContain('미확인')
+  act(()=>useStore.getState().applySessionState({type:'session-state',revision:2,sessions:[{...session,aiState:'idle',completionUnread:false}]}))
+  expect(host.querySelector('.session-status-badge')?.getAttribute('data-status')).toBe('completed')
+  act(()=>host.querySelector<HTMLButtonElement>('.workspace-tabs-toggle')!.click())
+  expect(document.querySelector('.workspace-tabs-popup .session-status-badge')?.getAttribute('data-status')).toBe('completed')
+  expect(document.querySelector('.tab-selected-label')?.textContent).toBe('선택됨')
+  act(()=>useStore.setState({connection:'offline'}))
+  expect(host.querySelector('.session-status-badge')?.getAttribute('data-status')).toBe('disconnected')
+})
 it('filters the workspace list and protects active, dirty, terminal, and browser tabs from file cleanup',()=>{
   const {onClose}=mount()
   const popup=document.querySelector('.workspace-tabs-popup')!

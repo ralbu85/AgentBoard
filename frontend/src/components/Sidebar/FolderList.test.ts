@@ -37,11 +37,37 @@ it('shows the task summary inline and reorders existing workspaces without a sep
 })
 it('shows working independently of unread news and acknowledges news on selection',async()=>{
   const row=host.querySelector<HTMLButtonElement>('[data-state=working]')!
-  expect(row.querySelector('.workspace-session-status')?.textContent).toBe('작업 중')
+  expect(row.querySelector('.workspace-session-status > span:last-child')?.textContent).toBe('작업 중')
   expect(row.querySelector('.workspace-unread-dot')).not.toBeNull()
   await act(async()=>row.click())
-  expect(host.querySelector('[data-state=working] .workspace-session-status')?.textContent).toBe('작업 중')
+  expect(host.querySelector('[data-state=working] .workspace-session-status > span:last-child')?.textContent).toBe('작업 중')
   expect(host.querySelector('.workspace-unread-dot')).toBeNull()
+})
+
+it('keeps selection separate from working and completed, and clears only the unread marker on review',async()=>{
+  await act(async()=>host.querySelector<HTMLButtonElement>('[data-state=working]')!.click())
+  let selected=host.querySelector<HTMLButtonElement>('.workspace-session.selected')!
+  expect(selected.getAttribute('aria-current')).toBe('true')
+  expect(selected.querySelector('.workspace-selection-mark')?.textContent).toBe('›')
+  expect(selected.querySelector('.session-status-badge')?.getAttribute('data-status')).toBe('working')
+  act(()=>useStore.getState().applySessionState(serverState(['1'],{'1':{aiState:'idle',completionEvent:'fresh-result'}})))
+  selected=host.querySelector<HTMLButtonElement>('.workspace-session.selected')!
+  expect(selected.querySelector('.session-status-badge')?.getAttribute('data-status')).toBe('completed')
+  expect(selected.querySelector('.workspace-unread-dot')).not.toBeNull()
+  await act(async()=>selected.click())
+  expect(selected.querySelector('.workspace-unread-dot')).toBeNull()
+  expect(selected.querySelector('.session-status-badge')?.getAttribute('data-status')).toBe('completed')
+  expect(selected.getAttribute('aria-label')).toContain('선택됨')
+  act(()=>useStore.setState(s=>({sessions:{...s.sessions,'1':{...s.sessions['1'],aiState:'working'}}})))
+  expect(selected.querySelector('.session-status-badge')?.getAttribute('data-status')).toBe('working')
+})
+
+it('shows idle for a fresh session and never calls an offline session completed',()=>{
+  act(()=>useStore.setState(s=>({sessions:{...s.sessions,'2':{...s.sessions['2'],completionEvent:'',completionId:''}}})))
+  expect(host.querySelector('[data-state=idle] .session-status-badge')?.getAttribute('data-status')).toBe('idle')
+  act(()=>useStore.setState({connection:'offline'}))
+  expect(host.querySelector('[data-status=completed]')).toBeNull()
+  expect(host.querySelectorAll('[data-status=disconnected]')).toHaveLength(3)
 })
 it('filters sessions without changing workspace order and follows live state transitions',async()=>{
   await act(async()=>host.querySelector<HTMLButtonElement>('.filter-working')!.click())
@@ -70,10 +96,10 @@ it('filters unread results independently of current activity and clears only the
   act(()=>markUnread(['1','2']))
   expect(host.querySelector('.filter-completed b')?.textContent).toBe('2')
   expect(host.querySelector('.workspace-activity-completed')?.getAttribute('aria-label')).toBe('미확인 완료 2개')
-  expect(host.querySelector('[data-completed=true] .workspace-session-status')?.textContent).toBe('완료')
+  expect(host.querySelector('[data-completed=true] .workspace-session-status > span:last-child')?.textContent).toBe('완료')
   await act(async()=>host.querySelector<HTMLButtonElement>('.filter-completed')!.click())
   expect(host.querySelectorAll('.workspace-session')).toHaveLength(2)
-  expect(host.querySelector('[data-state=working] .workspace-session-status')?.textContent).toBe('작업 중')
+  expect(host.querySelector('[data-state=working] .workspace-session-status > span:last-child')?.textContent).toBe('작업 중')
   await act(async()=>host.querySelector<HTMLButtonElement>('[data-completed=true]')!.click())
   expect(useStore.getState().activeId).toBe('2')
   expect(host.querySelector('.filter-completed b')?.textContent).toBe('1')
@@ -83,7 +109,7 @@ it('filters unread results independently of current activity and clears only the
   expect(host.textContent).toContain('확인하지 않은 완료 결과가 없습니다.')
   await act(async()=>host.querySelector<HTMLButtonElement>('.filter-all')!.click())
   expect(host.querySelectorAll('.workspace-session')).toHaveLength(3)
-  expect(host.querySelector('[data-state=idle] .workspace-session-status')?.textContent).toBe('대기')
+  expect(host.querySelector('[data-state=idle] .workspace-session-status > span:last-child')?.textContent).toBe('완료')
 })
 
 it('does not acknowledge other results when a workspace restores a file or one terminal',async()=>{

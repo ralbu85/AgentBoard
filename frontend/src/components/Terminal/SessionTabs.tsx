@@ -3,17 +3,14 @@ import { useState } from 'react'
 import { useStore, completionKey, sessionLabel } from '../../store'
 import { notifyActive } from '../../ws'
 import { CLEAN_TERMINAL, spawnAndFocus } from '../../spawn'
-
-const STATE_COLORS: Record<string, string> = {
-  working: '#a78bfa', waiting: '#fbbf24', idle: '#6e7681',
-  completed: '#34d399', stopped: '#f87171', running: '#6e7681',
-}
+import { SessionStatusBadge } from '../SessionStatusBadge'
+import { sessionStatus } from '../../sessionStatus'
 
 // Tabs for the sessions in the current workspace folder + a "+ | ▾" launcher.
 // "+" runs the default profile; "▾" opens the profile menu (Claude variants,
 // Codex, terminal, custom, edit).
 export function SessionTabs({ wsCwd }: { wsCwd: string }) {
-  const unreadCompletions = useStore(s => s.unreadCompletions)
+  const connection = useStore(s => s.connection)
   const sessions = useStore((s) => s.sessions)
   const titles = useStore((s) => s.titles)
   const activeId = useStore((s) => s.activeId)
@@ -41,20 +38,26 @@ export function SessionTabs({ wsCwd }: { wsCwd: string }) {
 
   return (
     <div className="session-tabs">
-      <div className="session-tabs-scroll">
+      <div className="session-tabs-scroll" role="tablist" aria-label="터미널 세션">
         {ids.map((id) => {
           const s = sessions[id]
-          const unread = unreadCompletions.includes(completionKey(s))
-          const state = effectiveState(id) || 'running'
+          const status = sessionStatus(s, connection === 'online' ? effectiveState(id) : 'disconnected')
           const title = sessionLabel(s,titles)
           const hostTag = s.host && s.host !== 'local' ? (s.hostLabel || s.host) : ''
           return (
-            <div key={id} className={`session-tab ${id === activeId ? 'active' : ''} ${unread ? 'has-unread' : ''}`}
-              title={hostTag ? `${title} · ${hostTag}` : title} onClick={() => select(id)}>
-              <span className={`session-dot dot-${state}`} style={{ background: STATE_COLORS[state] || '#6e7681' }} />
+            <div key={id} className={`session-tab ${id === activeId ? 'active' : ''}`}
+              role="tab" aria-selected={id===activeId} tabIndex={id===activeId?0:-1}
+              aria-label={`${title}, ${status.label}`} title={`${title}${hostTag?` · ${hostTag}`:''} · ${status.label}`} onClick={() => select(id)}
+              onKeyDown={e=>{
+                if(e.target!==e.currentTarget)return
+                if(e.key==='Enter'||e.key===' '){e.preventDefault();select(id)}
+                const index=ids.indexOf(id)
+                const next=e.key==='ArrowRight'?(index+1)%ids.length:e.key==='ArrowLeft'?(index+ids.length-1)%ids.length:e.key==='Home'?0:e.key==='End'?ids.length-1:-1
+                if(next>=0){e.preventDefault();select(ids[next]);(e.currentTarget.parentElement?.children[next] as HTMLElement)?.focus()}
+              }}>
               <AgentIcon session={s}/>
               <span className="session-tab-title">{title}</span>
-              {unread && <span className="unread-chip" title="완료 후 미확인">✓ 미확인</span>}
+              <SessionStatusBadge status={status} />
               <button className="session-tab-close" onClick={(e) => close(e, id)} title="탭 닫기 (기기 간 동기화)">✕</button>
             </div>
           )
