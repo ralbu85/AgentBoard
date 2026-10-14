@@ -15,7 +15,8 @@ export interface Session {
   completionAt?: number
   completionUnread?: boolean
   autoTitle?: string
-  requestTitle?: string
+  taskTitle?: string
+  titleSource?: 'native' | 'response' | ''
   altScreen?: boolean     // full-screen app (vim/TUI) active → no scrollback
   host: string            // 'local' for the hub's own machine, else the agent's host id
   hostLabel?: string      // human-friendly machine name

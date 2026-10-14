@@ -558,6 +558,7 @@ async def _poll_active_info():
 # ── Helpers ──
 
 def _update_info(id: str, s, info: dict):
+    s.pane_pid = info.get('pid', 0)
     process = info.get("process", "")
     created_at = info.get("created_at", 0)
     alt_screen = info.get("alt_screen", False)
@@ -643,14 +644,17 @@ def _detect_state(id: str, s, output: str, stable_seconds: float = -1.0):
 _bg_tasks: list[asyncio.Task] = []
 
 def start_polling():
+    from .task_titles import poll as poll_task_titles
     _bg_tasks.append(asyncio.create_task(_poll_active()))
     _bg_tasks.append(asyncio.create_task(_poll_background()))
     _bg_tasks.append(asyncio.create_task(_poll_active_info()))
+    _bg_tasks.append(asyncio.create_task(poll_task_titles()))
 
 
 async def stop_all():
     for t in _bg_tasks:
         t.cancel()
+    await asyncio.gather(*_bg_tasks, return_exceptions=True)
     for id in list(_tasks):
         from .sessions import store
         s = store.get(id)

@@ -157,7 +157,7 @@ export function sessionLabel(session: Session, titles: Record<string, string>): 
   const manual = titles[session.id]?.trim()
   const generic = /^(?:(?:claude|codex|terminal|bash|zsh)\s*[·# ]*\d+|#\d+\s*(?:claude|codex|terminal|bash|zsh))$/i
   if (manual && !generic.test(manual)) return manual
-  if (session.requestTitle?.trim()) return session.requestTitle.trim()
+  if (session.taskTitle?.trim()) return session.taskTitle.trim()
   if (session.autoTitle?.trim()) return session.autoTitle.trim()
   if (/^(bash(?: --noprofile --norc)?|zsh)$/.test(session.cmd)) return '터미널'
   return `${session.cmd || session.process || '터미널'} · 제목 대기`

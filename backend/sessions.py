@@ -24,6 +24,8 @@ class Session:
     status: str = "running"      # running | stopped | completed
     ai_state: str | None = None  # idle | working | waiting
     auto_title: str = ""
+    pane_pid: int = 0
+    task_summary: dict = field(default_factory=dict)
     completion_id: str = ""
     submission_id: str = ""
     last_activity_at: float = 0
@@ -54,6 +56,7 @@ class Session:
             "online": True,
             "process": self.process,
             "autoTitle": self.auto_title,
+            "taskSummary": self.task_summary,
             "createdAt": self.created_at,
             "memKB": self.mem_kb,
             "altScreen": self.alt_screen,

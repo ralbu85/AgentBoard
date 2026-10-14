@@ -82,7 +82,7 @@ def broadcast(msg: dict):
     for ws in dead:
         clients.discard(ws)
 
-    if msg.get('type') in {'spawned', 'removed', 'status', 'aiState', 'info', 'cwd', 'activity', 'host-connection'}:
+    if msg.get('type') in {'spawned', 'removed', 'status', 'aiState', 'info', 'cwd', 'activity', 'host-connection', 'task-summary'}:
         try:
             from .session_state import snapshot
             broadcast(snapshot())

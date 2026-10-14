@@ -20,16 +20,16 @@ function mount() {
   act(()=>host.querySelector<HTMLButtonElement>('.workspace-tabs-toggle')!.click())
   return {onSelect,onClose}
 }
-it('updates existing terminal tabs from shared request titles without reopening tabs',()=>{
+it('updates existing terminal tabs from shared task summaries without reopening tabs',()=>{
   useStore.setState({_sessionStateRevision:-1,sessions:{},titles:{}})
   useStore.getState().upsertSession({id:'1',cwd:'/project',cmd:'codex'})
-  const session={...useStore.getState().sessions['1'],requestTitle:'첫 작업',autoTitle:'오래된 제목'}
+  const session={...useStore.getState().sessions['1'],taskTitle:'첫 작업',autoTitle:'오래된 제목'}
   useStore.getState().applySessionState({type:'session-state',revision:1,sessions:[session]})
   const terminal={...tab('terminal:1','terminal'),sessionId:'1'}
   const onSelect=vi.fn(),onClose=vi.fn()
   act(()=>root.render(createElement(WorkspaceTabs,{tabs:[terminal],paneIds:[terminal.id],activeId:terminal.id,onSelect,onClose,onDrop:vi.fn(),actions:null})))
   expect(host.querySelector('.vtab-name')?.textContent).toBe('첫 작업')
-  act(()=>useStore.getState().applySessionState({type:'session-state',revision:2,sessions:[{...session,requestTitle:'새 요청'}]}))
+  act(()=>useStore.getState().applySessionState({type:'session-state',revision:2,sessions:[{...session,taskTitle:'새 요청'}]}))
   expect(host.querySelectorAll('[role=tab]')).toHaveLength(1)
   expect(host.querySelector('.vtab-name')?.textContent).toBe('새 요청')
   expect(onSelect).not.toHaveBeenCalled()

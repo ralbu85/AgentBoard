@@ -159,15 +159,21 @@ it('uses agent titles instead of legacy numbered command labels', () => {
   expect(sessionLabel({...session, autoTitle:''}, {})).toBe('claude · 제목 대기')
 })
 
-it('uses the latest request immediately, preserving deliberate names and rejecting stale snapshots', () => {
+it('uses the shared task summary, preserving deliberate names and rejecting stale snapshots', () => {
   const s = useStore.getState(); s.upsertSession({id:'1', cwd:'/project', cmd:'codex'})
-  const session = {...useStore.getState().sessions['1'], createdAt:10, autoTitle:'오래된 에이전트 제목', requestTitle:'방금 보낸 요청'}
+  const session = {...useStore.getState().sessions['1'], createdAt:10, autoTitle:'오래된 에이전트 제목', taskTitle:'입력창 단축키 개선'}
   s.applySessionState({type:'session-state', revision:2, sessions:[session]})
-  expect(sessionLabel(useStore.getState().sessions['1'], {})).toBe('방금 보낸 요청')
+  expect(sessionLabel(useStore.getState().sessions['1'], {})).toBe('입력창 단축키 개선')
   expect(sessionLabel(session, {'1':'내가 지정한 이름'})).toBe('내가 지정한 이름')
-  expect(sessionLabel(session, {'1':'codex #1'})).toBe('방금 보낸 요청')
-  s.applySessionState({type:'session-state', revision:1, sessions:[{...session, requestTitle:'이전 요청'}]})
-  expect(sessionLabel(useStore.getState().sessions['1'], {})).toBe('방금 보낸 요청')
+  expect(sessionLabel(session, {'1':'codex #1'})).toBe('입력창 단축키 개선')
+  s.applySessionState({type:'session-state', revision:1, sessions:[{...session, taskTitle:'이전 요청'}]})
+  expect(sessionLabel(useStore.getState().sessions['1'], {})).toBe('입력창 단축키 개선')
+})
+
+it('ignores legacy raw prompt titles from an older server', () => {
+  const s = useStore.getState(); s.upsertSession({id:'1', cwd:'/project', cmd:'codex'})
+  const legacy = {...useStore.getState().sessions['1'], autoTitle:'모바일 출력 개선', requestTitle:'계속해'}
+  expect(sessionLabel(legacy, {})).toBe('모바일 출력 개선')
 })
 
 it('moves workspaces for shared request/completion times but not clicks, output or acknowledgements', () => {

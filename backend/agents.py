@@ -63,6 +63,8 @@ class AgentConn:
                 "aiState": msg.get('aiState'),
                 "completionId": msg.get('completionId', ''),
                 "process": msg.get('process', ''),
+                "autoTitle": msg.get('autoTitle', ''),
+                "taskSummary": msg.get('taskSummary', {}),
                 "createdAt": msg.get('createdAt', 0),
                 "memKB": 0,
                 "altScreen": False,
@@ -86,6 +88,8 @@ class AgentConn:
             s = self.sessions[mid]
             if mtype == "activity":
                 s["lastActivityAt"] = msg.get("lastActivityAt", 0)
+            elif mtype == "task-summary":
+                s['taskSummary'] = msg.get('taskSummary', {})
             elif mtype == "status":
                 s["status"] = msg.get("status", s["status"])
                 if s['status'] in ('completed', 'stopped'):

@@ -50,13 +50,13 @@ it('mobile Send transmits a multiline draft exactly once and clears it only on s
 })
 
 it('applies the successful send response immediately when the websocket update is delayed',async()=>{
-  const session={...useStore.getState().sessions['input-test'],requestTitle:'방금 보낸 작업'}
+  const session={...useStore.getState().sessions['input-test'],taskTitle:'입력창 단축키 개선'}
   vi.mocked(api.input).mockResolvedValueOnce({ok:true,sessionState:{type:'session-state',revision:10,sessions:[session],workspaceActivity:{'["local","/test"]':100}}})
   await act(async()=>host.querySelector<HTMLButtonElement>('.send-btn')!.click())
-  expect(useStore.getState().sessions['input-test'].requestTitle).toBe('방금 보낸 작업')
+  expect(useStore.getState().sessions['input-test'].taskTitle).toBe('입력창 단축키 개선')
   expect(useStore.getState().workspaceActivity['["local","/test"]']).toBe(100)
-  act(()=>useStore.getState().applySessionState({type:'session-state',revision:9,sessions:[{...session,requestTitle:'이전 요청'}]}))
-  expect(useStore.getState().sessions['input-test'].requestTitle).toBe('방금 보낸 작업')
+  act(()=>useStore.getState().applySessionState({type:'session-state',revision:9,sessions:[{...session,taskTitle:'이전 요청'}]}))
+  expect(useStore.getState().sessions['input-test'].taskTitle).toBe('입력창 단축키 개선')
 })
 
 it('keeps multiline drafts when the terminal rejects the send',async()=>{

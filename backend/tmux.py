@@ -254,7 +254,8 @@ async def new_session(session_name: str, cwd: str, cmd: str) -> None:
     args: list[str] = ["start-server"]
     for c in _global_option_cmds():
         args += [";", *c]
-    args += [";", "new-session", "-d", "-s", session_name, "-c", cwd, cmd]
+    args += [";", "new-session", "-d", "-s", session_name, "-c", cwd,
+             "-e", "AGENTBOARD_SESSION=1", cmd]
     # A cold tmux server (first session ever, or right after the last session
     # died) can take well over the default timeout to fork on a loaded box —
     # the first spawn after "kill all" used to fail spuriously.

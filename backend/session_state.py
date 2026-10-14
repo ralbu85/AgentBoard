@@ -106,4 +106,4 @@ def snapshot():
         activity = session_activity.state.sync(result['sessions'])
         return {**result, **activity, 'revision': max(result['revision'], activity['revision'])}
     except (OSError, ValueError):
-        return {**result, 'activityError': '최근 요청 제목과 작업순서를 동기화하지 못했습니다.'}
+        return {**result, 'activityError': '작업 제목과 최근 작업순서를 동기화하지 못했습니다.'}

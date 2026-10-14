@@ -27,11 +27,11 @@ beforeEach(()=>{
   act(()=>root.render(createElement(FolderList)))
 })
 afterEach(()=>{act(()=>root.unmount());host.remove();vi.restoreAllMocks()})
-it('shows the latest request inline and reorders existing workspaces without a separate history panel',()=>{
-  const update=serverState([],{'3':{requestTitle:'새로 요청한 작업'}})
+it('shows the task summary inline and reorders existing workspaces without a separate history panel',()=>{
+  const update=serverState([],{'3':{taskTitle:'노트북 셀 편집 개선'}})
   act(()=>useStore.getState().applySessionState({...update,workspaceActivity:{[workspaceId('/second')]:100}}))
   expect(host.querySelector('.workspace-picker-name')?.textContent).toBe('second')
-  expect(host.querySelector('.workspace-session-name')?.textContent).toBe('새로 요청한 작업')
+  expect(host.querySelector('.workspace-session-name')?.textContent).toBe('노트북 셀 편집 개선')
   expect(host.querySelector('.recent-work')).toBeNull()
   expect(host.textContent).toContain('최근 작업순')
 })
