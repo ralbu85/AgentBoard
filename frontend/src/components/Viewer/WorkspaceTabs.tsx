@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 're
 import { createPortal } from 'react-dom'
 import { useStore, sessionLabel, type ViewerTab } from '../../store'
 import { AgentIcon } from '../AgentIcon'
+import { WorkbenchIcon } from '../WorkbenchIcon'
 import { SessionStatusBadge } from '../SessionStatusBadge'
 import { sessionStatus } from '../../sessionStatus'
 
@@ -39,7 +40,7 @@ export function WorkspaceTabs({tabs, paneIds, activeId, onSelect, onClose, onDro
   const activity = (tab: ViewerTab) => tab.type==='terminal' && tab.sessionId
     ? sessionStatus(sessions[tab.sessionId], connection==='online'?effectiveState(tab.sessionId):'disconnected') : null
   const icon = (tab: ViewerTab) => tab.type === 'terminal'
-    ? <><AgentIcon session={sessions[tab.sessionId || '']}/><span className="tab-terminal-fallback" aria-hidden="true">›_</span></>
+    ? <><AgentIcon session={sessions[tab.sessionId || '']}/><span className="tab-terminal-fallback" aria-hidden="true"><WorkbenchIcon name="terminal" /></span></>
     : <span className={`tab-kind tab-kind-${tab.type}`} aria-hidden="true">{tab.type === 'browser' ? '◎' : tab.type === 'pdf' ? 'PDF' : tab.type === 'notebook' ? 'NB' : tab.type === 'markdown' ? 'MD' : '▤'}</span>
   const closeMenu = () => { setOpen(false); trigger.current?.focus() }
   const measure = () => {
@@ -104,14 +105,14 @@ export function WorkspaceTabs({tabs, paneIds, activeId, onSelect, onClose, onDro
           {icon(t)}<span className="vtab-name">{title(t)}</span>
           {status&&<SessionStatusBadge status={status} />}
           {t.dirty&&<span className="vtab-dirty" title="저장하지 않은 변경" aria-label="수정 중">●</span>}
-          <button type="button" className="vtab-close vtab-x" aria-label={`${title(t)} 탭 닫기`} title={t.type==='terminal'?'탭과 왼쪽 목록에서 숨기기 (실행 유지)':'탭 닫기'} onClick={e=>{e.stopPropagation();onClose(t.id)}}>×</button>
+          <button type="button" className="vtab-close vtab-x" aria-label={`${title(t)} 탭 닫기`} title={t.type==='terminal'?'탭과 왼쪽 목록에서 숨기기 (실행 유지)':'탭 닫기'} onClick={e=>{e.stopPropagation();onClose(t.id)}}><WorkbenchIcon name="close" /></button>
         </div>})}
       </div>
     </div>
-    <button ref={trigger} className={`workspace-tabs-toggle ${open?'active':''}`} onClick={()=>setOpen(!open)} aria-expanded={open} aria-haspopup="dialog" title="전체 탭 검색 및 관리" aria-label={`전체 탭 목록 ${tabs.length}개`}>☷ <span>{tabs.length}</span></button>
+    <button ref={trigger} className={`workspace-tabs-toggle ${open?'active':''}`} onClick={()=>setOpen(!open)} aria-expanded={open} aria-haspopup="dialog" title="전체 탭 검색 및 관리" aria-label={`전체 탭 목록 ${tabs.length}개`}><WorkbenchIcon name="tabs" /><span>{tabs.length}</span></button>
     {actions}
     {open&&createPortal(<div ref={popup} className="workspace-tabs-popup" role="dialog" aria-label="워크스페이스 탭 관리" style={{...position,maxHeight:`calc(100dvh - ${position.top+12}px)`}}>
-      <div className="workspace-tabs-heading"><strong>열린 탭 <span>{tabs.length}</span></strong><button onClick={closeMenu} aria-label="탭 목록 닫기">×</button></div>
+      <div className="workspace-tabs-heading"><strong>열린 탭 <span>{tabs.length}</span></strong><button onClick={closeMenu} aria-label="탭 목록 닫기"><WorkbenchIcon name="close" /></button></div>
       <input ref={input} className="workspace-tabs-search" aria-label="탭 검색" placeholder="탭 이름 또는 경로 검색" value={query} onChange={e=>setQuery(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&filtered.length){onSelect(filtered[0].id);setOpen(false)}}}/>
       <div className="workspace-tabs-filters" aria-label="탭 종류">
         {[['all','전체'],['terminal','터미널'],['file','파일'],['browser','웹']].map(([id,label])=><button key={id} aria-pressed={filter===id} onClick={()=>setFilter(id)}>{label} <span>{tabs.filter(t=>id==='all'||id==='terminal'&&t.type==='terminal'||id==='file'&&isFile(t)||id==='browser'&&t.type==='browser').length}</span></button>)}
@@ -123,7 +124,7 @@ export function WorkspaceTabs({tabs, paneIds, activeId, onSelect, onClose, onDro
             {status&&<SessionStatusBadge status={status} />}
             {t.id===activeId&&<span className="tab-selected-label">선택됨</span>}
           </button>
-          <button className="workspace-tab-dismiss" onClick={()=>onClose(t.id)} aria-label={`${title(t)} 탭 닫기`} title={t.type==='terminal'?'탭과 왼쪽 목록에서 숨기기 (실행 유지)':'탭 닫기'}>×</button>
+          <button className="workspace-tab-dismiss" onClick={()=>onClose(t.id)} aria-label={`${title(t)} 탭 닫기`} title={t.type==='terminal'?'탭과 왼쪽 목록에서 숨기기 (실행 유지)':'탭 닫기'}><WorkbenchIcon name="close" /></button>
         </div>})}
         {!filtered.length&&<p className="workspace-tabs-empty">일치하는 탭이 없습니다.</p>}
       </div>

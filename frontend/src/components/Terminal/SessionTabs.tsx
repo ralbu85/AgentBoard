@@ -1,4 +1,5 @@
 import {AgentIcon} from '../AgentIcon'
+import {WorkbenchIcon} from '../WorkbenchIcon'
 import { useState } from 'react'
 import { useStore, completionKey, sessionLabel } from '../../store'
 import { notifyActive } from '../../ws'
@@ -56,16 +57,17 @@ export function SessionTabs({ wsCwd }: { wsCwd: string }) {
                 if(next>=0){e.preventDefault();select(ids[next]);(e.currentTarget.parentElement?.children[next] as HTMLElement)?.focus()}
               }}>
               <AgentIcon session={s}/>
+              <span className="tab-terminal-fallback" aria-hidden="true"><WorkbenchIcon name="terminal" /></span>
               <span className="session-tab-title">{title}</span>
               <SessionStatusBadge status={status} />
-              <button className="session-tab-close" onClick={(e) => close(e, id)} title="탭 닫기 (기기 간 동기화)">✕</button>
+              <button className="session-tab-close" onClick={(e) => close(e, id)} title="탭 닫기 (기기 간 동기화)" aria-label={`${title} 탭 닫기`}><WorkbenchIcon name="close" /></button>
             </div>
           )
         })}
       </div>
 
       <div className="session-tab-addwrap">
-        <button className="session-tab-add-main" title="새 일반 터미널" onClick={addDefault}>＋</button>
+        <button className="session-tab-add-main" title="새 일반 터미널" aria-label="새 일반 터미널" onClick={addDefault}><WorkbenchIcon name="plus" /></button>
         <button className="session-tab-add-caret" title="에이전트 선택" onClick={() => setMenuOpen((v) => !v)}>▾</button>
         {menuOpen && (
           <>
