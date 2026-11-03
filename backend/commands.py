@@ -9,11 +9,12 @@ cross-import, no shared state between processes).
 from __future__ import annotations
 
 import asyncio
+import time
 import uuid
 from typing import Awaitable, Callable, Optional
 
 from .logger import log
-from .terminal_geometry import viewports, frame_meta
+from .terminal_geometry import viewports, frame_meta, REFLOW_QUIET_SECONDS
 from .sessions import CANONICAL_COLS, CANONICAL_ROWS
 
 # Single bytes/sequences from xterm mapped to tmux key names.
@@ -28,6 +29,35 @@ SEQ_MAP = {
 }
 
 Reply = Callable[[dict], Awaitable[None]]
+
+
+async def resize_grid(s, cols, tmux, get_snapshot, broadcast):
+    """Apply and verify a session's source width; call with its resize_lock held."""
+    s.resizing = True
+    s.geometry_verified = False
+    s.grid_revision = getattr(s, 'grid_revision', 0) + 1
+    try:
+        if cols is not None:
+            s._reflow_until = time.monotonic() + REFLOW_QUIET_SECONDS
+            await tmux.resize_window(s.session_name, cols, CANONICAL_ROWS)
+        actual = await tmux.pane_size(s.session_name)
+        if actual and 30 <= actual[0] <= 240 and 1 <= actual[1] <= 200:
+            s.display_cols, s.display_rows = actual
+            s.geometry_verified = True
+        else:
+            log.warning('Cannot verify terminal dimensions for %s', s.session_name)
+    except Exception as exc:
+        log.warning('Terminal resize failed for %s: %s', s.session_name, exc)
+    finally:
+        s.resizing = False
+    if not s.geometry_verified:
+        # The next viewport heartbeat retries. Never label a frame
+        # with guessed dimensions after a partial resize failure.
+        return
+    output = await get_snapshot(s.id, s.session_name)
+    if output:
+        # Every viewer must replace its old-width history together.
+        broadcast({'type':'snapshot', 'id':s.id, 'data':output, **frame_meta(s, output)})
 
 
 async def apply_command(store, streamer, tmux, msg: dict,
@@ -89,41 +119,25 @@ async def apply_command(store, streamer, tmux, msg: dict,
         if device == 'desktop' and (type(cols) is not int or not 80 <= cols <= 240):
             return None
         requested = cols if device == 'desktop' else None
-        viewports.update(mid, ws_id, requested)
+        claim = msg.get('claim') is True
+        viewports.update(mid, ws_id, requested, claim)
         cols = viewports.target_columns(mid)
         if (cols is None or cols == s.display_cols) and getattr(s, 'geometry_verified', True):
             return None
         if not hasattr(s, 'resize_lock'):
             s.resize_lock = asyncio.Lock()
         async with s.resize_lock:
-            viewports.update(mid, ws_id, requested)
+            viewports.update(mid, ws_id, requested, claim)
             cols = viewports.target_columns(mid)
             if (cols is None or cols == s.display_cols) and getattr(s, 'geometry_verified', True):
                 return None
-            s.resizing = True
-            s.geometry_verified = False
-            s.grid_revision = getattr(s, 'grid_revision', 0) + 1
-            try:
-                if cols is not None:
-                    await tmux.resize_window(s.session_name, cols, CANONICAL_ROWS)
-                actual = await tmux.pane_size(s.session_name)
-                if actual and 30 <= actual[0] <= 240 and 1 <= actual[1] <= 200:
-                    s.display_cols, s.display_rows = actual
-                    s.geometry_verified = True
-                else:
-                    log.warning('Cannot verify terminal dimensions for %s', s.session_name)
-            except Exception as exc:
-                log.warning('Terminal resize failed for %s: %s', s.session_name, exc)
-            finally:
-                s.resizing = False
-            if not s.geometry_verified:
-                # The next viewport heartbeat retries. Never label a frame
-                # with guessed dimensions after a partial resize failure.
-                return None
-            output = await streamer.get_snapshot(mid, s.session_name)
-            if output:
-                # Every viewer must replace its old-width history together.
-                streamer.broadcast({'type':'snapshot', 'id':mid, 'data':output, **frame_meta(s, output)})
+            await resize_grid(s, cols, tmux, streamer.get_snapshot, streamer.broadcast)
+        return None
+
+    if mtype == 'desktop-width':
+        cols = msg.get('cols')
+        if type(cols) is int and 80 <= cols <= 240:
+            viewports.set_shared_width(cols, msg.get('claim') is True)
         return None
 
     if mtype == "resize":

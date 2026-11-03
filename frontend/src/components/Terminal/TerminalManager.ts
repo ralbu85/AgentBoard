@@ -299,6 +299,22 @@ function receiveGrid(id:string,cols=CANONICAL_COLS,rows=CANONICAL_ROWS,fullRows=
   return true
 }
 
+// The window someone is using sets the width every session shares. One left
+// open elsewhere still shows the result but never overrides it.
+const CLAIM_MS=5500
+let lastInteraction=Date.now()
+const claiming=()=>Date.now()-lastInteraction<CLAIM_MS
+let sharedWidth:{cols:number;sent:number}|undefined
+function reportSharedWidth(container:HTMLElement,cellW:number){
+  if(document.hidden)return
+  // A split pane or grid tile is narrow only while shown; other sessions keep the full width.
+  const full=container.closest('.workbench-split,.grid-tile')?container.closest<HTMLElement>('.main-area'):container
+  const cols=desktopColumns((full||container).clientWidth,cellW)
+  if(sharedWidth?.cols===cols&&Date.now()-sharedWidth.sent<5000)return
+  sharedWidth={cols,sent:Date.now()}
+  send({type:'desktop-width',cols,claim:claiming()})
+}
+
 const viewportRequests=new Map<string,{device:string;cols:number;sent:number}>()
 const viewportTimers=new Map<string,ReturnType<typeof setTimeout>>()
 function requestViewport(id:string,cols:number){
@@ -313,7 +329,7 @@ function requestViewport(id:string,cols:number){
     viewportTimers.delete(id)
     if(!t.el.isConnected||t.el.style.display==='none'||document.hidden)return
     viewportRequests.set(id,{device,cols,sent:Date.now()})
-    send({type:'viewport',id,device,cols})
+    send({type:'viewport',id,device,cols,claim:claiming()})
   },180))
 }
 export function releaseViewport(id:string){
@@ -321,6 +337,7 @@ export function releaseViewport(id:string){
   if(viewportRequests.delete(id))send({type:'viewport-release',id})
 }
 export function refreshViewports(){
+  sharedWidth=undefined
   for(const [id,t] of terminals){
     if(t.opened&&t.el.isConnected&&t.el.style.display!=='none'&&!document.hidden){
       const previous=viewportRequests.get(id)
@@ -333,6 +350,14 @@ export function refreshViewports(){
 if(typeof document!=='undefined'){
   setInterval(refreshViewports,5000)
   document.addEventListener('visibilitychange',refreshViewports)
+  const interacted=()=>{
+    const alreadyClaiming=claiming()
+    lastInteraction=Date.now()
+    if(!alreadyClaiming)refreshViewports()
+  }
+  window.addEventListener('pointerdown',interacted,true)
+  window.addEventListener('keydown',interacted,true)
+  window.addEventListener('focus',interacted)
 }
 
 export function refit(id: string) {
@@ -373,7 +398,10 @@ export function refit(id: string) {
   const scaleChanged=t.el.dataset.scale!==undefined&&Number(t.el.dataset.scale)!==scale
   const followOutput=!!t.followOnReveal||!isScrolledUp(id),scrollPosition=t.term.buffer.active.viewportY
   const preserveZoomScroll=scaleChanged&&!t.needsSnapshot
-  if(grid.dynamic)requestViewport(id,desktopColumns(container.clientWidth,cellW))
+  if(grid.dynamic){
+    requestViewport(id,desktopColumns(container.clientWidth,cellW))
+    reportSharedWidth(container,cellW)
+  }
   const rows=viewportRows(container.clientHeight,cell.height,scale,grid.rows,!isMobile&&!!grid.fullRows)
   if(t.term.cols!==grid.cols||t.term.rows!==rows){
     const scrolled=!t.followOnReveal&&isScrolledUp(id),position=t.term.buffer.active.viewportY

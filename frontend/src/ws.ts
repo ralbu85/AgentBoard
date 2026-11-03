@@ -144,7 +144,7 @@ export function send(msg: object) {
     ws.send(JSON.stringify(msg))
   } else {
     // Geometry is transient; reconnect recomputes current visible viewports.
-    if(['viewport','viewport-release'].includes((msg as {type?:string}).type||''))return
+    if(['viewport','viewport-release','desktop-width'].includes((msg as {type?:string}).type||''))return
     _pendingSend.push(msg)
   }
 }

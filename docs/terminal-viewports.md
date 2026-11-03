@@ -6,15 +6,31 @@ grid; mobile instead wraps complete captured frames into a native DOM document
 and remaps their cursor.
 Mobile preserves content and color, allowing different line/table layouts.
 
-The source grid starts at 80 × 40. The first visible desktop viewing a session
-controls its columns, calculated from its actual terminal pane width and font
-metrics, between 80 and 240 columns. Sidebar resizing, split panes, and font
-controls all update that calculation. Source rows stay at 40.
+Every session shares one source width, so output is laid out the same in every
+window whether or not anyone is looking at it. Output printed by an agent keeps
+the width it was printed at, so a session left at its own width stays visibly
+different after it is opened. Source rows stay at 40.
+
+The shared width is calculated from the terminal area and font metrics of the
+desktop window in use, between 80 and 240 columns; the sidebar and font controls
+update it. New sessions start at it, and sessions no desktop is fitting move to
+it a few at a time after the layout has been stable for 3 seconds. Recovery still
+adopts existing dimensions; those sessions join once a desktop reports a width.
+A resize makes the application redraw, so state detection pauses for 4 seconds
+and the redraw counts as neither activity nor a state change. Sessions attached
+from outside AgentBoard are not moved. With no desktop connected, nothing moves.
+
+A split pane or grid tile is the one exception: a session visible there fits that
+pane for as long as it is shown, while the shared width still comes from the full
+terminal area. It rejoins 30 seconds after leaving, so flipping tabs does not
+reflow it. A desktop with recent input (pointer, key or window focus in the last
+5.5 seconds) claims both the sessions it shows and the shared width. A window left
+open elsewhere keeps renewing its lease but never claims; while another window
+owns a session it fits that source grid by scaling or spare width.
 
 Viewport requests are debounced and renewed every five seconds. Ownership is
 released when a terminal unmounts, its browser tab becomes hidden, or its socket
-disconnects. A 15-second lease also releases abandoned clients. A second desktop
-fits the existing source and takes over after the owner leaves.
+disconnects. A 15-second lease also releases abandoned clients.
 
 Mobile viewers never resize the source. They retain their native font size and
 calculate local columns from the available phone width. Captured rows wrap to
@@ -148,8 +164,9 @@ links spanning visual wraps keep their complete destination.
 
 ## Verification
 
-Command tests check ownership, bounds, lease expiry, actual-size verification,
-remote client identity, legacy compatibility and recovery without resizing.
+Command tests check ownership, claims, the shared width and its relay to agents,
+bounds, lease expiry, actual-size verification, remote client identity, legacy
+compatibility and recovery without resizing.
 Capture tests check a consistent screen/history/cursor. Renderer tests cover
 stale frame rejection, desktop height, mobile wrapping of Hangul/emoji/combining
 characters, natural word boundaries, verified soft-wrap metadata, cursor

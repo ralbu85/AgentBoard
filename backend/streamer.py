@@ -43,6 +43,7 @@ STATE_CHECK_INTERVAL = 0.5  # check state every 500ms even if output unchanged
 RING_SIZE = 8192
 ACTIVE_POLL_MS = 80
 BG_POLL_MS = 1000
+MAX_ALIGN_PER_CYCLE = 2  # every resize makes a running app redraw; never all at once
 MIN_BROADCAST_INTERVAL = 0.08  # 80ms min between broadcasts per session
 # Min seconds between history-growth re-snapshots. While a session streams,
 # history grows on nearly every poll; unthrottled that is a full multi-thousand-
@@ -498,10 +499,32 @@ def _background_stability(samples: dict, id: str, output: str, now: float) -> fl
     return now - changed_at
 
 
+def _needs_alignment(id: str, s) -> bool:
+    # Sessions attached from outside AgentBoard keep their own client's size.
+    if not s.session_name.startswith("term-"):
+        return False
+    cols = viewports.idle_target(id)
+    return cols is not None and (cols != s.display_cols or not s.geometry_verified)
+
+
+async def _align_idle(id: str, s) -> bool:
+    """Move a session no desktop is fitting onto the shared width."""
+    if not _needs_alignment(id, s):
+        return False
+    from .commands import resize_grid
+    async with s.resize_lock:
+        # A viewer may have taken this session while the lock was held.
+        if not _needs_alignment(id, s):
+            return False
+        await resize_grid(s, viewports.idle_target(id), tmux, get_snapshot, broadcast)
+    return True
+
+
 async def _poll_background():
     samples: dict[str, tuple[str, float]] = {}
     while True:
         await asyncio.sleep(BG_POLL_MS / 1000)
+        aligned = 0
         from .sessions import store
         # ONE list-sessions subprocess instead of a per-session `has-session`
         # fork (N sessions = N forks every cycle). Empty result == server down
@@ -519,6 +542,12 @@ async def _poll_background():
                     s.ai_state = None
                     broadcast({"type": "status", "id": id, "status": "completed"})
                 continue
+
+            if aligned < MAX_ALIGN_PER_CYCLE:
+                try:
+                    aligned += await _align_idle(id, s)
+                except Exception as e:
+                    log.warning("Could not align %s to the shared width: %s", s.session_name, e)
 
             if id in get_active_session_ids():
                 samples.pop(id, None)
@@ -605,6 +634,9 @@ _pending_state: dict[str, tuple[str, float]] = {}
 
 def _detect_state(id: str, s, output: str, stable_seconds: float = -1.0):
     now = _time.monotonic()
+    if now < getattr(s, "_reflow_until", 0.0):
+        _state_samples.pop(id, None)
+        return
     signature = activity_signature(output)
     previous, changed_at = _state_samples.get(id, (None, now))
     if signature != previous:

@@ -159,6 +159,9 @@ cd frontend && npm run dev
 - **Deep scrollback beyond the streamed snapshot goes through `/api/capture`, not a bigger snapshot.** xterm can't prepend to its buffer and a larger `SNAPSHOT_HISTORY` bloats every frame, so "전체 로그" fetches the full `capture-pane -S -<HISTORY_LIMIT>` as plain text and opens it in the viewer (`openLogTab`, ephemeral `log:` id, never persisted). Desktop + local sessions only — the viewer isn't mounted on mobile and a remote capture would need an agent round-trip.
 - **`capture-pane` carries NO cursor position — send it separately or typing lands wrong.** A frame rendered from capture alone leaves the client cursor at the end of the content, not where tmux's pane cursor is (desktop direct-typing then edits at the wrong column). `tmux.capture_with_cursor` chains `display-message #{cursor_x};#{cursor_y};#{cursor_flag}` onto the SAME capture invocation (no extra subprocess) and `streamer._cursor_suffix` appends a RELATIVE move (`\r`, CUU/CUD, CUF) after the frame — relative so the one suffix is correct for both `screen` frames and snapshots regardless of client row count. A cursor move with no content change still counts as a change (arrowing a prompt).
 - **Load `@xterm/addon-unicode11` — it's installed but inert without `unicode.activeVersion='11'`.** xterm's default width table disagrees with tmux on some emoji; every box-drawing border after a mismeasured glyph shifts right (Claude Code UI is emoji-heavy). Two lines in `TerminalManager.create`.
+- **Don't size a session only when someone looks at it.** Agents print at the PTY width and that layout sticks in scrollback, so per-session negotiation left live sessions at 80, 168 and 240 columns side by side ("창마다 해상도가 다르다"). All sessions share `viewports.shared_cols`: new sessions start at it and `_poll_background` moves unfitted ones to it. Only a visible split pane or grid tile fits its own width, and the reported width comes from `.main-area` in that case so opening a viewer doesn't reflow every session.
+- **Don't let a width change look like work.** A resize redraws the TUI, which reads as activity (reorders "recent work") and can flip `waiting` → `idle` → `waiting` (a fresh push notification). `resize_grid` sets `_reflow_until` and `_detect_state` skips that window, then takes its next sample as a new baseline. `MAX_ALIGN_PER_CYCLE` keeps background resizes from redrawing every session at once.
+- **Claim from recent input, never from `document.hasFocus()` or heartbeats.** A browser left open on another PC is still visible and can still report focus, so either signal makes two machines fight over the width every 5 s and redraws live processes.
 - **Batch liveness checks — one `list-sessions`, not N `has-session`.** `_poll_background` forked `tmux has-session` per session every 2 s (17 sessions = 17 forks/cycle). `list_sessions()` returns all live names in one call; empty set == server down == all dead. (The per-session `display_info`+tail capture for state detection still forks 2×/session/cycle — that's the dominant background cost, a later optimization.)
 
 ### Mobile / UI
@@ -279,7 +282,7 @@ cd frontend && npm run dev
 - `GET  /api/health` — readiness probe (used by `deploy.sh`)
 
 ### WebSocket (`/ws`)
-- Client → server: `resize`, `active`, `resync`, `title`, `key`, `terminal-input`, `input`
+- Client → server: `resize`, `active`, `resync`, `viewport`, `viewport-release`, `desktop-width`, `title`, `key`, `terminal-input`, `input`
 - Server → client: `spawned`, `snapshot`, `screen`, `stream`, `status`, `removed`, `cwd`, `aiState`, `info`, `title`, `titles` (remote msgs also carry `host`/`hostLabel`)
 
 ### WebSocket (`/agent-ws`) — remote agents only

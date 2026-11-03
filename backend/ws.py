@@ -178,6 +178,11 @@ async def _handle_msg(msg: dict, ws: WebSocket):
         else:
             views.discard((host, local_id))
 
+    if msg_type == 'desktop-width':
+        # One width for every session on every machine.
+        for agent in registry.all_hosts():
+            await registry.send(agent['host'], msg)
+
     if host != LOCAL:
         # Remote session — forward the command to its agent with the bare id.
         m = dict(msg)

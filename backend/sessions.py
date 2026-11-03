@@ -10,6 +10,7 @@ from typing import Callable, Optional
 
 from . import config, tmux
 from .logger import log
+from .terminal_geometry import viewports
 
 # Initial source grid. One desktop viewport may control columns; rows stay fixed.
 CANONICAL_COLS = 80
@@ -190,12 +191,13 @@ class SessionStore:
                 await asyncio.sleep(1.0)
                 if not await tmux.is_alive(session_name):
                     raise RuntimeError(f"tmux session {session_name} failed to start")
-            await tmux.resize_window(session_name, CANONICAL_COLS, CANONICAL_ROWS)
+            cols = viewports.shared_cols or CANONICAL_COLS
+            await tmux.resize_window(session_name, cols, CANONICAL_ROWS)
         except Exception:
             log.exception("spawn failed for %s", session_name)
             raise
 
-        s = Session(id=id_str, session_name=session_name, cwd=cwd, cmd=cmd)
+        s = Session(id=id_str, session_name=session_name, cwd=cwd, cmd=cmd, display_cols=cols)
         self.sessions[id_str] = s
         msg = {
             "type": "spawned",

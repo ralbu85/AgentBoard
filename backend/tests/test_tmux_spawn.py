@@ -11,7 +11,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from backend import commands, sessions, tmux
+from backend import commands, sessions, streamer, tmux
+from backend.terminal_geometry import SHARED_SETTLE_SECONDS, Viewports
 
 
 @pytest.fixture
@@ -108,4 +109,25 @@ def test_invalid_folder_reports_spawn_failure_without_publishing_a_session(isola
         assert events[0]['reqId']=='failed'
         assert '작업 폴더' in events[0]['error']
         streamer.start_stream.assert_not_awaited()
+    asyncio.run(scenario())
+
+
+def test_real_tmux_windows_converge_on_the_shared_width(isolated_tmux, monkeypatch):
+    views = Viewports()
+    monkeypatch.setattr(sessions, 'viewports', views)
+    monkeypatch.setattr(streamer, 'viewports', views)
+    monkeypatch.setattr(streamer, 'broadcast', lambda msg: None)
+    async def scenario():
+        store = sessions.SessionStore()
+        store.broadcast = lambda msg: None
+        before = await store.spawn('/tmp', 'sleep 60')
+        assert await tmux.pane_size(before.session_name) == (80, 40)
+        views.set_shared_width(168)
+        views.shared_at -= SHARED_SETTLE_SECONDS
+        after = await store.spawn('/tmp', 'sleep 60')
+        assert await tmux.pane_size(after.session_name) == (168, 40)
+        assert await streamer._align_idle(before.id, before)
+        assert await tmux.pane_size(before.session_name) == (168, 40)
+        assert before.display_cols == 168 and before.geometry_verified
+        assert not await streamer._align_idle(after.id, after)
     asyncio.run(scenario())
