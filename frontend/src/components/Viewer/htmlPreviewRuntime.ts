@@ -57,11 +57,24 @@ export function previewRuntime(cfg: PreviewConfig, host?: Host) {
     let el = target instanceof Element ? target : target instanceof Node ? target.parentElement : null
     while (el && el.parentElement && el !== d.body && inline(el) && el.parentElement !== d.body) el = el.parentElement
     if (!(el instanceof HTMLElement) || el.namespaceURI !== XHTML || el === d.body || DENY.has(el.localName) || !el.hasAttribute(ATTR)) return null
-    if (el.closest('svg,math,pre') || !el.textContent?.trim()) return null
+    // Symbols alone (‹ › ← → ▶) are controls drawn as text, not prose.
+    if (el.closest('svg,math,pre') || !/[\p{L}\p{N}]/u.test(el.textContent || '')) return null
     const directText = Array.from(el.childNodes).some(node => node.nodeType === 3 && node.textContent?.trim())
     if (!directText && Array.from(el.children).some(child => !inline(child))) return null
     return el
   }
+  // The page's own controls keep working in edit mode: slide arrows, tabs,
+  // form fields and links laid out as buttons. Inline links in a sentence stay
+  // part of the text.
+  const CONTROLS = 'button,select,input,textarea,label,summary,[role=button],[role=tab],[role=link],[role=menuitem],[role=checkbox],[role=switch],[role=slider]'
+  const control = (target: EventTarget | null) => {
+    const el = target instanceof Element ? target : target instanceof Node ? target.parentElement : null
+    const link = el?.closest('a[href]')
+    return !!el?.closest(CONTROLS) || !!link && getComputedStyle(link).display !== 'inline'
+  }
+  // Edit mode takes a pointer event only for text it would edit; everything else is the page's.
+  const claims = (target: EventTarget | null) =>
+    !!current && target instanceof Node && current.contains(target) || !control(target) && !!candidate(target)
 
   const css = `[${HOVER}]{outline:2px dashed rgba(37,99,235,.85)!important;outline-offset:2px!important;cursor:text!important}
 [${EDITING}]{outline:2px solid #2563eb!important;outline-offset:2px!important;cursor:text!important}
@@ -87,7 +100,7 @@ export function previewRuntime(cfg: PreviewConfig, host?: Host) {
     const root = hostEl.attachShadow({mode: 'closed'})
     const mac = /Mac|iPhone|iPad/.test(navigator.platform)
     root.innerHTML = `<style>
-.bar{position:fixed;display:none;gap:2px;align-items:center;padding:4px;border-radius:8px;background:#111827;color:#f9fafb;font:12px/1.2 system-ui,-apple-system,"Segoe UI",sans-serif;box-shadow:0 6px 18px rgba(0,0,0,.28);white-space:nowrap}
+.bar{position:fixed;display:none;flex-wrap:wrap;max-width:calc(100vw - 8px);box-sizing:border-box;gap:2px;align-items:center;padding:4px;border-radius:8px;background:#111827;color:#f9fafb;font:12px/1.2 system-ui,-apple-system,"Segoe UI",sans-serif;box-shadow:0 6px 18px rgba(0,0,0,.28);white-space:nowrap}
 .bar.on{display:flex}
 button{all:unset;cursor:pointer;padding:5px 8px;border-radius:5px;color:inherit}
 button:hover,button:focus-visible{background:rgba(255,255,255,.16)}
@@ -108,14 +121,24 @@ button:hover,button:focus-visible{background:rgba(255,255,255,.16)}
     ui = {host: hostEl, bar, note}
     return ui
   }
-  const place = (box: HTMLElement, el: Element) => {
-    const r = el.getBoundingClientRect(), b = box.getBoundingClientRect()
+  // Above the element, else below it. An element too tall for either keeps the
+  // bar clear of the line being typed instead (`line`: the caret's line).
+  const place = (box: HTMLElement, el: Element, line?: DOMRect | null) => {
+    const b = box.getBoundingClientRect(), fits = (top: number) => top >= 4 && top + b.height <= w.innerHeight - 4
+    let r: DOMRect = el.getBoundingClientRect()
     let top = r.top - b.height - 8
-    if (top < 4) top = Math.min(r.bottom + 8, w.innerHeight - b.height - 4)
-    box.style.top = `${Math.max(4, top)}px`
+    if (!fits(top)) top = r.bottom + 8
+    if (!fits(top) && line) { r = line; top = fits(line.top - b.height - 8) ? line.top - b.height - 8 : line.bottom + 8 }
+    box.style.top = `${Math.max(4, Math.min(top, w.innerHeight - b.height - 4))}px`
     box.style.left = `${Math.max(4, Math.min(r.left, w.innerWidth - b.width - 4))}px`
   }
-  const placeBar = () => { if (current && ui) place(ui.bar, current) }
+  const caretLine = () => {
+    const selection = w.getSelection()
+    if (!selection?.rangeCount) return null
+    const rects = selection.getRangeAt(0).getClientRects?.()
+    return rects?.length ? rects[rects.length - 1] : null
+  }
+  const placeBar = () => { if (current && ui) place(ui.bar, current, caretLine()) }
   const note = (el: Element, text: string) => {
     const box = ensureUi().note
     box.textContent = text
@@ -267,27 +290,28 @@ button:hover,button:focus-visible{background:rgba(255,255,255,.16)}
     if (event.source === parentWin && message && typeof message === 'object' && message.__ab === cfg.token) handle(message)
   })
 
-  // ── Edit mode: page handlers never see clicks; typing never reaches them ──
+  // ── Edit mode: page handlers never see clicks on text; typing never reaches them ──
   const fromUi = (event: Event) => !!ui && event.target === ui.host
-  const swallow = (event: Event) => { if (edit && !fromUi(event)) event.stopPropagation() }
+  const swallow = (event: Event) => { if (edit && !fromUi(event) && claims(event.target)) event.stopPropagation() }
   for (const type of ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'touchstart', 'touchend', 'dblclick', 'auxclick']) {
     w.addEventListener(type, swallow, {capture: true})
   }
   w.addEventListener('click', event => {
     if (!edit || fromUi(event)) return
-    event.stopPropagation()
     const target = event.target as Node
     if (current && current.contains(target)) {
+      event.stopPropagation()
       if ((target instanceof Element ? target : target.parentElement)?.closest('a')) event.preventDefault()
       return
     }
-    event.preventDefault()
-    const el = candidate(target)
+    const el = control(target) ? null : candidate(target)
     if (current) finish('commit')
-    if (el) request(el, event.clientX, event.clientY)
+    if (!el) return   // a control or a spot without text: the page handles it
+    event.stopPropagation(); event.preventDefault()
+    request(el, event.clientX, event.clientY)
   }, {capture: true})
   w.addEventListener('mouseover', event => {
-    if (!edit || current || fromUi(event)) return setHover(null)
+    if (!edit || current || fromUi(event) || control(event.target)) return setHover(null)
     setHover(candidate(event.target))
   }, {capture: true})
   d.documentElement.addEventListener('mouseleave', () => setHover(null))
@@ -318,6 +342,7 @@ button:hover,button:focus-visible{background:rgba(255,255,255,.16)}
   }, {capture: true})
   w.addEventListener('drop', event => { if (current) { event.preventDefault(); event.stopImmediatePropagation() } }, {capture: true})
   w.addEventListener('resize', placeBar)
+  d.addEventListener('selectionchange', placeBar)
 
   // ── Keep the reader's place across reloads ──
   const scrolls = new Map<number, PreviewScroll>()

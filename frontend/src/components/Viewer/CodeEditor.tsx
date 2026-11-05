@@ -150,6 +150,11 @@ export function CodeEditor({ content, lang, memos, onChange, onSave, onContextMe
         if (update.selectionSet) cbRef.current.onViewChange?.({editorScroll: update.view.scrollDOM.scrollTop, cursor: update.state.selection.main.head})
       }),
       ...(compact ? [oneDarkTheme, notebookTheme, syntaxHighlighting(notebookHighlight)] : [oneDark]),
+      // A notebook cell scrolls with the page: keep the caret out from under the sticky notebook toolbar.
+      ...(compact ? [EditorView.scrollMargins.of(view => {
+        const head = view.dom.closest('.nb-interactive')?.querySelector('.nb-head')?.getBoundingClientRect()
+        return head && head.bottom > view.scrollDOM.getBoundingClientRect().top ? {top: head.height} : null
+      })] : []),
       ...(compact && lang !== 'markdown' ? [] : [EditorView.lineWrapping]),
       getLangExt(lang),
       memoField,

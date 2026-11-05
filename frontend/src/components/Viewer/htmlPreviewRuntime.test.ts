@@ -6,6 +6,7 @@ import {annotate, parseElements} from './htmlSource'
 const sent: Record<string, unknown>[] = []
 let deliver: (message: Record<string, unknown>) => void = () => {}
 const src = '<section><h2>목표</h2><ul><li>첫째</li><li>둘째 <strong>강조</strong></li></ul></section><p>끝</p>'
+  + '<nav><button>다음 <b>›</b></button><div class="arrow">→</div><a href="#s2" style="display:block">다음 장</a></nav>'
 const el = (i: number) => document.querySelector(`[data-ab-i="${i}"]`) as HTMLElement
 const last = () => sent[sent.length - 1]
 const click = (target: Element) => target.dispatchEvent(new MouseEvent('click', {bubbles: true, cancelable: true, clientX: 1, clientY: 1}))
@@ -68,5 +69,22 @@ describe('HTML preview runtime', () => {
     key(el(1), {key: 'Escape'})
     expect(last()).toEqual({t: 'commit', i: 1, tag: 'h2', before: '목표', after: '바뀜', add: false})
     expect(el(1).hasAttribute('contenteditable')).toBe(false)
+  })
+
+  it('leaves the page its controls: slide arrows, buttons and button-like links', () => {
+    const count = sent.length, seen: string[] = []
+    const page = (event: Event) => seen.push(`${event.type}:${(event.target as Element).localName}`)
+    document.body.addEventListener('click', page)
+    document.body.addEventListener('pointerdown', page)
+    for (const target of [el(8), el(7), el(9), el(10)]) {   // ›, the button, →, the link
+      target.dispatchEvent(new Event('pointerdown', {bubbles: true}))
+      target.dispatchEvent(new MouseEvent('mouseover', {bubbles: true}))
+      click(target)
+    }
+    expect(sent.length).toBe(count)
+    expect(seen).toEqual(['pointerdown:b', 'click:b', 'pointerdown:button', 'click:button', 'pointerdown:div', 'click:div', 'pointerdown:a', 'click:a'])
+    expect(document.querySelector('[data-ab-hover]')).toBeNull()
+    document.body.removeEventListener('click', page)
+    document.body.removeEventListener('pointerdown', page)
   })
 })
