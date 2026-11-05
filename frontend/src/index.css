@@ -1379,6 +1379,11 @@ tr.ln-memo:hover .fv-line-content::after { opacity: 1; }
 .md-editable [data-mb-hover] { outline: 1px dashed var(--accent); outline-offset: 3px; border-radius: 2px; }
 .md-editable summary { cursor: pointer; }
 .md-block-editor { list-style: none; margin: 6px 0; }
+/* Text edited where it is rendered: soft line breaks show as typed. */
+.md-inline-edit, .md-inline-new { white-space: pre-wrap; outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 2px; cursor: text; }
+.md-inline-edit [data-ma] { white-space: normal; }
+.md-inline-new { min-height: 1.6em; }
+.md-inline-new:empty::before { content: attr(data-placeholder); color: var(--text-muted); }
 .md-block-editor-text {
   display: block; width: 100%; box-sizing: border-box; resize: none; overflow: hidden;
   padding: 8px 10px; border: 1px solid var(--accent); border-radius: 6px; outline: none;

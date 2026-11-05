@@ -110,7 +110,7 @@ export function DocSurface({tab, ownerKey, memos, onContextMenu, onViewChange}: 
 
   const showsPreview = rendered && mode !== 'source'
   return <div className="doc-surface" tabIndex={-1} onKeyDown={e => {
-    if (!showsPreview || !(e.ctrlKey || e.metaKey) || e.shiftKey || e.key.toLowerCase() !== 'z' || (e.target as HTMLElement).closest('textarea, input, .cm-editor')) return
+    if (!showsPreview || !(e.ctrlKey || e.metaKey) || e.shiftKey || e.key.toLowerCase() !== 'z' || (e.target as HTMLElement).closest('textarea, input, .cm-editor, [contenteditable]')) return
     e.preventDefault(); doc.undo()
   }}>
     {(rendered || writable) && <div className="doc-toolbar">

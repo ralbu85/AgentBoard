@@ -1,4 +1,4 @@
-import {Marked, Renderer, type MarkedExtension, type Token, type TokenizerAndRendererExtension, type Tokens} from 'marked'
+import {Marked, Renderer, type Links, type MarkedExtension, type Token, type TokenizerAndRendererExtension, type Tokens} from 'marked'
 import markedKatex from 'marked-katex-extension'
 import {finishHtml, toggleTaskLine} from '../../markdown'
 
@@ -24,7 +24,7 @@ export interface MdBlock {
   sibling: string      // first-line prefix of a same-level addition ('## ', '- ', '')
   blank: boolean       // additions are separated by a blank line
 }
-export interface MdRender { html: string; blocks: MdBlock[] }
+export interface MdRender { html: string; blocks: MdBlock[]; links: Links }   // links: the document's [ref]: definitions
 
 export const isQuarto = (path: string) => /\.(qmd|rmd)$/i.test(path)
 
@@ -33,7 +33,7 @@ type Tok = Token & {_mb?: number; [key: string]: any}
 // parent container's text.
 interface Seg { abs: (o: number) => number; local: (o: number) => number; cont: string }
 
-const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+export const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 const lineStarts = (s: string) => { const out = [0]; for (let i = 0; i < s.length; i++) if (s.charCodeAt(i) === 10) out.push(i + 1); return out }
 const lineAt = (starts: number[], o: number) => {
   let lo = 0, hi = starts.length - 1
@@ -165,7 +165,7 @@ function visitItem(b: Builder, list: Tok, item: Tok, seg: Seg, o: number) {
 const DIV_OPEN = /^ {0,3}:{3,}[ \t]*(\{[^{}\n]*\}|[A-Za-z][\w-]*)[ \t]*:*[ \t]*$/
 const DIV_CLOSE = /^ {0,3}:{3,}[ \t]*$/
 const FENCE = /^ {0,3}(`{3,}|~{3,})/
-const ATTRS = /(?=[.#]|[\w-]+=)[^{}<>\n]*/.source
+export const ATTRS = /(?=[.#]|[\w-]+=)[^{}<>\n]*/.source
 const CALLOUT_TITLE: Record<string, string> = {note: 'Note', tip: 'Tip', warning: 'Warning', important: 'Important', caution: 'Caution'}
 
 interface Attrs { id: string; classes: string[]; kv: Record<string, string> }
@@ -324,7 +324,7 @@ function build(quarto: boolean): Marked {
   return md
 }
 const instances = new Map<boolean, Marked>()
-const instance = (quarto: boolean) => { let md = instances.get(quarto); if (!md) instances.set(quarto, md = build(quarto)); return md }
+export const instance = (quarto: boolean) => { let md = instances.get(quarto); if (!md) instances.set(quarto, md = build(quarto)); return md }
 
 /** YAML front matter: `---` on the first line through the next `---`/`...`. */
 function frontMatter(src: string): {yaml: string; end: number} | null {
@@ -356,7 +356,7 @@ function metaHtml(yaml: string, mb: number | undefined): string {
 }
 
 // Pandoc attributes after images, links and spans: `![](a.png){width=60%}`.
-function inlineAttrs(html: string): string {
+export function inlineAttrs(html: string): string {
   return html
     .replace(new RegExp(String.raw`(<img\b[^>]*?)>\{(${ATTRS})\}`, 'g'), (_, img: string, spec: string) => {
       const w = /width=(?:&quot;|")?(\d+(?:\.\d+)?)(%|px|em|in)?/.exec(spec)
@@ -380,11 +380,12 @@ export function renderBlocks(src: string, {filePath, quarto, tasks = true}: {fil
     base = fm.end
   }
   const body = src.slice(base), tokens = md.lexer(body) as Tok[]
+  if (md.defaults.walkTokens) md.walkTokens(tokens, md.defaults.walkTokens)   // Quarto's smart dashes
   if (editable) walk(b, tokens, body, {abs: o => base + o, local: o => o, cont: ''})
   const html = finishHtml(inlineAttrs(head + md.parser(tokens)), filePath, undefined, root => {
     if (tasks) for (const box of root.querySelectorAll('input[type="checkbox"]')) if (box.closest('li')?.hasAttribute('data-mb')) box.removeAttribute('disabled')
   })
-  return {html, blocks: editable ? b.blocks : []}
+  return {html, blocks: editable ? b.blocks : [], links: (tokens as Token[] & {links?: Links}).links || {}}
 }
 
 // ── Edits ──

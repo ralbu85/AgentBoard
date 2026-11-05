@@ -6,18 +6,103 @@ import {useToasts} from '../../toasts'
 import {writeClipboard} from '../Terminal/clipboard'
 import {MOD, readPref, writePref} from './docSync'
 import {deleteBlock, insertAfter, isQuarto, locateBlock, renderBlocks, replaceBlock, toggleTask, type MdBlock} from './markdownBlocks'
+import {INLINE_KINDS, inlineModel, normalize, readInline, readTyped} from './markdownInline'
+import type {Links} from 'marked'
 
 /** Rendered Markdown / Quarto (Notion-style), editable block by block: a click
- *  opens the block's own markdown in place. */
+ *  on a paragraph, heading or list item edits its text where it is rendered;
+ *  other blocks (code, tables, math) and 원문 open the block's own markdown. */
 const MD_ZOOM_LEVELS = [0.5, 0.75, 0.9, 1, 1.15, 1.3, 1.5, 1.75, 2, 2.5]
 
 interface Editor {
   mode: 'edit' | 'add'   // edit `block`, or add a sibling after it
   block: MdBlock
-  host: HTMLElement      // mount point inserted next to the rendered block
-  el?: HTMLElement       // the rendered block, hidden while it is edited
+  host: HTMLElement      // mount point inserted next to the rendered block (its toolbar)
+  el?: HTMLElement       // the rendered block, hidden while its markdown is edited
   initial: string
   caret: number
+  inline?: InlineEdit    // edited where it is rendered, not as markdown
+}
+
+/** A block's text made editable in the rendered document. */
+interface InlineEdit {
+  region: HTMLElement    // the contenteditable text
+  anchor: HTMLElement    // the block's element (for a new block: the one it follows)
+  read: () => string     // the block's markdown as it stands now ('' when emptied)
+  cleanup: () => void    // puts the rendered block back as it was
+}
+
+const BLOCK_TAGS = /^(ul|ol|p|div|pre|blockquote|table|h[1-6]|details|hr|dl|figure|section|header)$/
+const makeEditable = (region: HTMLElement) => {
+  region.classList.add('md-inline-edit')
+  region.setAttribute('contenteditable', 'plaintext-only')
+  if (region.isContentEditable === false) region.setAttribute('contenteditable', 'true')   // no plaintext-only
+  region.tabIndex = -1
+  return region
+}
+
+/** Make the block's own text editable where it is shown; null when the text
+ *  on screen can't be mapped back to its markdown (the caller opens that). */
+function editInPlace(block: MdBlock, el: HTMLElement, opts: {quarto: boolean; filePath?: string; links: Links}): InlineEdit | null {
+  const model = inlineModel(block, opts)
+  if (!model) return null
+  const snapshot = el.innerHTML
+  let region = el
+  if (block.kind === 'item') {
+    if (el.localName !== 'li') return null
+    // A loose item's text is its first paragraph. The task box and sub-lists stay out of the edit.
+    const lead = Array.from(el.children).find(c => c.localName !== 'input')
+    const box = lead?.localName === 'p' && !lead.hasAttribute('data-mb') ? lead : el
+    const nodes: ChildNode[] = []
+    for (const node of Array.from(box.childNodes)) {
+      if (node instanceof Element && node.localName === 'input') continue
+      if (node instanceof Element && BLOCK_TAGS.test(node.localName)) break
+      nodes.push(node)
+    }
+    region = document.createElement('span')
+    if (nodes[0]) nodes[0].before(region)
+    else box.append(region)
+    region.append(...nodes)
+  }
+  if (normalize(region.textContent || '') !== normalize(model.text)) { el.innerHTML = snapshot; return null }
+  region.innerHTML = model.html
+  for (const atom of region.querySelectorAll<HTMLElement>('[data-ma]')) atom.contentEditable = 'false'
+  for (const link of region.querySelectorAll('a')) link.removeAttribute('href')   // a click places the caret
+  makeEditable(region)
+  return {region, anchor: el, read: () => readInline(model, region), cleanup: () => {
+    el.innerHTML = snapshot
+    if (region === el) { el.classList.remove('md-inline-edit'); el.removeAttribute('contenteditable'); el.removeAttribute('tabindex') }
+  }}
+}
+
+/** An empty block of the same kind right after `el`, to type a new sibling into. */
+function addInPlace(block: MdBlock, el: HTMLElement): InlineEdit | null {
+  const tag = block.kind === 'item' ? el.localName === 'li' && 'li'
+    : block.kind === 'heading' ? /^h[1-6]$/.test(el.localName) && el.localName
+    : !block.sibling && 'p'
+  if (!tag) return null
+  const region = document.createElement(tag)
+  region.className = 'md-inline-new'
+  region.dataset.placeholder = tag === 'li' ? '새 항목' : tag === 'p' ? '새 문단' : '새 제목'
+  ;(el.closest('summary') ?? el).after(region)
+  return {region: makeEditable(region), anchor: el, read: () => block.sibling + readTyped(region), cleanup: () => region.remove()}
+}
+
+/** Put the caret where the click landed (else at the end of the text). */
+function placeCaret(region: HTMLElement, x?: number, y?: number) {
+  region.focus({preventScroll: true})
+  const selection = window.getSelection()
+  if (!selection) return
+  const doc = document as Document & {caretPositionFromPoint?: (x: number, y: number) => {offsetNode: Node; offset: number} | null}
+  let range: Range | null = null
+  if (x !== undefined && y !== undefined) {
+    const pos = doc.caretPositionFromPoint?.(x, y)
+    if (pos) { range = document.createRange(); range.setStart(pos.offsetNode, pos.offset) }
+    else range = document.caretRangeFromPoint?.(x, y) ?? null
+    if (range && !region.contains(range.startContainer)) range = null
+  }
+  if (!range) { range = document.createRange(); range.selectNodeContents(region); range.collapse(false) }
+  selection.removeAllRanges(); selection.addRange(range)
 }
 
 /** Where in the block's source a click landed: the rendered text just before
@@ -52,7 +137,7 @@ export function MarkdownPreview({content, filePath, doc, slot, delay = 0, onCont
   const [editor, setEditor] = useState<Editor | null>(null)
   const editorRef = useRef<Editor | null>(null)
   const draft = useRef('')                       // the open editor's current text
-  const pending = useRef<number | null>(null)    // open an addition after the block starting here, once rendered
+  const pending = useRef<{at: number; inline: boolean} | null>(null)   // open an addition after the block starting here, once rendered
   const current = () => doc ? doc.current() : content
   // The document only re-renders when no editor is open: a re-render would
   // replace the element the editor is mounted next to.
@@ -72,7 +157,7 @@ export function MarkdownPreview({content, filePath, doc, slot, delay = 0, onCont
     doc?.apply(base, next)
   }
 
-  const open = (mode: Editor['mode'], block: MdBlock, el: HTMLElement, caret?: number) => {
+  const open = (mode: Editor['mode'], block: MdBlock, el: HTMLElement, caret?: number, text?: string) => {
     const host = document.createElement(el.tagName === 'LI' ? 'li' : 'div')
     host.className = 'md-block-editor'
     // Something inside a collapsed callout or cell would open out of sight.
@@ -82,32 +167,67 @@ export function MarkdownPreview({content, filePath, doc, slot, delay = 0, onCont
     else if (mode === 'edit') el.before(host)
     else el.after(host)
     if (mode === 'edit') el.hidden = true
-    const initial = mode === 'edit' ? block.text : block.sibling
+    const initial = text ?? (mode === 'edit' ? block.text : block.sibling)
     const next: Editor = {mode, block, host, el: mode === 'edit' ? el : undefined, initial, caret: caret ?? initial.length}
     draft.current = initial
     editorRef.current = next
     setEditor(next)
   }
+  /** Edit the block's text where it is rendered; false when it has to be edited as markdown. */
+  const openInline = (mode: Editor['mode'], block: MdBlock, el: HTMLElement, x?: number, y?: number) => {
+    const inline = mode === 'edit' ? editInPlace(block, el, {quarto, filePath, links: rendered.links}) : addInPlace(block, el)
+    if (!inline) return false
+    for (let d = el.closest('details'); d; d = d.parentElement?.closest('details') ?? null) d.open = true
+    const host = document.createElement(inline.region.localName === 'li' || el.localName === 'li' ? 'li' : 'div')
+    host.className = 'md-block-editor'
+    ;(mode === 'add' ? inline.region : el.closest('summary') ?? el).after(host)
+    const ed: Editor = {mode, block, host, initial: mode === 'edit' ? block.text : block.sibling, caret: 0, inline}
+    // Every way out keeps the text, as in the markdown editor; only 취소 drops it.
+    const keydown = (e: KeyboardEvent) => {
+      if (e.isComposing || e.keyCode === 229) return   // Korean IME commits with Enter
+      const mod = e.ctrlKey || e.metaKey, key = e.key.toLowerCase()
+      if (key !== 'escape' && key !== 'enter' && !(mod && key === 's')) return
+      e.preventDefault(); e.stopPropagation()
+      if (key === 'enter' && e.shiftKey && !mod) document.execCommand?.('insertText', false, '\n')
+      else commitRef.current(ed, inline.read(), key === 'enter' && mod ? 'add' : undefined)
+    }
+    // Switching windows keeps the editor; clicking elsewhere saves it.
+    const focusout = (e: FocusEvent) => {
+      const to = e.relatedTarget as Node | null
+      if (!document.hasFocus() || ed.host.contains(to) || inline.region.contains(to)) return
+      commitRef.current(ed, inline.read())
+    }
+    inline.region.addEventListener('keydown', keydown)
+    inline.region.addEventListener('focusout', focusout)
+    const restore = inline.cleanup
+    inline.cleanup = () => { inline.region.removeEventListener('keydown', keydown); inline.region.removeEventListener('focusout', focusout); restore() }
+    editorRef.current = ed
+    setEditor(ed)
+    placeCaret(inline.region, x, y)
+    return true
+  }
   const close = () => {
     const ed = editorRef.current
     if (!ed) return
+    editorRef.current = null
+    ed.inline?.cleanup()
     ed.host.remove()
     if (ed.el) ed.el.hidden = false
-    editorRef.current = null
     setEditor(null)
   }
+  const readDraft = (ed: Editor) => ed.inline ? ed.inline.read() : draft.current
   /** After `base` became `next`, add a sibling after the block starting at `at`. */
-  const addAfter = (at: number, changed: boolean) => {
-    if (changed) { pending.current = at; return }
+  const addAfter = (at: number, changed: boolean, inline: boolean) => {
+    if (changed) { pending.current = {at, inline}; return }
     const k = rendered.blocks.map(b => b.start).lastIndexOf(at)
     const el = k < 0 ? null : bodyRef.current?.querySelector<HTMLElement>(`[data-mb="${k}"]`)
-    if (el) open('add', rendered.blocks[k], el)
+    if (el && !(inline && openInline('add', rendered.blocks[k], el))) open('add', rendered.blocks[k], el)
   }
   useLayoutEffect(() => {
-    const at = pending.current
-    if (at === null) return
+    const next = pending.current
+    if (next === null) return
     pending.current = null
-    addAfter(at, false)
+    addAfter(next.at, false, next.inline)
   }, [rendered])
 
   // The source moved under an open editor: keep the typing safe and say so.
@@ -125,35 +245,43 @@ export function MarkdownPreview({content, filePath, doc, slot, delay = 0, onCont
       const result = insertAfter(base, at, text)
       close()
       apply(base, result.content)
-      if (then) addAfter(result.at, true)
+      if (then) addAfter(result.at, true, !!ed.inline)
       return
     }
-    if (text === ed.block.text) { close(); if (then) addAfter(ed.block.start, false); return }
+    if (text === ed.block.text) { close(); if (then) addAfter(ed.block.start, false, !!ed.inline); return }
     const at = locateBlock(base, ed.block)
     if (!at) { refuse(value); return }
     if (!text.trim() && at.next !== at.end) { toast('하위 항목이 있어 비울 수 없습니다. 지우려면 삭제를 누르세요.'); return }
     close()
     apply(base, text.trim() ? replaceBlock(base, at, text) : deleteBlock(base, at))
-    if (then && text.trim()) addAfter(at.start, true)
+    if (then && text.trim()) addAfter(at.start, true, !!ed.inline)
   }
   const remove = (ed: Editor) => {
     if (editorRef.current !== ed || ed.mode !== 'edit') return
     const base = current(), at = locateBlock(base, ed.block)
-    if (!at) { refuse(draft.current); return }
+    if (!at) { refuse(readDraft(ed)); return }
     close()
     apply(base, deleteBlock(base, at))
   }
   const cancel = (ed: Editor) => { if (editorRef.current === ed) close() }
+  /** 원문: carry on in the block's markdown, with what was typed so far. */
+  const toSource = (ed: Editor) => {
+    if (editorRef.current !== ed || !ed.inline) return
+    const text = ed.inline.read(), anchor = ed.inline.anchor
+    close()
+    open(ed.mode, ed.block, anchor, undefined, ed.mode === 'edit' ? text || ed.block.text : text)
+  }
   // Leaving the view (tab switch, source mode) or turning editing off keeps what was typed.
   const commitRef = useRef(commit); commitRef.current = commit
-  useEffect(() => () => { if (editorRef.current) commitRef.current(editorRef.current, draft.current) }, [])
-  useEffect(() => { if (!editing && editorRef.current) commit(editorRef.current, draft.current) }, [editing])
+  useEffect(() => () => { if (editorRef.current) commitRef.current(editorRef.current, readDraft(editorRef.current)) }, [])
+  useEffect(() => { if (!editing && editorRef.current) commit(editorRef.current, readDraft(editorRef.current)) }, [editing])
 
   const handleClick = (e: React.MouseEvent) => {
     const target = e.target as HTMLElement
     if (!target.isConnected) return   // a commit re-rendered the document under this click
     if (target instanceof HTMLInputElement && target.type === 'checkbox') {
       const li = target.closest<HTMLElement>('li[data-mb]'), block = li ? rendered.blocks[Number(li.dataset.mb)] : undefined
+      if (editorRef.current) { e.preventDefault(); return }   // finish the open edit first
       if (!writable || !block || target.disabled) return
       const base = current(), at = locateBlock(base, block)
       if (!at) { e.preventDefault(); toast('파일이 바뀌어 체크 상자를 찾지 못했습니다.'); return }
@@ -169,7 +297,7 @@ export function MarkdownPreview({content, filePath, doc, slot, delay = 0, onCont
     const block = rendered.blocks[Number(el.dataset.mb)]
     if (!block) return
     e.preventDefault()
-    open('edit', block, el, caretFor(block.text, e.clientX, e.clientY))
+    if (!(INLINE_KINDS.has(block.kind) && openInline('edit', block, el, e.clientX, e.clientY))) open('edit', block, el, caretFor(block.text, e.clientX, e.clientY))
   }
   // Outline only the innermost block under the pointer.
   const hovered = useRef<HTMLElement | null>(null)
@@ -213,9 +341,26 @@ export function MarkdownPreview({content, filePath, doc, slot, delay = 0, onCont
     </>, slot)}
     <div ref={bodyRef} className={`md-rendered ${editing ? 'md-editable' : ''}`} style={{ zoom }} dangerouslySetInnerHTML={{ __html: rendered.html }}
       onContextMenu={handleContextMenu} onClick={handleClick} onPointerOver={handleHover} onPointerLeave={handleHover} />
-    {editor && createPortal(<BlockEditor key={editor.block.start + editor.mode} editor={editor} onDraft={value => { draft.current = value }}
-      onCommit={(value, then) => commit(editor, value, then)} onCancel={() => cancel(editor)} onDelete={() => remove(editor)}/>, editor.host)}
+    {editor && createPortal(editor.inline
+      ? <InlineBar mode={editor.mode} onCommit={then => commit(editor, editor.inline!.read(), then)} onCancel={() => cancel(editor)} onDelete={() => remove(editor)} onSource={() => toSource(editor)}/>
+      : <BlockEditor key={editor.block.start + editor.mode} editor={editor} onDraft={value => { draft.current = value }}
+        onCommit={(value, then) => commit(editor, value, then)} onCancel={() => cancel(editor)} onDelete={() => remove(editor)}/>, editor.host)}
   </>
+}
+
+/** The toolbar under a block edited where it is rendered. */
+function InlineBar({mode, onCommit, onCancel, onDelete, onSource}: {
+  mode: Editor['mode']; onCommit: (then?: 'add') => void; onCancel: () => void; onDelete: () => void; onSource: () => void
+}) {
+  const keep = (e: React.MouseEvent) => e.preventDefault()   // buttons must not take the caret out of the text
+  return <div className="md-block-editor-bar">
+    <button className="primary" onMouseDown={keep} onClick={() => onCommit()}>저장</button>
+    <button onMouseDown={keep} onClick={() => onCommit('add')}>＋ 아래에 추가</button>
+    {mode === 'edit' && <button onMouseDown={keep} onClick={onDelete}>삭제</button>}
+    <button onMouseDown={keep} onClick={onSource} title="이 블록을 마크다운 원문으로 고칩니다 (굵게·링크·수식 넣기)">원문</button>
+    <button onMouseDown={keep} onClick={onCancel} title="이번 수정을 버립니다">취소</button>
+    <span className="md-block-editor-hint">{`Enter 저장 · Shift+Enter 줄바꿈 · ${MOD}+Enter 아래에 추가 · Esc 닫기`}</span>
+  </div>
 }
 
 function BlockEditor({editor, onDraft, onCommit, onCancel, onDelete}: {
