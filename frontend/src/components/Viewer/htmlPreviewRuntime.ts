@@ -96,7 +96,7 @@ button:hover,button:focus-visible{background:rgba(255,255,255,.16)}
 .hint{opacity:.65;padding:0 6px}
 .note{position:fixed;display:none;max-width:320px;padding:7px 10px;border-radius:8px;background:#7f1d1d;color:#fff;font:12px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif;box-shadow:0 6px 18px rgba(0,0,0,.28)}
 .note.on{display:block}
-</style><div class="bar" role="toolbar" aria-label="텍스트 편집"><button class="primary" data-act="commit" title="Enter">저장</button><button data-act="add" title="${mac ? '⌘' : 'Ctrl'}+Enter">＋ 아래에 추가</button><button data-act="delete">삭제</button><button data-act="cancel" title="Esc">취소</button><span class="hint">Shift+Enter 줄바꿈</span></div><div class="note" role="status"></div>`
+</style><div class="bar" role="toolbar" aria-label="텍스트 편집"><button class="primary" data-act="commit" title="Enter">저장</button><button data-act="add" title="${mac ? '⌘' : 'Ctrl'}+Enter">＋ 아래에 추가</button><button data-act="delete">삭제</button><button data-act="cancel" title="이번 수정을 버립니다">취소</button><span class="hint">Enter 저장 · Shift+Enter 줄바꿈 · Esc 닫기</span></div><div class="note" role="status"></div>`
     const bar = root.querySelector('.bar') as HTMLElement, note = root.querySelector('.note') as HTMLElement
     // Keep focus (and the caret) in the text while a toolbar button is pressed.
     bar.addEventListener('mousedown', event => event.preventDefault())
@@ -297,7 +297,8 @@ button:hover,button:focus-visible{background:rgba(255,255,255,.16)}
     if (current) {
       event.stopImmediatePropagation()
       if (event.isComposing || event.keyCode === 229) return
-      if (key === 'escape') { event.preventDefault(); finish('cancel') }
+      // Every way out keeps the text (like the Markdown editor); only 취소 drops it.
+      if (key === 'escape') { event.preventDefault(); finish('commit') }
       else if (key === 'enter') { event.preventDefault(); if (event.shiftKey) lineBreak(); else finish(mod ? 'add' : 'commit') }
       else if (mod && key === 's') { event.preventDefault(); finish('commit') }
       return

@@ -1237,13 +1237,6 @@ tr.ln-memo:hover .fv-line-content::after { opacity: 1; }
 .md-link:hover { text-decoration: underline; }
 
 /* Rendered markdown view (Notion-style) */
-.md-wrap { position: relative; }
-.md-zoom-toolbar {
-  position: sticky; top: 0; z-index: 5;
-  display: flex; align-items: center; justify-content: flex-end; gap: 4px;
-  padding: 4px 8px; background: var(--bg-secondary);
-  border-bottom: 1px solid var(--border);
-}
 .md-zoom-btn {
   width: 24px; height: 24px; border-radius: 6px; border: 1px solid var(--border);
   background: var(--bg-tertiary); color: var(--text-primary);
@@ -1379,6 +1372,51 @@ tr.ln-memo:hover .fv-line-content::after { opacity: 1; }
 .fv-markdown .katex-display { margin: 16px 0; overflow-x: auto; }
 
 .md-zoom-tag { font-size: 10px; color: var(--accent); font-weight: 600; margin-right: 8px; }
+
+/* Block editing in the rendered markdown view */
+.md-rendered [hidden] { display: none !important; }
+.md-editable [data-mb] { cursor: text; }
+.md-editable [data-mb-hover] { outline: 1px dashed var(--accent); outline-offset: 3px; border-radius: 2px; }
+.md-editable summary { cursor: pointer; }
+.md-block-editor { list-style: none; margin: 6px 0; }
+.md-block-editor-text {
+  display: block; width: 100%; box-sizing: border-box; resize: none; overflow: hidden;
+  padding: 8px 10px; border: 1px solid var(--accent); border-radius: 6px; outline: none;
+  background: var(--bg-tertiary); color: var(--text-primary);
+  font-family: var(--font-mono); font-size: 13.5px; line-height: 1.6;
+}
+
+/* Quarto constructs (rendered approximately; the Quarto render is the reference) */
+.qmd-meta { margin: 0 0 24px; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
+.md-rendered h1.qmd-meta-title { font-size: 30px; margin: 4px 0 6px; }
+.qmd-meta-subtitle { margin: 0 0 4px !important; color: var(--text-secondary); font-size: 17px; }
+.qmd-meta-by { margin: 0 !important; color: var(--text-muted); font-size: 13px; }
+.qmd-meta-yaml { margin-top: 6px; }
+.qmd-meta-yaml summary, details.qmd-cell > summary { cursor: pointer; color: var(--text-muted); font-size: 12px; font-family: var(--font-mono); }
+.qmd-meta-yaml pre { margin: 6px 0 0; }
+.qmd-callout { --qc: #5b9cf6; margin: 14px 0; border: 1px solid var(--border); border-left: 4px solid var(--qc); border-radius: 6px; overflow: hidden; }
+.qmd-callout-tip { --qc: #45d483; }
+.qmd-callout-warning { --qc: #e5c03e; }
+.qmd-callout-important { --qc: #ef6b6b; }
+.qmd-callout-caution { --qc: #f39a4a; }
+.qmd-callout-title { padding: 6px 12px; background: rgba(255,255,255,.035); font-weight: 600; }
+.qmd-callout-title::before { content: '●'; margin-right: 8px; color: var(--qc); font-size: 11px; }
+.qmd-callout-noicon .qmd-callout-title::before { content: none; }
+.qmd-callout-body { padding: 2px 14px; }
+.qmd-callout-minimal { border: 0; border-left: 3px solid var(--qc); border-radius: 0; }
+.qmd-callout-minimal .qmd-callout-title, .qmd-callout-simple .qmd-callout-title { background: none; }
+details.qmd-callout > summary { cursor: pointer; }
+.qmd-columns { display: flex; flex-wrap: wrap; gap: 16px; margin: 8px 0; }
+.qmd-column { flex: 1 1 0; min-width: 0; }
+.qmd-cond, .qmd-notes { margin: 12px 0; padding: 4px 12px; border: 1px dashed var(--border); border-radius: 6px; }
+.qmd-cond::before, .qmd-notes::before { content: attr(data-label); display: block; color: var(--text-muted); font-size: 11px; }
+.qmd-cell { margin: 10px 0; }
+.qmd-cell-label { margin-bottom: 2px; color: var(--text-muted); font-size: 11px; font-family: var(--font-mono); }
+details.qmd-cell[open] > summary { margin-bottom: 4px; }
+.qmd-cite, .qmd-xref { color: var(--accent); }
+.qmd-short { padding: 0 4px; border: 1px solid var(--border); border-radius: 4px; color: var(--text-muted); font-family: var(--font-mono); font-size: 12px; }
+.qmd-smallcaps { font-variant: small-caps; }
+.qmd-math { overflow-x: auto; }
 
 /* PDF viewer */
 .pdf-container { display: flex; flex-direction: column; min-height: 100%; background: #2a2a2e; }
@@ -1792,8 +1830,6 @@ html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 .nb-markdown-cell .cm-cell-editor .cm-scroller { max-height:480px; }
 .nb-markdown-empty { color:var(--text-muted); font-size:13px; }
 @media(max-width:768px){.nb-markdown-cell .cm-cell-editor .cm-editor{font-size:16px!important}}
-.nb-file-change { display:flex; align-items:center; flex-wrap:wrap; gap:8px; width:100%; padding:8px 10px; border:1px solid #75664b; border-radius:5px; background:#302b22; color:#ddcca8; }
-.nb-file-change span { flex:1 1 240px; }
 /* Long notebook code stays on one line and scrolls inside the cell. */
 .nb-edit-cell .cm-cell-editor .cm-scroller { overflow:auto; overscroll-behavior-x:contain; touch-action:pan-x pan-y; }
 /* Status updates must not change the notebook toolbar height on phones. */
@@ -1811,22 +1847,52 @@ html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 .nb-cell-insert-menu { flex-shrink:0; width:44px; min-height:28px; border:1px solid var(--border); border-radius:5px; background:var(--bg-secondary); color:var(--text-secondary); cursor:pointer; font-size:14px; }
 .nb-cell-insert-menu:disabled { opacity:.45; cursor:default; }
 
-.html-view { display:flex; flex-direction:column; height:100%; min-height:400px; min-width:0; }
-.html-view-toolbar { display:flex; align-items:center; gap:8px; padding:6px 10px; flex-shrink:0; overflow-x:auto; white-space:nowrap; border-bottom:1px solid var(--border); }
-.html-view-toolbar button { flex-shrink:0; }
-.html-view-toolbar button[aria-pressed="true"] { color:var(--accent); border-color:var(--accent); }
-.html-view-toolbar span { color:var(--text-muted); font-size:11px; }
-.html-view-toolbar span.html-view-error { color:var(--red); }
-.html-view-banner { display:flex; align-items:center; gap:10px; padding:6px 10px; flex-shrink:0; border-bottom:1px solid var(--border); background:rgba(239,107,107,.1); color:var(--text-secondary); font-size:12px; }
-.html-view-banner button { flex-shrink:0; }
-.html-view-body { display:flex; flex:1; min-height:0; }
-.html-view-body iframe { flex:1 1 0; width:100%; min-width:0; min-height:350px; border:0; background:white; }
-.html-view-body>.cm-wrapper { flex:1 1 0; height:auto; min-width:0; min-height:0; }
-.html-view-split>.cm-wrapper { border-right:1px solid var(--border); }
+/* Document surface: every file tab (HTML, Markdown/Quarto, code, notebook)
+   shares this toolbar, banner and body. Selectors carry two classes so the
+   notebook's generic button style doesn't restyle them. */
+.doc-surface { display:flex; flex-direction:column; height:100%; min-height:0; min-width:0; }
+.doc-surface:focus { outline:none; }
+.doc-toolbar { display:flex; align-items:center; gap:6px; min-height:33px; padding:4px 8px; flex-shrink:0; overflow-x:auto; white-space:nowrap; background:var(--bg-secondary); border-bottom:1px solid var(--border); font-size:12px; scrollbar-width:thin; }
+.doc-toolbar .doc-modes { display:inline-flex; flex-shrink:0; border:1px solid var(--border); border-radius:6px; overflow:hidden; }
+.doc-toolbar .doc-modes button { height:24px; padding:0 10px; border:0; border-radius:0; background:var(--bg-tertiary); color:var(--text-secondary); font-size:12px; cursor:pointer; }
+.doc-toolbar .doc-modes button + button { border-left:1px solid var(--border); }
+.doc-toolbar .doc-modes button:hover { color:var(--text-primary); }
+.doc-toolbar .doc-modes button[aria-pressed="true"] { background:var(--bg-hover); color:var(--accent); }
+.doc-toolbar .doc-tool, .doc-banner .doc-tool { height:24px; padding:0 8px; border-radius:6px; border:1px solid var(--border); background:var(--bg-tertiary); color:var(--text-primary); font-size:12px; cursor:pointer; flex-shrink:0; }
+.doc-toolbar .doc-tool:hover:not(:disabled), .doc-banner .doc-tool:hover:not(:disabled) { background:var(--bg-hover); }
+.doc-toolbar .doc-tool:disabled, .doc-banner .doc-tool:disabled { opacity:.45; cursor:default; }
+.doc-toolbar .doc-tool[aria-pressed="true"] { color:var(--accent); border-color:var(--accent); }
+.doc-extras { display:flex; align-items:center; gap:4px; margin-left:auto; min-width:0; }
+.doc-note { color:var(--text-muted); font-size:11px; }
+.doc-save { flex-shrink:0; min-width:44px; text-align:right; color:var(--text-muted); font-size:11px; }
+.doc-save-pending, .doc-save-saving { color:var(--text-secondary); }
+.doc-save-error, .doc-save-conflict { color:var(--red); }
+.doc-banner { display:flex; align-items:center; flex-wrap:wrap; gap:8px 10px; padding:6px 10px; flex-shrink:0; border-bottom:1px solid var(--border); background:rgba(239,107,107,.1); color:var(--text-secondary); font-size:12px; }
+.doc-banner span { flex:1 1 240px; }
+.doc-body { display:flex; flex:1; min-height:0; min-width:0; }
+.doc-body > .cm-wrapper { flex:1 1 0; height:auto; min-width:0; min-height:0; }
+.doc-split > .cm-wrapper { border-right:1px solid var(--border); }
+.doc-scroll { flex:1 1 0; min-width:0; min-height:0; overflow:auto; }
+.doc-scroll > .md-rendered { height:auto; overflow:visible; }
+.html-preview-frame { flex:1 1 0; width:100%; min-width:0; min-height:0; border:0; background:white; }
+.html-peek { display:flex; height:100%; min-height:400px; }
 @media (max-width:768px) {
-  .html-view-split { flex-direction:column; }
-  .html-view-split>.cm-wrapper { border-right:0; border-bottom:1px solid var(--border); }
+  .doc-split { flex-direction:column; }
+  .doc-split > .cm-wrapper { border-right:0; border-bottom:1px solid var(--border); }
 }
+/* The inline block editor (Markdown blocks, notebook markdown cells). */
+.md-block-editor-bar { display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin-top:4px; font-size:12px; }
+.md-block-editor-bar > button { height:24px; padding:0 8px; border-radius:6px; border:1px solid var(--border); background:var(--bg-secondary); color:var(--text-primary); font-size:12px; cursor:pointer; }
+.md-block-editor-bar > button:hover { background:var(--bg-hover); }
+.md-block-editor-bar > button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+.md-block-editor-hint { margin-left:auto; color:var(--text-muted); font-size:11px; }
+/* Notebook: the shared toolbar sits above the kernel actions; both stay in view. */
+.nb-head { position:sticky; top:0; z-index:3; }
+.nb-head .nb-runtime-bar { position:static; }
+.nb-head .doc-extras { flex:1 1 auto; justify-content:flex-end; }
+.nb-head .nb-live-status { flex-basis:auto; }
+.nb-markdown-editable .nb-markdown-preview { cursor:text; }
+.nb-markdown-editable .nb-markdown-preview:hover { outline:1px dashed var(--accent); outline-offset:3px; border-radius:2px; }
 
 /* Quiet workspace surfaces, with every session exposed in a compact row. */
 .workbench-icon { display:block; width:16px; height:16px; flex:0 0 16px; }

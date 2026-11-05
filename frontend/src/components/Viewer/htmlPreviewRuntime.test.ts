@@ -58,7 +58,7 @@ describe('HTML preview runtime', () => {
     expect(el(5).textContent).toBe('끝')
   })
 
-  it('cancels with Escape and ignores containers of other blocks', () => {
+  it('keeps the text on Escape and ignores containers of other blocks', () => {
     const count = sent.length
     click(el(0))
     expect(sent.length).toBe(count)
@@ -66,7 +66,7 @@ describe('HTML preview runtime', () => {
     deliver({t: 'begin-ok', i: 1})
     el(1).textContent = '바뀜'
     key(el(1), {key: 'Escape'})
-    expect(el(1).textContent).toBe('목표')
-    expect(last()).toEqual({t: 'end'})
+    expect(last()).toEqual({t: 'commit', i: 1, tag: 'h2', before: '목표', after: '바뀜', add: false})
+    expect(el(1).hasAttribute('contenteditable')).toBe(false)
   })
 })

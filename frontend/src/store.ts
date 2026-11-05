@@ -3,7 +3,7 @@ import { create } from 'zustand'
 import type { Session, WsMessage, SpawnProfile, SessionStateSnapshot } from './types'
 import { useToasts } from './toasts'
 import { browserUrl } from './components/Viewer/browserUrl'
-import { api } from './api'
+import { api, type SaveResult } from './api'
 
 export interface ViewerTab {
   id: string
@@ -18,6 +18,13 @@ export interface ViewerTab {
   sessionId?: string
   viewState?: { scrollTop?: number; scrollLeft?: number; page?: number; zoom?: number; pageOffset?: number; pdfScrollLeft?: number; cursor?: number; editorScroll?: number }
 }
+
+/** A text file on disk that the viewer edits and saves itself (not a log
+ *  capture, a diff or a notebook, which saves through its kernel session). */
+export const isEditableFile = (tab?: ViewerTab) =>
+  !!tab && (tab.type === 'code' || tab.type === 'markdown' || tab.type === 'latex') && tab.path.startsWith('/')
+// One write at a time per tab, so autosave and a closing tab never race.
+const saveChains = new Map<string, Promise<SaveResult | null>>()
 
 interface AppState {
   _sessionStateRevision: number
@@ -106,6 +113,8 @@ interface AppState {
   closeTab: (id: string, key?: string) => void
   updateTab: (tabId: string, content: string, key?: string) => void
   markTabSaved: (tabId: string, content?: string, version?: string, key?: string) => void
+  /** Write a dirty file tab (version-checked); null when there was nothing to save. */
+  saveTab: (tabId: string, key?: string) => Promise<SaveResult | null>
   openDiffTab: (path: string, name: string, diff: string) => void
   openLogTab: (sessionId: string, name: string, content: string) => void
   restoreViewerTabs: (sessionId: string) => Promise<void>
@@ -455,24 +464,36 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   closeTab: (id, key) => {
-    const { _viewerState } = get()
     const activeId = key || viewerKey(get())
-    const cur = _viewerState[activeId] || { tabs: [], activeTabId: null }
-    const tab = cur.tabs.find(t => t.id === id)
-    if (tab?.dirty && !window.confirm(`저장하지 않은 변경이 있습니다: ${tab.name}\n닫을까요?`)) return
-    if (tab?.type === 'terminal' && tab.sessionId && get().sessions[tab.sessionId]) {
-      get().setSessionHidden(tab.sessionId, true)
+    const drop = () => {
+      const { _viewerState } = get()
+      const cur = _viewerState[activeId] || { tabs: [], activeTabId: null }
+      const tab = cur.tabs.find(t => t.id === id)
+      if (tab?.type === 'terminal' && tab.sessionId && get().sessions[tab.sessionId]) {
+        get().setSessionHidden(tab.sessionId, true)
+        return
+      }
+      const idx = cur.tabs.findIndex(t => t.id === id)
+      const next = cur.tabs.filter(t => t.id !== id)
+      let nextActive = cur.activeTabId
+      if (cur.activeTabId === id) {
+        nextActive = next.length > 0 ? next[Math.min(idx, next.length - 1)].id : null
+      }
+      const nextVs = { tabs: next, activeTabId: nextActive }
+      set({ _viewerState: { ..._viewerState, [activeId]: nextVs } })
+      persistViewer(activeId, nextVs)
+    }
+    const tab = get()._viewerState[activeId]?.tabs.find(t => t.id === id)
+    if (tab?.dirty && isEditableFile(tab)) {
+      // Edits save themselves; finish the last one before the tab goes away.
+      void get().saveTab(id, activeId).then(res => {
+        if (res && !res.ok && !window.confirm(`저장하지 못했습니다: ${tab.name}\n${res.error}\n수정 내용을 버리고 닫을까요?`)) return
+        drop()
+      })
       return
     }
-    const idx = cur.tabs.findIndex(t => t.id === id)
-    const next = cur.tabs.filter(t => t.id !== id)
-    let nextActive = cur.activeTabId
-    if (cur.activeTabId === id) {
-      nextActive = next.length > 0 ? next[Math.min(idx, next.length - 1)].id : null
-    }
-    const nextVs = { tabs: next, activeTabId: nextActive }
-    set({ _viewerState: { ..._viewerState, [activeId]: nextVs } })
-    persistViewer(activeId, nextVs)
+    if (tab?.dirty && !window.confirm(`저장하지 않은 변경이 있습니다: ${tab.name}\n닫을까요?`)) return
+    drop()
   },
 
   updateTab: (tabId, content, key) => {
@@ -493,6 +514,21 @@ export const useStore = create<AppState>((set, get) => ({
       version: version ?? t.version,
     } : t)
     set({ _viewerState: { ...state._viewerState, [owner]: { ...cur, tabs } } })
+  },
+
+  saveTab: (tabId, key) => {
+    const owner = key || viewerKey(get())
+    const run = (saveChains.get(tabId) || Promise.resolve(null)).then(async () => {
+      const tab = get()._viewerState[owner]?.tabs.find(t => t.id === tabId)
+      if (!tab?.dirty || !isEditableFile(tab)) return null
+      const value = tab.content
+      const res = await api.saveFile(tab.path, value, tab.version)
+      if (res.ok) get().markTabSaved(tabId, value, res.version, owner)
+      return res
+    }).catch((): SaveResult => ({ ok: false, conflict: false, error: '저장 실패' }))
+    saveChains.set(tabId, run)
+    void run.then(() => { if (saveChains.get(tabId) === run) saveChains.delete(tabId) })
+    return run
   },
 
   openDiffTab: (path, name, diff) => {

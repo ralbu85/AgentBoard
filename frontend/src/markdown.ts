@@ -84,8 +84,13 @@ export function toggleTaskLine(src: string, lineIdx: number): string {
 }
 
 export function renderMarkdown(src: string, filePath?: string, attachments?: MarkdownAttachments): string {
-  let html = md.parse(src) as string
-  if (filePath || attachments) {
+  return finishHtml(md.parse(src) as string, filePath, attachments)
+}
+
+/** Resolve images against the file's folder, then sanitize. `adjust` may edit
+ *  the inert parsed markup first (it runs before the sanitizer). */
+export function finishHtml(html: string, filePath?: string, attachments?: MarkdownAttachments, adjust?: (root: DocumentFragment) => void): string {
+  if (filePath || attachments || adjust) {
     // Template contents are inert. DOM attributes handle HTML images in any
     // attribute order, single quotes, and escaped filenames before sanitizing.
     const template = document.createElement('template')
@@ -105,6 +110,7 @@ export function renderMarkdown(src: string, filePath?: string, attachments?: Mar
         }
       } else if (filePath) img.setAttribute('src', resolveImgSrc(imgSrc, baseDir))
     }
+    adjust?.(template.content)
     html = template.innerHTML
   }
   return sanitize(html)

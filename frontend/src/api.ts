@@ -31,6 +31,23 @@ async function mutate(method: string, url: string, body: object) {
   }
 }
 const post = (url: string, body: object = {}) => mutate('POST', url, body)
+
+export type SaveResult = { ok: true; version: string } | { ok: false; conflict: boolean; error: string }
+/** Autosave reports in the document's own toolbar, so no failure toast here.
+ *  `conflict`: the file changed on disk since `expectedVersion`. */
+async function saveQuiet(path: string, content: string, expectedVersion?: string): Promise<SaveResult> {
+  try {
+    const res = await fetch(BASE + '/api/file', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      credentials: 'include', body: JSON.stringify({ path, content, expectedVersion }),
+    })
+    const data = await res.json().catch(() => null)
+    if (res.ok && data?.ok === true && typeof data.version === 'string') return { ok: true, version: data.version }
+    return { ok: false, conflict: res.status === 409, error: typeof data?.error === 'string' ? data.error : `HTTP ${res.status}` }
+  } catch {
+    return { ok: false, conflict: false, error: '연결 실패' }
+  }
+}
 const put = (url: string, body: object = {}) => mutate('PUT', url, body)
 
 async function get(url: string) {
@@ -72,6 +89,7 @@ export const api = {
   gitDiff: (path: string) => get(`/api/git/diff?path=${encodeURIComponent(path)}`),
   capture: (id: string) => get(`/api/capture?id=${encodeURIComponent(id)}`),
   writeFile: (path: string, content: string, expectedVersion?: string) => post('/api/file', { path, content, expectedVersion }),
+  saveFile: saveQuiet,
   rename: (from: string, to: string) => post('/api/rename', { from, to }),
   delete: (path: string) => post('/api/delete', { path }),
   mkdir: (path: string) => post('/api/mkdir', { path }),

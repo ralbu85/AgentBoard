@@ -11,7 +11,9 @@ import {NotebookEnvironment} from './NotebookEnvironment'
 import {NotebookMarkdownCell} from './NotebookMarkdownCell'
 import {CodeEditor} from './CodeEditor'
 import {NotebookKernels,kernelStateLabel} from './NotebookKernels'
-import {useNotebooks, openNotebook, editNotebook, refreshNotebook, notebookAction, notebookBusy, loadServerNotebook, checkNotebookFile} from './notebookRuntime'
+import {useNotebooks, openNotebook, editNotebook, refreshNotebook, notebookAction, notebookBusy, loadServerNotebook, checkNotebookFile, autosaveNotebook} from './notebookRuntime'
+import {DocBanner, EditToggle, SaveBadge, useEditToggle} from './DocSurface'
+import {SAVE_DELAY, type SaveState} from './docSync'
 
 // Read-only Jupyter notebook renderer (nbformat 4; minimal v3 fallback).
 // Cells render defensively — a malformed cell degrades to plain text, never throws.
@@ -55,6 +57,7 @@ export function NotebookView({tab,ownerKey}:{tab:ViewerTab;ownerKey:string}) {
   const [kernels,setKernels]=useState(false)
   const [environmentOpen,setEnvironmentOpen]=useState(false)
   const [now,setNow]=useState(Date.now())
+  const [editing,toggleEditing]=useEditToggle(true)
   useEffect(()=>{if(!record?.operation&&!notebookBusy(record?.server.state))return;const timer=setInterval(()=>setNow(Date.now()),1000);return()=>clearInterval(timer)},[record?.operation,record?.server.state])
   const local=JSON.parse(ownerKey)[0]==='local'
   const supported=useMemo(()=>{try{const nb=JSON.parse(tab.content);return nb.nbformat===4&&Array.isArray(nb.cells)}catch{return false}},[tab.content])
@@ -91,7 +94,7 @@ export function NotebookView({tab,ownerKey}:{tab:ViewerTab;ownerKey:string}) {
   useEffect(()=>{
     if(!record||!local)return
     const check=()=>{if(document.visibilityState!=='hidden')void checkNotebookFile(tab.path)}
-    check();const timer=setInterval(check,5000)
+    check();const timer=setInterval(check,1000)
     window.addEventListener('focus',check)
     return()=>{clearInterval(timer);window.removeEventListener('focus',check)}
   },[!!record,local,tab.path])
@@ -103,6 +106,21 @@ export function NotebookView({tab,ownerKey}:{tab:ViewerTab;ownerKey:string}) {
     if(current.content!==record.content)store.updateTab(tab.id,record.content,ownerKey)
     if(!record.server.dirty&&record.content===record.server.content)store.markTabSaved(tab.id,record.content,record.server.version,ownerKey)
   },[record?.content,record?.server.dirty,record?.server.version,tab.id,ownerKey,local])
+  // Same policy as every file tab: edits (and a finished run's outputs) save
+  // themselves once things settle; a disk change loads by itself unless it
+  // would drop unsaved work or a connected kernel's variables.
+  const unsaved=!!record&&(record.server.dirty||record.content!==record.server.content)
+  const quiet=!!record&&!record.operation&&!record.pending&&!record.conflict&&!notebookBusy((record.observed||record.server).state)
+  useEffect(()=>{
+    if(!local||!unsaved||!quiet||record?.fileChanged)return
+    const timer=setTimeout(()=>void autosaveNotebook(tab.path),SAVE_DELAY)
+    return()=>clearTimeout(timer)
+  },[local,unsaved,quiet,record?.fileChanged,record?.content,record?.server.revision,tab.path])
+  useEffect(()=>{
+    if(!local||!record?.fileChanged||unsaved||record.server.kernel||!quiet)return
+    void notebookAction(tab.path,'reload').then(()=>checkNotebookFile(tab.path,true)).catch(()=>{})
+  },[local,record?.fileChanged,unsaved,record?.server.kernel,quiet,tab.path])
+  useEffect(()=>()=>{void autosaveNotebook(tab.path)},[tab.path])
   const run=async(action:string,cell?:number)=>{setError('');try{await notebookAction(tab.path,action,cell)}catch(e){setError(e instanceof Error?e.message:'실패')}}
   const download=()=>{
     const blob=new Blob([record?.content||tab.content],{type:'application/x-ipynb+json'})
@@ -149,45 +167,57 @@ export function NotebookView({tab,ownerKey}:{tab:ViewerTab;ownerKey:string}) {
     if(consequences.length&&!confirm(consequences.join('\n')+'\n계속 새로고침할까요? 필요한 내용은 먼저 다운로드하세요.'))return
     void run('reload').then(()=>checkNotebookFile(tab.path,true))
   }
+  const saveState:SaveState=record.fileChanged&&dirty?'conflict':record.pending&&dirty?'saving':dirty?'pending':'saved'
   return <div className="nb-interactive">
+    <div className="nb-head">
+    <div className="doc-toolbar">
+      <EditToggle on={editing} onToggle={toggleEditing} title="마크다운 셀을 클릭해 그 자리에서 고칩니다. Esc · Ctrl+Enter로 닫기"/>
+      <div className="doc-extras">
+        <div className="nb-live-status" role="status" aria-live="polite" aria-busy={busy||!!operation||copying}>
+          <span className={`nb-spinner ${busy||operation||copying?'':'nb-spinner-idle'}`} aria-hidden="true"/>
+          <strong title={record.server.python}>{state.kernelName||'Python'} · {statusText}</strong>
+          {operation&&<span>{Math.max(0,Math.floor((now-operation.started)/1000))}초</span>}
+          {operation&&state.state==='starting'&&<span>Python 커널을 시작하고 있습니다.</span>}
+          {(error||record.error||record.connectionError||record.server.error)&&<span className="nb-status-error">{error||record.error||record.connectionError||record.server.error}</span>}
+        </div>
+      </div>
+      <SaveBadge state={saveState}/>
+    </div>
     <div className="nb-runtime-bar">
-      <div className="nb-live-status" role="status" aria-live="polite" aria-busy={busy||!!operation||copying}>
-        <span className={`nb-spinner ${busy||operation||copying?'':'nb-spinner-idle'}`} aria-hidden="true"/>
-        <strong title={record.server.python}>{state.kernelName||'Python'} · {statusText}</strong>
-        {operation&&<span>{Math.max(0,Math.floor((now-operation.started)/1000))}초</span>}
-        {operation&&state.state==='starting'&&<span>Python 커널을 시작하고 있습니다.</span>}
-        {(error||record.error||record.connectionError||record.server.error)&&<span className="nb-status-error">{error||record.error||record.connectionError||record.server.error}</span>}
+      <div className="nb-toolbar-actions">
+        {record.server.environment!==undefined&&<button title={record.server.python} onClick={()=>setEnvironmentOpen(true)}>환경: {record.server.kernelName||'Python · 서버 기본'} ▾</button>}
+        <button disabled={disabled||record.server.kernel} onClick={()=>void run('connect')}>{operation?.action==='connect'?'연결 중…':'커널 연결'}</button>
+        <button disabled={disabled} onClick={()=>void run('run-all')}>{operation?.action==='run-all'?'실행 준비 중…':'전체 실행'}</button>
+        <button disabled={!!operation||!['running','interrupting'].includes(state.state)} onClick={()=>void run('interrupt')}>■ 중단</button>
+        <button disabled={disabled||!record.server.kernel} onClick={()=>{if(confirm('커널을 재시작할까요? 메모리의 변수는 초기화되고 셀과 출력은 유지됩니다.'))void run('restart')}}>재시작</button>
+        <button disabled={disabled} title="코드와 마크다운은 유지하고 출력·실행 번호·커널 변수를 초기화합니다." onClick={()=>{if(confirm('노트북을 초기화할까요?\n코드와 마크다운은 유지합니다. 모든 출력·실행 번호와 커널 변수는 지워집니다.\n초기화한 결과는 자동으로 저장됩니다.'))void run('reset')}}>노트북 초기화</button>
+        <button disabled={record.pending||!record.server.kernel} onClick={()=>{if(confirm('이 노트북의 커널을 종료할까요? 실행 중인 작업과 변수는 종료됩니다.'))void run('shutdown')}}>커널 종료</button>
+        <button disabled={disabled} onClick={()=>void duplicate()}>복사본 만들기</button>
+        <button onClick={download}>다운로드</button>
+        <button onClick={()=>setKernels(true)}>커널 목록</button>
       </div>
-<div className="nb-toolbar-actions">
-{record.server.environment!==undefined&&<button title={record.server.python} onClick={()=>setEnvironmentOpen(true)}>환경: {record.server.kernelName||'Python · 서버 기본'} ▾</button>}
-      <button disabled={disabled||record.server.kernel} onClick={()=>void run('connect')}>{operation?.action==='connect'?'연결 중…':'커널 연결'}</button>
-      <button disabled={disabled} onClick={()=>void run('run-all')}>{operation?.action==='run-all'?'실행 준비 중…':'전체 실행'}</button>
-      <button disabled={!!operation||!['running','interrupting'].includes(state.state)} onClick={()=>void run('interrupt')}>■ 중단</button>
-      <button disabled={disabled||!record.server.kernel} onClick={()=>{if(confirm('커널을 재시작할까요? 메모리의 변수는 초기화되고 셀과 출력은 유지됩니다.'))void run('restart')}}>재시작</button>
-      <button disabled={disabled} title="코드와 마크다운은 유지하고 출력·실행 번호·커널 변수를 초기화합니다." onClick={()=>{if(confirm('노트북을 초기화할까요?\n코드와 마크다운은 유지합니다. 모든 출력·실행 번호와 커널 변수는 지워집니다.\n원본 파일에 반영하려면 초기화 후 저장하세요.'))void run('reset')}}>노트북 초기화</button>
-      <button disabled={record.pending||!record.server.kernel} onClick={()=>{if(confirm('이 노트북의 커널을 종료할까요? 실행 중인 작업과 변수는 종료됩니다.'))void run('shutdown')}}>커널 종료</button>
-      <button disabled={disabled||!dirty} onClick={()=>void run('save')}>{dirty?'저장 · 변경 있음':'저장됨'}</button>
-      <button disabled={disabled} onClick={()=>void duplicate()}>복사본 만들기</button>
-      <button onClick={download}>다운로드</button>
-      <button onClick={()=>setKernels(true)}>커널 목록</button>
-      <button disabled={disabled} onClick={reloadFile}>{operation?.action==='reload'?'불러오는 중…':'↻ 파일 새로고침'}</button>
-      </div>
-      {record.fileChanged&&<div className="nb-file-change" role="status"><span>원본 파일이 외부에서 변경되었습니다. 에이전트가 수정한 내용일 수 있습니다.</span><button disabled={disabled} onClick={reloadFile}>변경 내용 불러오기</button>{dirty&&<button onClick={download}>내 편집본 다운로드</button>}{busy&&<small>실행을 중단하거나 완료한 뒤 불러올 수 있습니다.</small>}</div>}
-      {record.fileCheckError&&<div className="nb-file-change" role="status"><span>{record.fileCheckError}</span><button disabled={record.fileChecking} onClick={()=>void checkNotebookFile(tab.path,true)}>다시 확인</button></div>}
+    </div>
+    {record.fileChanged&&<DocBanner>
+      <span>{dirty?'이 탭의 수정과 디스크의 파일이 둘 다 바뀌어 자동 저장을 멈췄습니다. 필요한 내용은 다운로드한 뒤 불러오세요.':'디스크의 파일이 바뀌었습니다. 불러오면 연결된 커널이 종료되어 변수가 초기화됩니다.'}</span>
+      <button className="doc-tool" disabled={disabled} onClick={reloadFile}>{operation?.action==='reload'?'불러오는 중…':'디스크 버전 불러오기'}</button>
+      {dirty&&<button className="doc-tool" onClick={download}>이 탭 내용 다운로드</button>}
+      {busy&&<small>실행을 중단하거나 완료한 뒤 불러올 수 있습니다.</small>}
+    </DocBanner>}
+    {record.fileCheckError&&<DocBanner><span>{record.fileCheckError}</span><button className="doc-tool" disabled={record.fileChecking} onClick={()=>void checkNotebookFile(tab.path,true)}>다시 확인</button></DocBanner>}
     </div>
     {(error||record.error||record.connectionError||record.server.error)&&<div className="nb-runtime-error" role="alert">{error||record.error||record.connectionError||record.server.error}<button disabled={record.pending} onClick={()=>{if(confirm('이 화면의 편집 초안을 서버 상태로 바꿀까요? 필요한 내용은 먼저 다운로드하세요.'))void loadServerNotebook(tab.path).then(()=>setError('')).catch(e=>setError(e.message))}}>서버 상태 불러오기</button></div>}
     {environmentOpen&&<NotebookEnvironment path={tab.path} onClose={()=>setEnvironmentOpen(false)}/>}
     {kernels&&<NotebookKernels onClose={()=>setKernels(false)}/>}
     <div className="nb-wrap">
       {notebook.cells.length===0&&<div className="nb-cell-actions"><button disabled={disabled} onClick={()=>add('code')}>＋ 코드</button><button disabled={disabled} onClick={()=>add('markdown')}>＋ 마크다운</button></div>}
-      {notebook.cells.map((cell:NbCell,index:number)=>cell.cell_type==='markdown'?<NotebookMarkdownCell key={(cell as NbCell&{id?:string}).id||index} insertControl={<NotebookCellInsert index={index} disabled={disabled} onInsert={add}/>} content={joinSrc(cell.source)} filePath={tab.path} attachments={cell.attachments} index={index} disabled={disabled} onChange={source=>change(index,source)} onSave={()=>{if(!disabled)void run('save')}} onDelete={()=>{if(!confirm(`셀 ${index+1}을 삭제할까요?`))return;const nb=JSON.parse(record.content);nb.cells.splice(index,1);editNotebook(tab.path,JSON.stringify(nb,null,1)+'\n')}}/>:<section className={`nb-edit-cell ${record.server.cell===index?'nb-cell-running':''}`} key={(cell as NbCell&{id?:string}).id||index}>
+      {notebook.cells.map((cell:NbCell,index:number)=>cell.cell_type==='markdown'?<NotebookMarkdownCell key={(cell as NbCell&{id?:string}).id||index} insertControl={<NotebookCellInsert index={index} disabled={disabled} onInsert={add}/>} content={joinSrc(cell.source)} filePath={tab.path} attachments={cell.attachments} index={index} disabled={disabled} editing={editing} onChange={source=>change(index,source)} onSave={()=>void autosaveNotebook(tab.path)} onDelete={()=>{if(!confirm(`셀 ${index+1}을 삭제할까요?`))return;const nb=JSON.parse(record.content);nb.cells.splice(index,1);editNotebook(tab.path,JSON.stringify(nb,null,1)+'\n')}}/>:<section className={`nb-edit-cell ${record.server.cell===index?'nb-cell-running':''}`} key={(cell as NbCell&{id?:string}).id||index}>
         <div className="nb-cell-actions"><span>{cell.cell_type==='code'?`In [${record.server.cell===index?'*':cell.execution_count??' '}]`:'Markdown'} · 셀 {index+1}</span>
           {cell.cell_type==='code'&&<button disabled={disabled} title="셀 실행 (Ctrl+Enter / Shift+Enter)" onClick={()=>void run('execute',index)}>{operation?.action==='execute'&&operation.cell===index?'실행 준비 중…':state.cell===index&&busy?'실행 중…':'▶ 셀 실행'}</button>}
           {cell.cell_type==='code'&&<button disabled={disabled} title={`첫 코드 셀부터 셀 ${index+1}까지 순서대로 실행합니다. 이미 실행한 셀도 다시 실행합니다.`} onClick={()=>void run('run-to-cell',index)}>여기까지 실행</button>}
           <button disabled={disabled} onClick={()=>{if(!confirm(`셀 ${index+1}을 삭제할까요?`))return;const nb=JSON.parse(record.content);nb.cells.splice(index,1);editNotebook(tab.path,JSON.stringify(nb,null,1)+'\n')}}>셀 삭제</button>
           <NotebookCellInsert index={index} disabled={disabled} onInsert={add}/>
         </div>
-        <CodeEditor compact ariaLabel={`셀 ${index+1} 코드`} content={joinSrc(cell.source)} lang={cell.cell_type==='code'?'python':cell.cell_type==='markdown'?'markdown':''} readOnly={disabled} onChange={source=>change(index,source)} onSave={()=>{if(!disabled)void run('save')}} onRun={cell.cell_type==='code'?()=>{if(!disabled)void run('execute',index)}:undefined}/>
+        <CodeEditor compact ariaLabel={`셀 ${index+1} 코드`} content={joinSrc(cell.source)} lang={cell.cell_type==='code'?'python':cell.cell_type==='markdown'?'markdown':''} readOnly={disabled} onChange={source=>change(index,source)} onSave={()=>void autosaveNotebook(tab.path)} onRun={cell.cell_type==='code'?()=>{if(!disabled)void run('execute',index)}:undefined}/>
 
         {(cell.outputs||[]).map((output,i)=><Output key={i} out={output}/>)}
       </section>)}

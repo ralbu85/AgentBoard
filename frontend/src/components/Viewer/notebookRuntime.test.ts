@@ -1,5 +1,5 @@
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest'
-import {editNotebook, loadServerNotebook, notebookAction, openNotebook, refreshNotebook, useNotebooks, checkNotebookFile, type NotebookState} from './notebookRuntime'
+import {autosaveNotebook, editNotebook, loadServerNotebook, notebookAction, openNotebook, refreshNotebook, useNotebooks, checkNotebookFile, type NotebookState} from './notebookRuntime'
 
 const path='/fixture/test.ipynb'
 let state:NotebookState
@@ -16,7 +16,8 @@ beforeEach(()=>{
       if(body.revision!==state.revision)return {ok:false,status:409,json:async()=>({detail:'conflict'})}
       state={...state,content:body.content,revision:state.revision+1,dirty:true}
     }
-    if(url.endsWith('/action'))state={...state,revision:state.revision+1,state:body.action==='shutdown'?'stopped':'running',...(body.action==='shutdown'?{kernel:false}:{})}
+    if(url.endsWith('/action')&&body.action==='save')state={...state,revision:state.revision+1,dirty:false,version:'file-v2'}
+    else if(url.endsWith('/action'))state={...state,revision:state.revision+1,state:body.action==='shutdown'?'stopped':'running',...(body.action==='shutdown'?{kernel:false}:{})}
     return {ok:true,json:async()=>({...state})}
   }))
 })
@@ -138,8 +139,8 @@ describe('notebook runtime',()=>{
     const original=vi.mocked(fetch).getMockImplementation()!
     vi.mocked(fetch).mockImplementation(async(...args)=>{
       const url=String(args[0])
-      if(url.startsWith('/api/files?'))return {ok:true,json:async()=>({entries:[{name:'test.ipynb',mtime:1,size:10}]})} as Response
-      if(url.startsWith('/api/file?')){fullReads++;return {ok:true,json:async()=>({version:'external-version',content:'agent changes'})} as Response}
+      if(url.startsWith('/api/file-stat?'))return {ok:true,status:200,json:async()=>({signature:'1:10:7'})} as Response
+      if(url.startsWith('/api/file?')){fullReads++;return {ok:true,status:200,json:async()=>({version:'external-version',content:'agent changes'})} as Response}
       return original(...args)
     })
     await checkNotebookFile(path,true)
@@ -153,4 +154,20 @@ describe('notebook runtime',()=>{
     expect(useNotebooks.getState().records[path].fileChanged).toBe(false)
   })
 
+  it('autosaves quietly, leaving cells editable, and never over a changed file or a running cell',async()=>{
+    await openNotebook(path,'original',false)
+    editNotebook(path,'edited')
+    const saving=autosaveNotebook(path)
+    expect(useNotebooks.getState().records[path].operation).toBeUndefined()
+    await saving
+    expect(calls.slice(-2)).toEqual(['PUT /api/notebooks/fixture','POST /api/notebooks/fixture/action'])
+    expect(useNotebooks.getState().records[path].server).toMatchObject({dirty:false,version:'file-v2',content:'edited'})
+    const count=calls.length
+    editNotebook(path,'more')
+    useNotebooks.setState(s=>({records:{...s.records,[path]:{...s.records[path],fileChanged:true}}}))
+    await autosaveNotebook(path)
+    useNotebooks.setState(s=>({records:{...s.records,[path]:{...s.records[path],fileChanged:false,server:{...s.records[path].server,state:'running'}}}}))
+    await autosaveNotebook(path)
+    expect(calls.length).toBe(count)
+  })
 })

@@ -113,7 +113,7 @@ export function notebookAction(path:string,action:string,cell?:number,environmen
       }
       patch(path,{content:JSON.stringify(notebook,null,1)+'\n'})
       await flush(path)
-      patch(path,{notice:'노트북 초기화 완료 · 저장하면 파일에 반영됩니다.'})
+      patch(path,{notice:'노트북 초기화 완료'})
       return current(path).server
     }
     const record=current(path)
@@ -140,33 +140,49 @@ export async function stopNotebookKernel(id:string){
 
 export const notebookEnvironments=(path:string)=>request(`/${current(path).server.id}/environments`)
 
-// Poll directory metadata, reading the notebook only when it changes (or once
-// per minute to catch replacements with preserved timestamps).
+/** Autosave: the 'save' action without an operation, so cells stay editable
+ *  while it runs. Skipped while a cell runs (its outputs save once it ends), and
+ *  while the file changed on disk (the reader decides which version stays). */
+export function autosaveNotebook(path:string){
+  const ready=()=>{const r=current(path);return !!r&&!r.operation&&!r.conflict&&!r.fileChanged&&!notebookBusy(r.server.state)}
+  if(!ready())return Promise.resolve()
+  clearTimeout(timers.get(path));timers.delete(path)
+  return queue(path,async()=>{
+    await flush(path)
+    const record=current(path)
+    // Typing since the flush: the next autosave picks it up.
+    if(!ready()||record.content!==record.server.content||!record.server.dirty)return
+    try{accept(path,await request('/'+record.server.id+'/action',{action:'save',revision:record.server.revision}))}
+    catch{void checkNotebookFile(path,true)}   // most likely the file changed on disk: the banner asks
+  }).catch(()=>{})
+}
+
+// Poll the file's signature (cheap), reading the notebook only when it changes
+// (or once per minute to catch replacements with preserved timestamps).
 const fileChecks=new Map<string,{signature:string;checkedAt:number;version:string}>()
 async function fileRequest(url:string){
   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),10000)
   try{
     const response=await fetch(url,{signal:controller.signal,cache:'no-store'})
     const data=await response.json()
+    if(response.status===404)throw Error('원본 파일을 찾을 수 없습니다. 이동·삭제되었는지 확인하세요.')
     if(!response.ok)throw Error(data.error||data.detail||'파일 변경 확인 실패')
     return data
   }finally{clearTimeout(timer)}
 }
 export async function checkNotebookFile(path:string,force=false){
   const record=current(path)
-  if(!record||record.fileChecking)return
+  // A save in flight changes the file before the record learns the new version.
+  if(!record||record.fileChecking||(!force&&(record.pending||record.operation)))return
   patch(path,{fileChecking:true})
   try{
-    const slash=path.lastIndexOf('/'),folder=path.slice(0,slash)||'/',name=path.slice(slash+1)
-    const listing=await fileRequest('/api/files?path='+encodeURIComponent(folder))
-    const entry=listing.entries?.find((entry:{name:string})=>entry.name===name)
-    // Hidden files aren't included in directory listings; read them directly.
-    if(!entry&&!name.startsWith('.'))throw Error('원본 파일을 찾을 수 없습니다. 이동·삭제되었는지 확인하세요.')
-    const signature=entry?`${entry.mtime}:${entry.size}`:''
+    const stat=await fileRequest('/api/file-stat?path='+encodeURIComponent(path))
+    const signature=String(stat.signature||'')
     const previous=fileChecks.get(path)
-    if(force||!entry||!previous||previous.signature!==signature||previous.version!==current(path).server.version||Date.now()-previous.checkedAt>60000){
+    if(force||!previous||previous.signature!==signature||previous.version!==current(path).server.version||Date.now()-previous.checkedAt>60000){
       const file=await fileRequest('/api/file?path='+encodeURIComponent(path))
       if(typeof file.version!=='string')throw Error('파일 버전을 확인하지 못했습니다.')
+      if(!force&&current(path).pending)return
       patch(path,{fileChanged:file.version!==current(path).server.version})
       fileChecks.set(path,{signature,checkedAt:Date.now(),version:current(path).server.version})
     }

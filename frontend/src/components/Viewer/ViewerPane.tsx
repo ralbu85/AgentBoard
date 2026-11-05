@@ -1,8 +1,7 @@
 import {WorkspaceTabs} from './WorkspaceTabs'
 import {useDrafts} from '../Terminal/drafts'
-import {HtmlView} from './HtmlView'
 import { useState, useRef, useCallback, useEffect, useMemo, useLayoutEffect, Fragment } from 'react'
-import { useStore, viewerKey, sessionLabel, type ViewerTab } from '../../store'
+import { isEditableFile, useStore, viewerKey, sessionLabel, type ViewerTab } from '../../store'
 import { useToasts } from '../../toasts'
 import { notifyActive } from '../../ws'
 import { api } from '../../api'
@@ -10,13 +9,12 @@ import { FileContent, type Memo, type SelectionInfo } from './FileContent'
 import { PdfViewer } from '../PdfViewer'
 import { BrowserPane } from './BrowserPane'
 import { ScrollSlider } from './ScrollSlider'
-import { CodeEditor } from './CodeEditor'
-import { renderMarkdown, findTaskLines, toggleTaskLine } from '../../markdown'
+import { DocSurface } from './DocSurface'
+import { useFileChanges } from './docSync'
 import { TerminalPane } from '../Terminal/TerminalPane'
 import { InputCard } from '../Terminal/InputCard'
 import { leaves, mapTree, moveTab, newLeaf, readLayout, saveLayout, syncTree, type PaneNode, type TreeNode, type DropZone } from './layout'
 import { NotebookView } from './NotebookView'
-import {notebookAction,openNotebook} from './notebookRuntime'
 
 const EMPTY_TABS: ViewerTab[] = []
 
@@ -115,12 +113,9 @@ function LeafPane({ node, tabs, activeTabId, split, onClose, onSelect, onMove, o
   const activeTab = tabs.find(t => t.id === node.activeTabId) || tabs.find(t => node.tabIds.includes(t.id))
 
   const isTextTab = activeTab && (activeTab.type === 'code' || activeTab.type === 'markdown' || activeTab.type === 'latex' || activeTab.type === 'notebook')
-  const isMd = activeTab?.type === 'markdown'
   const isNb = activeTab?.type === 'notebook'
-  const isRendered = isMd
-  const dirty = !!activeTab?.dirty
-  const [saving, setSaving] = useState(false)
-  const [mdEditMode, setMdEditMode] = useState(false)
+  // PDFs and images aren't edited here; they reload when the file changes.
+  const fileChanges = useFileChanges(activeTab && (activeTab.type === 'pdf' || activeTab.type === 'image') && activeTab.path.startsWith('/') ? activeTab.path : undefined)
 
   // ── Memo state ──
   const [memos, setMemos] = useState<Memo[]>([])
@@ -135,7 +130,7 @@ function LeafPane({ node, tabs, activeTabId, split, onClose, onSelect, onMove, o
 
   useEffect(() => {
     let alive=true
-    setMemos([]);setSelInfo(null);setCtxMenu(null);pendingSelRef.current=null;setMdEditMode(false)
+    setMemos([]);setSelInfo(null);setCtxMenu(null);pendingSelRef.current=null
     if (!isTextTab || !activeTab) {setNotesBusy(false);return}
     setNotesBusy(true)
     api.loadNotes(activeTab.path).then(res=>{if(alive)setMemos(res.notes||[])}).catch(()=>{}).finally(()=>{if(alive)setNotesBusy(false)})
@@ -155,11 +150,6 @@ function LeafPane({ node, tabs, activeTabId, split, onClose, onSelect, onMove, o
     pendingSelRef.current = null
   }
 
-  const onContentChange = useCallback((value: string) => {
-    if (!activeTab) return
-    updateTab(activeTab.id, value)
-  }, [activeTab?.id])
-
   const rememberView = useCallback((view: NonNullable<ViewerTab['viewState']>) => {
     if (activeTab) useStore.getState().updateTabView(activeTab.id, view, ownerKey)
   }, [activeTab?.id, ownerKey])
@@ -171,29 +161,7 @@ function LeafPane({ node, tabs, activeTabId, split, onClose, onSelect, onMove, o
     const save = () => rememberView({scrollTop: el.scrollTop, scrollLeft: el.scrollLeft})
     el.addEventListener('scroll', save)
     return () => { el.removeEventListener('scroll', save) }
-  }, [activeTab?.id, mdEditMode])
-  const saveFile = useCallback(async () => {
-    if (!activeTab) return
-    setSaving(true)
-    if(activeTab.type==='notebook'&&JSON.parse(ownerKey)[0]==='local'){
-      try{await openNotebook(activeTab.path,activeTab.content,!!activeTab.dirty);await notebookAction(activeTab.path,'save')}
-      catch(e){useToasts.getState().push(e instanceof Error?e.message:'노트북 저장 실패')}
-      finally{setSaving(false)}
-      return
-    }
-    const res = await api.writeFile(activeTab.path, activeTab.content, activeTab.version)
-    if (res?.ok === true) markTabSaved(activeTab.id, activeTab.content, res.version, ownerKey)
-    setSaving(false)
-  }, [activeTab, ownerKey])
-
-  // Checkbox toggled in the rendered markdown view → update the buffer and
-  // persist immediately (the whole buffer, so any unsaved edits go with it).
-  const saveMdEdit = useCallback(async (newContent: string) => {
-    if (!activeTab) return
-    updateTab(activeTab.id, newContent)
-    const res = await api.writeFile(activeTab.path, newContent, activeTab.version)
-    if (res?.ok === true) markTabSaved(activeTab.id, newContent, res.version, ownerKey)
-  }, [activeTab, ownerKey])
+  }, [activeTab?.id])
 
   // ── Memo CRUD ──
   const saveMemoList=async(updated:Memo[])=>{
@@ -226,6 +194,8 @@ function LeafPane({ node, tabs, activeTabId, split, onClose, onSelect, onMove, o
     useStore.getState().setActive(targetId)
   }
 
+  // Open files follow the disk by themselves; ↻ is for anything that doesn't.
+  const followsDisk = isEditableFile(activeTab) || isNb || ((activeTab?.type === 'pdf' || activeTab?.type === 'image') && !!activeTab?.path.startsWith('/'))
   const refreshTab = async () => {
     if (!activeTab) return
     if (activeTab.dirty && !window.confirm('저장하지 않은 변경을 버리고 파일을 다시 불러올까요?')) return
@@ -285,10 +255,8 @@ function LeafPane({ node, tabs, activeTabId, split, onClose, onSelect, onMove, o
           <button className="vtab-action vtab-action-split" title="상하 분할 (선택한 탭을 아래로)" disabled={node.tabIds.length<2} onClick={()=>activeTab&&onMove(activeTab.id,node.id,'bottom')}>⬒</button>
           {split&&<button className="vtab-action vtab-action-split" title="분할 합치기" onClick={onMerge}>▣</button>}
           {isTextTab && <button className="vtab-action" onClick={copyContent} title="Copy">{copied ? '✓' : '⎘'}</button>}
-          {isRendered && <button className="vtab-action" onClick={() => setMdEditMode(v => !v)} title={mdEditMode ? 'Preview' : 'Edit'}>{mdEditMode ? '👁' : '✎'}</button>}
-          {dirty && <button className="vtab-action vtab-send" onClick={saveFile} title="Save (Ctrl+S)" disabled={saving}>{saving ? '...' : '💾'}</button>}
           {activeTab?.type !== 'terminal' && activeTab?.type !== 'browser' && <button className="vtab-action" onClick={downloadTab} title="Download">↓</button>}
-          {activeTab?.type !== 'terminal' && activeTab?.type !== 'browser' && !isNb && <button className="vtab-action" onClick={refreshTab} title="Refresh">↻</button>}
+          {activeTab?.type !== 'terminal' && activeTab?.type !== 'browser' && !followsDisk && <button className="vtab-action" onClick={refreshTab} title="Refresh">↻</button>}
           {isTextTab && memos.length > 0 && (
             <><select className="memo-target-select" aria-label="메모를 받을 세션" value={targetId} onChange={e=>setNoteTarget(e.target.value)}><option value="">대상 세션 선택</option>{noteSessions.map(s=><option key={s.id} value={s.id}>{sessionLabel(s,titles)}</option>)}</select><button className="vtab-action vtab-send" disabled={notesBusy||!targetId} onClick={sendMemosToAgent} title="기존 입력에 메모를 추가합니다. 전송 전 내용을 확인하세요.">채팅에 넣기 · {memos.length}</button></>
           )}
@@ -305,26 +273,13 @@ function LeafPane({ node, tabs, activeTabId, split, onClose, onSelect, onMove, o
           : activeTab.type === 'terminal' ? <TerminalTab key={activeTab.sessionId} sessionId={activeTab.sessionId!} />
           : activeTab.type === 'browser' ? <BrowserPane key={activeTab.id} tab={activeTab} ownerKey={ownerKey} />
           : activeTab.type === 'diff' ? <DiffView diff={activeTab.content} />
-          : activeTab.type === 'pdf' ? <PdfViewer key={activeTab.id} url={activeTab.content} viewState={activeTab.viewState} onViewChange={rememberView} />
-          : activeTab.type === 'image' ? <FileContent content={activeTab.content} type="image" lang="" />
-          : activeTab.type==='code'&&/\.html?$/i.test(activeTab.name) ? <HtmlView key={activeTab.id} content={activeTab.content} tab={activeTab} ownerKey={ownerKey} onChange={onContentChange} onSave={saveFile}/>
+          : activeTab.type === 'pdf' ? <PdfViewer key={activeTab.id} url={activeTab.content} viewState={activeTab.viewState} onViewChange={rememberView} reloadSignal={fileChanges} />
+          : activeTab.type === 'image' ? <FileContent content={fileChanges ? `${activeTab.content}&_v=${fileChanges}` : activeTab.content} type="image" lang="" />
           : isNb ? <NotebookView key={activeTab.path} tab={activeTab} ownerKey={ownerKey} />
-          : (isMd && !mdEditMode) ? <MarkdownView content={activeTab.content} filePath={activeTab.path} onContextMenu={handleCtxMenu} onEdit={saveMdEdit} />
-          : (
-            <CodeEditor key={activeTab.id}
-              viewState={activeTab.viewState}
-              onViewChange={rememberView}
-              content={activeTab.content}
-              lang={activeTab.lang}
-              memos={memos}
-              onChange={onContentChange}
-              onSave={saveFile}
-              onContextMenu={handleCtxMenu}
-            />
-          )
+          : <DocSurface key={activeTab.id} tab={activeTab} ownerKey={ownerKey} memos={memos} onContextMenu={handleCtxMenu} onViewChange={rememberView} />
         }
       </div>
-      {activeTab && activeTab.type!=='pdf' && activeTab.type!=='terminal' && activeTab.type!=='browser' && <ScrollSlider container={contentRef} identity={`${activeTab.id}:${mdEditMode}`} />}
+      {activeTab && activeTab.type!=='pdf' && activeTab.type!=='terminal' && activeTab.type!=='browser' && <ScrollSlider container={contentRef} identity={activeTab.id} />}
       </div>
       {dropZone&&<div className={`pane-drop-overlay pane-drop-${dropZone}`}>{dropZone==='center'?'이 화면으로 탭 이동':'여기에 화면 분할'}</div>}
       {ctxMenu && (
@@ -408,86 +363,6 @@ function MemoInputPanel({ selInfo, onSave, onCancel, busy }: {
     </div>
   )
 }
-
-/** Rendered markdown view (Notion-style) */
-const MD_ZOOM_LEVELS = [0.5, 0.75, 0.9, 1, 1.15, 1.3, 1.5, 1.75, 2, 2.5]
-function MarkdownView({ content, filePath, onContextMenu, onEdit }: { content: string; filePath?: string; onContextMenu?: (info: SelectionInfo) => void; onEdit?: (newContent: string) => void }) {
-  const bodyRef = useRef<HTMLDivElement>(null)
-  const [zoom, setZoom] = useState<number>(() => {
-    const saved = parseFloat(localStorage.getItem('md-zoom') || '1')
-    return MD_ZOOM_LEVELS.includes(saved) ? saved : 1
-  })
-  useEffect(() => { localStorage.setItem('md-zoom', String(zoom)) }, [zoom])
-
-  // Make task checkboxes clickable by stripping `disabled` from the HTML
-  // STRING (marked emits them disabled) — but only when the checkbox count
-  // matches the source scan; on a mismatch the Nth-checkbox → Nth-task-line
-  // mapping would toggle the wrong line, so they stay read-only.
-  // String-level (not a post-render DOM effect): React re-applies
-  // dangerouslySetInnerHTML in ways that would recreate the inputs and undo
-  // an imperative `disabled = false` (observed in production).
-  const html = useMemo(() => {
-    let h = renderMarkdown(content, filePath)
-    if (onEdit) {
-      const boxes = h.match(/<input[^>]*>/g)?.filter(t => t.includes('type="checkbox"')) || []
-      if (boxes.length > 0 && boxes.length === findTaskLines(content).length) {
-        h = h.replace(/<input[^>]*>/g, tag =>
-          tag.includes('type="checkbox"') ? tag.replace(/ disabled(="")?/, '') : tag)
-      }
-    }
-    return h
-  }, [content, filePath, onEdit])
-
-  const handleClick = useCallback((e: React.MouseEvent) => {
-    const el = e.target
-    if (!onEdit || !(el instanceof HTMLInputElement) || el.type !== 'checkbox' || el.disabled) return
-    const boxes = Array.from(bodyRef.current?.querySelectorAll('input[type="checkbox"]') || [])
-    const taskLines = findTaskLines(content)
-    const idx = boxes.indexOf(el)
-    if (idx < 0 || idx >= taskLines.length) return
-    onEdit(toggleTaskLine(content, taskLines[idx]))
-  }, [onEdit, content])
-
-  const zoomIn = () => setZoom(z => {
-    const i = MD_ZOOM_LEVELS.indexOf(z)
-    return MD_ZOOM_LEVELS[Math.min(i + 1, MD_ZOOM_LEVELS.length - 1)] ?? z
-  })
-  const zoomOut = () => setZoom(z => {
-    const i = MD_ZOOM_LEVELS.indexOf(z)
-    return MD_ZOOM_LEVELS[Math.max(i - 1, 0)] ?? z
-  })
-  const zoomReset = () => setZoom(1)
-
-  const handleContextMenu = useCallback((e: React.MouseEvent) => {
-    if (!onContextMenu) return
-    const sel = window.getSelection()
-    if (!sel || sel.isCollapsed || !sel.toString().trim()) return
-    e.preventDefault()
-    e.stopPropagation()
-    const text = sel.toString().trim()
-    if(!bodyRef.current?.contains(sel.anchorNode)||!bodyRef.current.contains(sel.focusNode))return
-    // Only claim line numbers for a unique exact source match. Rendered
-    // emphasis, links and repeated passages are located by their quoted text.
-    const offset=content.indexOf(text)
-    const exact=offset>=0&&content.indexOf(text,offset+1)<0
-    const startLine=exact?content.slice(0,offset).split('\n').length:0
-    const endLine=exact?startLine+text.split('\n').length-1:0
-    onContextMenu({ startLine, startCol: 0, endLine, endCol: 0, text, x: e.clientX, y: e.clientY })
-  }, [onContextMenu, content])
-
-  return (
-    <div className="md-wrap">
-      <div className="md-zoom-toolbar">
-        <button className="md-zoom-btn" onMouseDown={e=>e.preventDefault()} onClick={handleContextMenu} title="문장을 선택한 뒤 메모 추가">선택에 메모</button>
-        <button className="md-zoom-btn" onClick={zoomOut} title="Zoom out">−</button>
-        <span className="md-zoom-label" onClick={zoomReset} title="Reset">{Math.round(zoom * 100)}%</span>
-        <button className="md-zoom-btn" onClick={zoomIn} title="Zoom in">+</button>
-      </div>
-      <div ref={bodyRef} className="md-rendered" style={{ zoom }} dangerouslySetInnerHTML={{ __html: html }} onContextMenu={handleContextMenu} onClick={handleClick} />
-    </div>
-  )
-}
-
 
 function TerminalTab({ sessionId }: { sessionId: string }) {
   const session = useStore(s => s.sessions[sessionId])

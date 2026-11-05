@@ -64,8 +64,10 @@ The hub is a pure relay for remote hosts: it never runs streamer/tmux for a remo
   - `InputCard.tsx` — input textarea + quick keys
 - `components/Sidebar/` — session list with filter, mobile overlay
 - `components/Viewer/` — split layout, code editor, file content, PDF, Jupyter notebook (read-only render, ✎ → raw JSON), resizer
-  - `HtmlView.tsx` — HTML preview (sandboxed iframe): follows disk writes via `/api/file-stat`, source|preview side by side, click-to-edit text
-  - `htmlSource.ts` — parse5 source mapping for preview edits (lazy chunk); `htmlPreviewRuntime.ts` — the script injected into the iframe
+  - `DocSurface.tsx` — every text file tab (code, LaTeX, HTML, Markdown/Quarto): one toolbar (미리보기 / 나란히 / 소스, ✎ 텍스트 편집, ↶, save state), one disk banner; a format only supplies its rendered view through `DocEdit`. Notebooks reuse its toolbar pieces and ✎ toggle
+  - `docSync.ts` — the one save policy: autosave (1 s after typing, at once on a committed edit), disk follow via `/api/file-stat`, conflict handling; `useFileChanges` reloads PDFs/images
+  - `HtmlPreview.tsx` — HTML rendered view (sandboxed iframe, click-to-edit text); `htmlSource.ts` — parse5 source mapping for preview edits (lazy chunk); `htmlPreviewRuntime.ts` — the script injected into the iframe
+  - `MarkdownPreview.tsx` — Markdown/Quarto rendered view: click a block to edit its own markdown in place; `markdownBlocks.ts` — block → source-range map, Quarto rendering (front matter, callouts, columns, cells) and block edits
 - `components/SpawnModal/` — new-session dialog
 - `components/FilePanel.tsx` — file browser
 - `components/PdfViewer.tsx` — PDF rendering (pdfjs-dist, lazy-loaded)
@@ -166,13 +168,22 @@ cd frontend && npm run dev
 - **Claim from recent input, never from `document.hasFocus()` or heartbeats.** A browser left open on another PC is still visible and can still report focus, so either signal makes two machines fight over the width every 5 s and redraws live processes.
 - **Batch liveness checks — one `list-sessions`, not N `has-session`.** `_poll_background` forked `tmux has-session` per session every 2 s (17 sessions = 17 forks/cycle). `list_sessions()` returns all live names in one call; empty set == server down == all dead. (The per-session `display_info`+tail capture for state detection still forks 2×/session/cycle — that's the dominant background cost, a later optimization.)
 
-### HTML preview / editing
+### File editing (DocSurface, previews, notebooks)
 - **Don't write the iframe's DOM back to the file.** Page scripts rewrite their own DOM (slide classes, wrappers, rendered math), so `outerHTML` would bake that into the source. Each start tag gets a `data-ab-i` ordinal (parse5 source offsets — same tree construction as the browser); an edit replaces only that element's inner source range, and only after the parent confirms the normalized source still equals the DOM's `before` (else: "페이지 스크립트가 바꾼 내용").
 - **Parse the file behind the same head the iframe sees.** `htmlSource` parses `SHAPE + file` so `<html>`/`<head>` merge and the insertion mode match the preview; parsing the file alone gives ordinals for elements that don't exist in the iframe.
 - **Don't reload the preview for preview edits.** A reload re-runs the deck's scripts and drops the reader back to slide 1. The parent answers each edit with patches (inner/after/remove + ordinal shift); it reloads only when the rest of the file would parse differently or the iframe is stale. Disk/source changes do reload, with scroll + hash restored.
 - **The injected runtime is `previewRuntime.toString()` — keep it self-contained.** No imports or module-scope references, and nothing that reads `</script`. It captures `parent.postMessage` and removes its own `<script>` before page scripts run; messages carry a per-load token, so page `postMessage` traffic (reveal.js events) is ignored.
 - **Use `contenteditable="plaintext-only"` and swallow page events while editing.** Rich mode inserts style spans/`<div>`s; deck keyboard handlers would turn arrow keys and Space into slide changes. Enter checks `isComposing` (Korean IME).
-- **Poll `/api/file-stat`, not `/api/file`.** An open preview checks once a second; re-reading the whole file each time is a lot of traffic on mobile. A dirty tab never auto-loads a disk change (banner instead), and preview edits save with `expectedVersion`.
+- **One surface, one save policy — don't give a format its own.** HTML, Markdown and code tabs each had their own toolbar, save rule (autosave vs Ctrl+S vs 💾) and disk handling; users couldn't predict any of it. `DocSurface` owns modes, ✎, undo, save state and the banner; `docSync` owns saving and disk follow. A new format adds a rendered view that edits through `DocEdit.apply` (an undo step + an immediate save) and registers `setPaused` while an inline editor is open.
+- **Every save goes through `store.saveTab`.** It chains writes per tab, so autosave, Ctrl+S and closing a tab never send two writes with the same `expectedVersion` (the second would 409 against the first). A closing dirty tab saves instead of asking.
+- **A conflict stops autosave until the reader picks a version.** When the tab and the file both changed, retrying would 409 every second, and saving without the version check would erase the agent's write. The banner offers the disk version or "이 탭 내용으로 저장".
+- **Poll `/api/file-stat`, not `/api/file`.** Every open file checks once a second; re-reading the whole file each time is a lot of traffic on mobile. PDFs/images reload only once the signature holds still for a tick — a PDF being written is otherwise loaded half-finished.
+- **Esc keeps the text in every inline editor; only 취소 drops it.** Autosave makes Esc-as-cancel the one way to lose typing; ↶ undoes a committed edit instead.
+- **Notebook autosave must not be an operation.** The `save` action shown as an operation disables the cells (read-only) for its round trip, eating keystrokes. `autosaveNotebook` runs it quietly in the queue, skips running cells (their outputs save once the run ends) and a changed file. A disk change auto-loads only with no unsaved work and no kernel — `reload` restarts the kernel.
+- **Markdown is edited as source, one block at a time — never as rendered text.** Rendered text has lost the `**`, `$…$` and `[@key]` it came from. Each block element carries `data-mb`; `markdownBlocks` maps it to a source range (marked's token `raw`s tile the source; list items and quotes lex their children from prefix-stripped text, mapped back line by line). A container whose lines don't map stays read-only rather than guessing.
+- **Write nested lines back with the source's own prefixes (`MdBlock.prefixes`), not a recomputed indent.** `>>` quotes, lazy continuation lines and whitespace-only lines in code would otherwise change on every save. Checked against 33k blocks in real `.md`/`.qmd` files: an unchanged block writes back byte-identical.
+- **Don't re-render the document under an open block editor.** The editor is mounted next to the rendered element, so `MarkdownPreview` freezes what it shows and registers `DocEdit.setPaused`, which holds disk loads (and undo) until the editor closes.
+- **Quarto is rendered approximately, in the browser.** marked plus extensions for front matter, fenced divs (callouts, columns, conditional content), cells, spans, citations and smart dashes. Cells aren't executed and OJS doesn't run; Quarto's own render is the reference. Running `quarto render` per edit would take seconds and gives no source map. CRLF files render read-only (marked rewrites line endings).
 
 ### Mobile / UI
 - **Don't auto-reload from the client.** Slow mobile + reload script = infinite loop. Cache-bust on the server side instead.
@@ -285,7 +296,7 @@ cd frontend && npm run dev
 - `GET  /api/browse?path=` — directory listing
 - `GET  /api/files?path=` — file listing with metadata
 - `GET  /api/file?path=` — read file
-- `GET  /api/file-stat?path=` — `{signature}` (mtime:size:inode) — cheap change poll for open HTML previews
+- `GET  /api/file-stat?path=` — `{signature}` (mtime:size:inode) — cheap change poll for every open file
 - `POST /api/file` — `{path, content}` write file
 - `GET  /api/push/key` — VAPID public key (applicationServerKey)
 - `POST /api/push/subscribe` — `{endpoint, keys, expirationTime}` store a browser push subscription

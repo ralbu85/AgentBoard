@@ -1,9 +1,10 @@
-import {HtmlView} from './Viewer/HtmlView'
+import {HtmlPreview} from './Viewer/HtmlPreview'
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { api } from '../api'
 import { useStore, viewerKey } from '../store'
 import type { FileEntry } from '../types'
 import { renderMarkdown } from '../markdown'
+import { isQuarto, renderBlocks } from './Viewer/markdownBlocks'
 import { sanitize } from '../sanitize'
 import { PdfViewer } from './PdfViewer'
 import { NotebookPreview } from './Viewer/NotebookView'
@@ -384,7 +385,8 @@ export function FilePanel({ initialPath, onClose }: Props) {
       lazyHighlight(preview.content, preview.lang).then(setHighlightedCode)
     } else if (preview.type === 'markdown') {
       setMdHtml('')
-      setMdHtml(renderMarkdown(preview.content, preview.path))
+      // Quarto front matter, callouts and cells read as such even in a peek.
+      setMdHtml(isQuarto(preview.path || '') ? renderBlocks(preview.content, {filePath: preview.path, quarto: true, tasks: false}).html : renderMarkdown(preview.content, preview.path))
     }
   }, [preview?.content, preview?.lang, preview?.type])
 
@@ -426,7 +428,7 @@ export function FilePanel({ initialPath, onClose }: Props) {
           </div>
         </div>
         <div className="fv-body">
-          {preview.type === 'code' && /\.html?$/i.test(preview.name) && <HtmlView content={preview.content}/>}
+          {preview.type === 'code' && /\.html?$/i.test(preview.name) && <div className="html-peek"><HtmlPreview content={preview.content}/></div>}
           {preview.type === 'code' && !/\.html?$/i.test(preview.name) && (
             <pre className="fv-code"><code className="hljs" dangerouslySetInnerHTML={{ __html: highlightedCode }} /></pre>
           )}

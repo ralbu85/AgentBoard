@@ -3,7 +3,7 @@ import { acquirePdf, peekPdf } from './pdfCache'
 import type { PDFPageProxy } from 'pdfjs-dist'
 
 interface PdfPosition { page: number; zoom: number; pageOffset: number; pdfScrollLeft: number }
-interface Props { url: string; viewState?: Partial<PdfPosition>; onViewChange?: (view: PdfPosition) => void }
+interface Props { url: string; viewState?: Partial<PdfPosition>; onViewChange?: (view: PdfPosition) => void; reloadSignal?: number }
 const ZOOM_LEVELS = [0.5, 0.75, 1, 1.25, 1.5, 2, 3]
 
 // Only paint pages near the viewport; the sized placeholders make slider jumps
@@ -34,7 +34,7 @@ function PdfPage({ page, width, zoom, root }: { page: PDFPageProxy; width: numbe
   </div>
 }
 
-export function PdfViewer({ url, viewState, onViewChange }: Props) {
+export function PdfViewer({ url, viewState, onViewChange, reloadSignal = 0 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [status, setStatus] = useState(() => peekPdf(url) ? '' : 'PDF 불러오는 중…')
   const [error, setError] = useState('')
@@ -47,6 +47,8 @@ export function PdfViewer({ url, viewState, onViewChange }: Props) {
   const restoring = useRef(true)
   const [width, setWidth] = useState(0)
   const [reloadKey, setReloadKey] = useState(0)
+  // The file changed on disk (a recompiled PDF): reload, keeping the page.
+  useEffect(() => { if (reloadSignal) setReloadKey(k => k + 1) }, [reloadSignal])
   const viewChange = useRef(onViewChange); viewChange.current = onViewChange
   useEffect(() => {
     let cancelled = false
