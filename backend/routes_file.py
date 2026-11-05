@@ -93,6 +93,22 @@ async def read_file(path: str = Query(...), _=Depends(verify)):
     return {"path": str(p), "content": content, "size": len(raw), "version": hashlib.sha256(raw).hexdigest()}
 
 
+@router.get("/file-stat")
+async def file_stat(path: str = Query(...), _=Depends(verify)):
+    """Cheap change signal for open previews: they poll this every second and
+    read the file only when it changes (atomic writers swap the inode)."""
+    p = _safe_path(path)
+    if p is None:
+        return _forbidden()
+    try:
+        st = p.stat()
+    except OSError:
+        return JSONResponse({"error": "Not a file"}, 404)
+    if not p.is_file():
+        return JSONResponse({"error": "Not a file"}, 404)
+    return {"signature": f"{st.st_mtime_ns}:{st.st_size}:{st.st_ino}"}
+
+
 @router.get("/file-raw")
 async def read_file_raw(path: str = Query(...), _=Depends(verify)):
     p = _safe_path(path)

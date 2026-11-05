@@ -194,7 +194,13 @@ export function CodeEditor({ content, lang, memos, onChange, onSave, onContextMe
     if (!view) return
     const cur = view.state.doc.toString()
     if (cur !== content) {
-      view.dispatch({ changes: { from: 0, to: cur.length, insert: content } })
+      // Replace only the changed middle so the cursor and scroll position
+      // survive outside edits (preview text edits, an agent's write).
+      const max = Math.min(cur.length, content.length)
+      let from = 0, tail = 0
+      while (from < max && cur.charCodeAt(from) === content.charCodeAt(from)) from++
+      while (tail < max - from && cur.charCodeAt(cur.length - 1 - tail) === content.charCodeAt(content.length - 1 - tail)) tail++
+      view.dispatch({ changes: { from, to: cur.length - tail, insert: content.slice(from, content.length - tail) } })
     }
   }, [content])
 

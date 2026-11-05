@@ -33,6 +33,19 @@ def test_save_versions_and_new_file_collision(tmp_path, monkeypatch):
     assert not list(tmp_path.glob('.*.tmp-*'))
 
 
+def test_file_stat_changes_with_every_write_and_stays_contained(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, 'ALLOWED_ROOTS', [tmp_path])
+    path = tmp_path / 'deck.html'
+    path.write_text('<h1>a</h1>')
+    first = asyncio.run(routes_file.file_stat(str(path)))['signature']
+    read = asyncio.run(routes_file.read_file(str(path)))
+    asyncio.run(routes_file.write_file(FileWriteRequest(path=str(path), content='<h1>b</h1>', expectedVersion=read['version'])))
+    assert asyncio.run(routes_file.file_stat(str(path)))['signature'] != first
+    assert asyncio.run(routes_file.file_stat(str(tmp_path / 'gone.html'))).status_code == 404
+    assert asyncio.run(routes_file.file_stat(str(tmp_path))).status_code == 404
+    assert asyncio.run(routes_file.file_stat('/etc/passwd')).status_code == 403
+
+
 def upload_request(body):
     async def receive():
         return {'type': 'http.request', 'body': body, 'more_body': False}

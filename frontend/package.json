@@ -40,6 +40,7 @@
     "katex": "^0.16.45",
     "marked": "^17.0.5",
     "marked-katex-extension": "^5.1.8",
+    "parse5": "^8.0.1",
     "pdfjs-dist": "^4.10.38",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",

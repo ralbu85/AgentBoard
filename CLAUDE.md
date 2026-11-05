@@ -64,6 +64,8 @@ The hub is a pure relay for remote hosts: it never runs streamer/tmux for a remo
   - `InputCard.tsx` — input textarea + quick keys
 - `components/Sidebar/` — session list with filter, mobile overlay
 - `components/Viewer/` — split layout, code editor, file content, PDF, Jupyter notebook (read-only render, ✎ → raw JSON), resizer
+  - `HtmlView.tsx` — HTML preview (sandboxed iframe): follows disk writes via `/api/file-stat`, source|preview side by side, click-to-edit text
+  - `htmlSource.ts` — parse5 source mapping for preview edits (lazy chunk); `htmlPreviewRuntime.ts` — the script injected into the iframe
 - `components/SpawnModal/` — new-session dialog
 - `components/FilePanel.tsx` — file browser
 - `components/PdfViewer.tsx` — PDF rendering (pdfjs-dist, lazy-loaded)
@@ -164,6 +166,14 @@ cd frontend && npm run dev
 - **Claim from recent input, never from `document.hasFocus()` or heartbeats.** A browser left open on another PC is still visible and can still report focus, so either signal makes two machines fight over the width every 5 s and redraws live processes.
 - **Batch liveness checks — one `list-sessions`, not N `has-session`.** `_poll_background` forked `tmux has-session` per session every 2 s (17 sessions = 17 forks/cycle). `list_sessions()` returns all live names in one call; empty set == server down == all dead. (The per-session `display_info`+tail capture for state detection still forks 2×/session/cycle — that's the dominant background cost, a later optimization.)
 
+### HTML preview / editing
+- **Don't write the iframe's DOM back to the file.** Page scripts rewrite their own DOM (slide classes, wrappers, rendered math), so `outerHTML` would bake that into the source. Each start tag gets a `data-ab-i` ordinal (parse5 source offsets — same tree construction as the browser); an edit replaces only that element's inner source range, and only after the parent confirms the normalized source still equals the DOM's `before` (else: "페이지 스크립트가 바꾼 내용").
+- **Parse the file behind the same head the iframe sees.** `htmlSource` parses `SHAPE + file` so `<html>`/`<head>` merge and the insertion mode match the preview; parsing the file alone gives ordinals for elements that don't exist in the iframe.
+- **Don't reload the preview for preview edits.** A reload re-runs the deck's scripts and drops the reader back to slide 1. The parent answers each edit with patches (inner/after/remove + ordinal shift); it reloads only when the rest of the file would parse differently or the iframe is stale. Disk/source changes do reload, with scroll + hash restored.
+- **The injected runtime is `previewRuntime.toString()` — keep it self-contained.** No imports or module-scope references, and nothing that reads `</script`. It captures `parent.postMessage` and removes its own `<script>` before page scripts run; messages carry a per-load token, so page `postMessage` traffic (reveal.js events) is ignored.
+- **Use `contenteditable="plaintext-only"` and swallow page events while editing.** Rich mode inserts style spans/`<div>`s; deck keyboard handlers would turn arrow keys and Space into slide changes. Enter checks `isComposing` (Korean IME).
+- **Poll `/api/file-stat`, not `/api/file`.** An open preview checks once a second; re-reading the whole file each time is a lot of traffic on mobile. A dirty tab never auto-loads a disk change (banner instead), and preview edits save with `expectedVersion`.
+
 ### Mobile / UI
 - **Don't auto-reload from the client.** Slow mobile + reload script = infinite loop. Cache-bust on the server side instead.
 - **Don't asymmetrically resize fonts on keyboard show/hide.** Viewport jitters; users lose their place.
@@ -245,6 +255,7 @@ cd frontend && npm run dev
 
 ### Deployment
 - **Don't `sleep` to wait for the server.** Poll `/api/health`. Failed health = exit non-zero from `deploy.sh`.
+- **Don't run a plain `npm run build` to check a change.** `frontend/dist` is what the live server serves, and Vite empties it first — that ships unreleased JS and deletes the hashed chunks open tabs still lazy-load. Build to a scratch dir (`npm run build -- --outDir <tmp>`); only `deploy.sh` publishes (it stages, keeps old assets, swaps `index.html` last).
 - **Don't keep nested `v2/`, `v3/` folders.** Repo is now AgentBoard-only at the root. The `/root/TermHub/` directory still exists on the dev box for the legacy `.env` location, but it's not part of this repo.
 - **Don't commit `*.png` debug screenshots, `server.log`, `.session-titles.json`, `node_modules/`, or `yarn.lock`.** All gitignored — keep them so.
 
@@ -274,6 +285,7 @@ cd frontend && npm run dev
 - `GET  /api/browse?path=` — directory listing
 - `GET  /api/files?path=` — file listing with metadata
 - `GET  /api/file?path=` — read file
+- `GET  /api/file-stat?path=` — `{signature}` (mtime:size:inode) — cheap change poll for open HTML previews
 - `POST /api/file` — `{path, content}` write file
 - `GET  /api/push/key` — VAPID public key (applicationServerKey)
 - `POST /api/push/subscribe` — `{endpoint, keys, expirationTime}` store a browser push subscription

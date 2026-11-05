@@ -307,7 +307,7 @@ function LeafPane({ node, tabs, activeTabId, split, onClose, onSelect, onMove, o
           : activeTab.type === 'diff' ? <DiffView diff={activeTab.content} />
           : activeTab.type === 'pdf' ? <PdfViewer key={activeTab.id} url={activeTab.content} viewState={activeTab.viewState} onViewChange={rememberView} />
           : activeTab.type === 'image' ? <FileContent content={activeTab.content} type="image" lang="" />
-          : activeTab.type==='code'&&/\.html?$/i.test(activeTab.name) ? <HtmlView key={activeTab.id} content={activeTab.content} onChange={onContentChange} onSave={saveFile}/>
+          : activeTab.type==='code'&&/\.html?$/i.test(activeTab.name) ? <HtmlView key={activeTab.id} content={activeTab.content} tab={activeTab} ownerKey={ownerKey} onChange={onContentChange} onSave={saveFile}/>
           : isNb ? <NotebookView key={activeTab.path} tab={activeTab} ownerKey={ownerKey} />
           : (isMd && !mdEditMode) ? <MarkdownView content={activeTab.content} filePath={activeTab.path} onContextMenu={handleCtxMenu} onEdit={saveMdEdit} />
           : (
