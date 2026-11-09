@@ -14,6 +14,8 @@ const key = (target: Element, init: KeyboardEventInit) => target.dispatchEvent(n
 
 describe('HTML preview runtime', () => {
   beforeAll(() => {
+    // In the iframe the page is about:srcdoc: any history URL it sets throws.
+    History.prototype.replaceState = () => { throw new DOMException('cannot be created in a document with URL about:srcdoc', 'SecurityError') }
     document.body.innerHTML = annotate(src, parseElements(src))
     previewRuntime({token: 't', edit: true}, {send: message => { sent.push(message) }, listen: handler => { deliver = handler }})
   })
@@ -86,5 +88,12 @@ describe('HTML preview runtime', () => {
     expect(document.querySelector('[data-ab-hover]')).toBeNull()
     document.body.removeEventListener('click', page)
     document.body.removeEventListener('pointerdown', page)
+  })
+
+  it("keeps a deck's script running when the sandbox refuses its URL, and remembers the slide", async () => {
+    await new Promise(resolve => setTimeout(resolve, 50))   // the link clicked above changes the hash first
+    expect(() => history.replaceState(null, '', '#3')).not.toThrow()
+    await new Promise(resolve => setTimeout(resolve, 250))
+    expect(sent.filter(m => m.t === 'view').pop()?.hash).toBe('#3')
   })
 })

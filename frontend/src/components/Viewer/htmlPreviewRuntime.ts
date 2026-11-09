@@ -347,11 +347,27 @@ button:hover,button:focus-visible{background:rgba(255,255,255,.16)}
   // ── Keep the reader's place across reloads ──
   const scrolls = new Map<number, PreviewScroll>()
   for (const entry of cfg.restore?.scrolls || []) scrolls.set(entry[0], entry)
+  let hash = location.hash
   const report = () => {
     viewTimer = 0
-    send({t: 'view', x: w.scrollX, y: w.scrollY, hash: location.hash, scrolls: Array.from(scrolls.values()).slice(-20)})
+    send({t: 'view', x: w.scrollX, y: w.scrollY, hash, scrolls: Array.from(scrolls.values()).slice(-20)})
   }
   const queueReport = () => { if (!viewTimer) viewTimer = w.setTimeout(report, 200) }
+  // An srcdoc page resolves URLs against the app's, so a deck's
+  // `history.replaceState(null, '', '#3')` throws a SecurityError — when that
+  // happens during startup, the rest of the deck's script (scaling the slides
+  // to the window) never runs. The fragment is kept here instead and restored
+  // after a reload.
+  for (const name of ['pushState', 'replaceState'] as const) {
+    const native = History.prototype[name]
+    History.prototype[name] = function (this: History, data: unknown, unused: string, url?: string | URL | null) {
+      try { native.call(this, data, unused, url) } catch { /* the URL can't change inside srcdoc */ }
+      if (url == null) return
+      const target = String(url), at = target.indexOf('#')
+      hash = at < 0 ? '' : target.slice(at)
+      queueReport()
+    }
+  }
   w.addEventListener('scroll', event => {
     const target = event.target
     if (target instanceof Element && target.hasAttribute(ATTR)) {
@@ -362,7 +378,7 @@ button:hover,button:focus-visible{background:rgba(255,255,255,.16)}
     queueReport()
     placeBar()
   }, {capture: true, passive: true})
-  w.addEventListener('hashchange', queueReport)
+  w.addEventListener('hashchange', () => { hash = location.hash; queueReport() })
   const restore = cfg.restore
   if (restore) {
     for (const type of ['wheel', 'keydown', 'pointerdown', 'touchstart']) {
