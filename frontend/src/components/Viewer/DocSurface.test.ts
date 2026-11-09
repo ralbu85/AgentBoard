@@ -194,6 +194,19 @@ it('새로고침 reads an HTML file from disk at once, not the copy the tab hold
   expect(host.querySelector('iframe')?.getAttribute('srcdoc')).toContain('agent')
 })
 
+it('previews an HTML page with its project\'s files and opens a linked page in a tab', async () => {
+  localStorage.removeItem('agentboard.doc.mode.html')
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => url.startsWith('/api/preview-base?')
+    ? {ok: true, json: async () => ({prefix: '/api/preview/T/', dir: 'decks/', root: '/lec'})}
+    : url.startsWith('/api/file?') ? {ok: true, json: async () => ({content: '<p>next</p>', version: 'v3'})} : {ok: false}))
+  mount('<img src="fig.png"><a href="next.html">next</a>', 'deck.html', 'code')
+  const frame = () => host.querySelector('iframe')!
+  await vi.waitFor(() => expect(frame().getAttribute('srcdoc')).toContain(`<base href="${location.origin}/api/preview/T/decks/">`))
+  const token = /"token":"([^"]+)"/.exec(frame().getAttribute('srcdoc')!)![1]
+  act(() => { window.dispatchEvent(new MessageEvent('message', {source: frame().contentWindow, data: {t: 'open', href: `${location.origin}/api/preview/T/decks/next.html`, __ab: token}})) })
+  await vi.waitFor(() => expect(useStore.getState()._viewerState[KEY].tabs.map(t => t.path)).toContain('/lec/decks/next.html'))
+})
+
 it('saves a dirty file tab when it closes instead of asking', async () => {
   const ask = vi.fn(() => false)
   vi.stubGlobal('confirm', ask)

@@ -43,6 +43,7 @@ The hub is a pure relay for remote hosts: it never runs streamer/tmux for a remo
 - `ws.py` — WebSocket endpoint, auth check, message routing, broadcast
 - `routes_session.py` — REST: login, workers, spawn, kill, input, key, health
 - `routes_file.py` — REST: browse, files, read / write / upload (path-traversal safe)
+- `routes_preview.py` — read-only files of a previewed HTML page's project, under a signed expiring token (the sandboxed iframe has no cookie)
 - `tunnel.py` — Cloudflare tunnel (optional)
 - `push.py` — Web Push (VAPID): fires an OS notification when a session goes
   `waiting`/`completed`; subscriptions persisted, deduped per session
@@ -173,6 +174,7 @@ cd frontend && npm run dev
 - **Don't write the iframe's DOM back to the file.** Page scripts rewrite their own DOM (slide classes, wrappers, rendered math), so `outerHTML` would bake that into the source. Each start tag gets a `data-ab-i` ordinal (parse5 source offsets — same tree construction as the browser); an edit replaces only that element's inner source range, and only after the parent confirms the normalized source still equals the DOM's `before` (else: "페이지 스크립트가 바꾼 내용").
 - **Parse the file behind the same head the iframe sees.** `htmlSource` parses `SHAPE + file` so `<html>`/`<head>` merge and the insertion mode match the preview; parsing the file alone gives ordinals for elements that don't exist in the iframe.
 - **Don't reload the preview for preview edits.** A reload re-runs the deck's scripts and drops the reader back to slide 1. The parent answers each edit with patches (inner/after/remove + ordinal shift); it reloads only when the rest of the file would parse differently or the iframe is stale. Disk/source changes do reload, with scroll + hash restored.
+- **A previewed HTML page loads its project's files through a signed address, not the cookie.** The iframe's opaque origin gets no session cookie, so `/api/preview-base` (cookie-checked) issues `/api/preview/<token>/` for the page's project (nearest folder with `.git`/`_quarto.yml`, so `../site_libs` resolves), read-only, a day long, dot-files refused, every response `CSP: sandbox` so an HTML file opened from it can't act as the app. The page gets a `<base>` for its folder; its CSP allows that prefix and the common CDNs and nothing else, so what it reads can't be sent anywhere. With a `<base>`, `#s2` would load the folder: the runtime moves same-page fragments itself and hands other links to the parent (a project page opens in a tab, anything else in a new window).
 - **The injected runtime is `previewRuntime.toString()` — keep it self-contained.** No imports or module-scope references, and nothing that reads `</script`. It captures `parent.postMessage` and removes its own `<script>` before page scripts run; messages carry a per-load token, so page `postMessage` traffic (reveal.js events) is ignored.
 - **A srcdoc page can't change its URL — the runtime absorbs `history.pushState`/`replaceState`.** The iframe document is `about:srcdoc` but resolves URLs against the app's, so a deck's `replaceState(null, '', '#3')` throws a SecurityError. Decks that call it during startup (the STML slides) stopped there, before scaling their slides to the window. The runtime wraps both, swallows the error and keeps the fragment so a reload returns to the same slide.
 - **Edit mode claims a click only for text it would edit.** Swallowing every click (to keep click-to-advance decks still) also ate the deck's own ‹ › buttons, and a button's arrow text opened as an editor instead. Controls (`button`, form fields, `summary`, ARIA roles, links laid out as blocks) and symbol-only text (`→`, `▶`) stay the page's; inline links in a sentence are still edited as text.
@@ -304,6 +306,8 @@ cd frontend && npm run dev
 - `GET  /api/browse?path=` — directory listing
 - `GET  /api/files?path=` — file listing with metadata
 - `GET  /api/file?path=` — read file
+- `GET  /api/preview-base?path=` — `{prefix, dir, root}`: the signed address of an HTML page's project files
+- `GET  /api/preview/{token}/{path}` — a file of that project (no cookie; the token grants it)
 - `GET  /api/file-stat?path=` — `{signature}` (mtime:size:inode) — cheap change poll for every open file
 - `POST /api/file` — `{path, content}` write file
 - `GET  /api/push/key` — VAPID public key (applicationServerKey)

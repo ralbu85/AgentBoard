@@ -108,3 +108,19 @@ describe('HTML source mapping', () => {
     expect(result.patches).toBeNull()
   })
 })
+
+describe('preview document', () => {
+  it('loads a page\'s own files from its project and nothing else beyond the CDNs', () => {
+    const files = {project: 'https://app.test/api/preview/T/', folder: 'https://app.test/api/preview/T/_site/chapters/'}
+    const doc = buildDocument('<p>x</p>', {token: 't', edit: false}, files)
+    expect(doc).toContain('<base href="https://app.test/api/preview/T/_site/chapters/">')
+    const policy = /content="([^"]+)"/.exec(doc)![1]
+    expect(policy).toContain("img-src data: blob: https://app.test/api/preview/T/ https://cdn.jsdelivr.net")
+    expect(policy).toContain('base-uri https://app.test/api/preview/T/;')
+    expect(policy).not.toMatch(/connect-src[^;]*\*|https:;|'self'/)
+    const alone = buildDocument('<p>x</p>', {token: 't', edit: false})
+    expect(alone).not.toContain('<base')
+    expect(alone).toContain("base-uri 'none'")
+  })
+})
+

@@ -5,6 +5,7 @@ import {isEditableFile, useStore, type ViewerTab} from '../../store'
 import {MOD, readPref, useDocSync, writePref, type SaveState} from './docSync'
 import {HtmlPreview} from './HtmlPreview'
 import {MarkdownPreview} from './MarkdownPreview'
+import {openFileTab} from './openFile'
 
 /** Every text file tab is a DocSurface: one toolbar (preview / side by side /
  *  source, click-to-edit, undo, save state), one disk banner and one save
@@ -55,6 +56,7 @@ export function DocSurface({tab, ownerKey, memos, onContextMenu, onViewChange}: 
   onViewChange?: (view: NonNullable<ViewerTab['viewState']>) => void
 }) {
   const kind = kindOf(tab), rendered = kind !== 'code', writable = isEditableFile(tab)
+  const local = JSON.parse(ownerKey)[0] === 'local'
   const [mode, setModeState] = useState<DocMode>(() => {
     if (!rendered) return 'source'
     const saved = readPref(modePref(kind))
@@ -137,7 +139,7 @@ export function DocSurface({tab, ownerKey, memos, onContextMenu, onViewChange}: 
       {mode !== 'view' && <CodeEditor content={tab.content} lang={kind === 'code' ? tab.lang : kind} memos={memos} readOnly={!writable}
         onChange={change} onSave={sync.flush} onContextMenu={onContextMenu} viewState={tab.viewState} onViewChange={onViewChange}/>}
       {showsPreview && (kind === 'html'
-        ? <HtmlPreview content={tab.content} path={tab.path} doc={doc} slot={slot}/>
+        ? <HtmlPreview content={tab.content} path={tab.path} local={local} doc={doc} slot={slot} onOpenFile={file => void openFileTab(file, ownerKey)}/>
         : <div ref={scroller} className="doc-scroll">
           <MarkdownPreview content={tab.content} filePath={tab.path} doc={doc} slot={slot} delay={mode === 'split' ? 150 : 0} onContextMenu={onContextMenu}/>
         </div>)}

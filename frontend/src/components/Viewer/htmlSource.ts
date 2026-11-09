@@ -9,12 +9,26 @@ import {previewRuntime, type PreviewConfig, type PreviewPatch} from './htmlPrevi
 type ParentNode = DefaultTreeAdapterMap['parentNode']
 
 export const PLACEHOLDER = '새 텍스트'
-// Opaque sandbox origin + CSP: the HTML cannot reach the app, its API, local
-// files or credentials. Only resources embedded in the file load.
-const POLICY = "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; media-src data: blob:; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"
-const HEAD = `<!doctype html><meta http-equiv="Content-Security-Policy" content="${POLICY}"><meta name="viewport" content="width=device-width,initial-scale=1">`
-// The token shape of HEAD + runtime <script>: parsing the file behind it puts
-// parse5 in the same insertion mode the iframe is in when the file begins.
+// Opaque sandbox origin + CSP: the HTML cannot reach the app, its API or
+// credentials. It loads what the file embeds, files of its own project (a
+// signed read-only address, see routes_preview.py) and the common CDNs.
+// Nothing can be sent anywhere else, so what the page reads stays on screen.
+const CDN = 'https://cdn.jsdelivr.net https://unpkg.com https://cdnjs.cloudflare.com https://fonts.googleapis.com https://fonts.gstatic.com https://cdn.plot.ly'
+const policy = (project = '') => {
+  const own = project ? ` ${project}` : ''
+  return `default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval' blob:${own} ${CDN}; style-src 'unsafe-inline'${own} ${CDN}; ` +
+    `img-src data: blob:${own} ${CDN}; font-src data:${own} ${CDN}; media-src data: blob:${own}; connect-src${own} ${CDN}; worker-src blob:${own}; ` +
+    `frame-src 'none'; object-src 'none'; base-uri ${project || "'none'"}; form-action 'none'`
+}
+const attr = (value: string) => value.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;')
+/** Where a previewed page's own files are served: `project` grants the whole
+ *  project (`../site_libs`), `folder` is the page's folder (its <base>). */
+export interface PreviewFiles { project: string; folder: string }
+const head = (files?: PreviewFiles) => `<!doctype html><meta http-equiv="Content-Security-Policy" content="${attr(policy(files?.project))}"><meta name="viewport" content="width=device-width,initial-scale=1">` +
+  (files ? `<base href="${attr(files.folder)}">` : '')
+// The token shape of the head + runtime <script>: parsing the file behind it puts
+// parse5 in the same insertion mode the iframe is in when the file begins (a
+// <base> is one more head element and changes nothing).
 const SHAPE = '<!doctype html><meta><meta><script></script>'
 const HTML_NS = 'http://www.w3.org/1999/xhtml'
 const LOCKED = new Set(['html', 'head', 'body', 'script', 'style', 'noscript', 'template', 'title', 'pre', 'textarea',
@@ -86,8 +100,8 @@ export function annotate(src: string, els: SourceElement[], from = 0, to = src.l
 const SEPARATORS = new RegExp(`[${String.fromCharCode(0x2028, 0x2029)}]`, 'g')
 const json = (value: unknown) => JSON.stringify(value).replace(/</g, '\\u003c').replace(SEPARATORS, c => `\\u${c.charCodeAt(0).toString(16)}`)
 
-export function buildDocument(src: string, cfg: PreviewConfig): string {
-  return `${HEAD}<script>${RUNTIME}(${json(cfg)})</script>${annotate(src, parseElements(src))}`
+export function buildDocument(src: string, cfg: PreviewConfig, files?: PreviewFiles): string {
+  return `${head(files)}<script>${RUNTIME}(${json(cfg)})</script>${annotate(src, parseElements(src))}`
 }
 
 /** The element a preview message names, verified against the current source. */

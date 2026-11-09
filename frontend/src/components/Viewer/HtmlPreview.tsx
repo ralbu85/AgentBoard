@@ -5,7 +5,8 @@ import {useToasts} from '../../toasts'
 import {uiId} from '../../uiId'
 import type {DocEdit} from './DocSurface'
 import type {PreviewRestore} from './htmlPreviewRuntime'
-import type {PreviewOp} from './htmlSource'
+import type {PreviewFiles, PreviewOp} from './htmlSource'
+import {quietJson} from './docSync'
 
 // parse5 is only needed once an HTML file is previewed.
 type SourceLib = typeof import('./htmlSource')
@@ -14,6 +15,11 @@ const loadSourceLib = () => sourceLib ||= import('./htmlSource')
 
 // Where each file was being read (scroll, slide hash) survives tab switches.
 const places = new Map<string, PreviewRestore>()
+
+/** A page's own files, served read-only under a signed address that lasts a day. */
+interface Files extends PreviewFiles { self: string; root: string }
+const FILES_REFRESH = 6 * 3600_000
+const DOCS = /\.(html?|md|markdown|qmd)$/i
 
 // Inert parse (template content never runs scripts or loads resources), so the
 // serializer formats source text exactly as the iframe formats its DOM.
@@ -33,7 +39,11 @@ const previewOp = (m: Record<string, unknown>): PreviewOp | null => {
 /** The rendered side of an HTML file: a sandboxed iframe that follows the
  *  source, with click-to-edit text when `doc` allows it. Without `doc` it is a
  *  read-only preview (the file-panel peek). */
-export function HtmlPreview({content, path, doc, slot}: {content: string; path?: string; doc?: DocEdit; slot?: HTMLElement | null}) {
+export function HtmlPreview({content, path, local = false, doc, slot, onOpenFile}: {
+  content: string; path?: string; doc?: DocEdit; slot?: HTMLElement | null
+  local?: boolean                         // a file of this machine: its folder's images, CSS and JS load
+  onOpenFile?: (path: string) => void     // a link to another page or document of the project
+}) {
   const writable = !!doc?.writable
   const editing = !!doc?.editing
   const [lib, setLib] = useState<SourceLib | null>(null)
@@ -46,20 +56,42 @@ export function HtmlPreview({content, path, doc, slot}: {content: string; path?:
   const frameEditing = useRef(false)           // a text block is open in the iframe
   const editingRef = useRef(editing); editingRef.current = editing
   const reloadTimer = useRef(0)
+  const files = useRef<Files | null>(null)
+  const [filesReady, setFilesReady] = useState(!path || !local)
 
   useEffect(() => { let alive = true; void loadSourceLib().then(m => { if (alive) setLib(m) }); return () => { alive = false } }, [])
+  // The first load waits for the address of the page's files; a fresh one is
+  // fetched well before it expires and used from the next load on.
+  useEffect(() => {
+    if (!path || !local) return
+    let alive = true
+    const name = path.slice(path.lastIndexOf('/') + 1)
+    const fetchFiles = () => quietJson(`/api/preview-base?path=${encodeURIComponent(path)}`).catch(() => null).then(r => {
+      if (!alive) return
+      if (typeof r?.prefix === 'string' && typeof r.dir === 'string' && typeof r.root === 'string') {
+        const project = location.origin + r.prefix, folder = project + r.dir
+        files.current = {project, folder, self: folder + encodeURIComponent(name), root: r.root}
+      }
+      setFilesReady(true)
+    })
+    void fetchFiles()
+    const timer = window.setInterval(fetchFiles, FILES_REFRESH)
+    return () => { alive = false; window.clearInterval(timer) }
+  }, [path, local])
   // An open text block holds disk loads (its source range must stay put).
   useEffect(() => { doc?.setPaused(() => frameEditing.current); return () => doc?.setPaused(null) }, [])
 
   const reply = (message: Record<string, unknown>) => iframe.current?.contentWindow?.postMessage({...message, __ab: token.current}, '*')
   const reload = () => {
-    if (!lib) return
+    if (!lib || !filesReady) return
     window.clearTimeout(reloadTimer.current)
     const value = current()
     token.current = uiId()
     synced.current = value
     frameEditing.current = false
-    setSrcDoc(lib.buildDocument(value, {token: token.current, edit: writable && editingRef.current, restore: view.current}))
+    const own = files.current
+    setSrcDoc(lib.buildDocument(value, {token: token.current, edit: writable && editingRef.current, restore: view.current, self: own?.self},
+      own ? {project: own.project, folder: own.folder} : undefined))
   }
   const scheduleReload = (delay = 300) => {
     window.clearTimeout(reloadTimer.current)
@@ -70,7 +102,7 @@ export function HtmlPreview({content, path, doc, slot}: {content: string; path?:
   }
   useEffect(() => () => window.clearTimeout(reloadTimer.current), [])
   // A (re)mounted iframe always starts from the current source.
-  useEffect(() => { if (lib) reload() }, [lib])
+  useEffect(() => { if (lib && filesReady) reload() }, [lib, filesReady])
   useEffect(() => { if (lib && content !== synced.current) scheduleReload() }, [content])
   // Turning editing off commits an open block inside the page.
   useEffect(() => { reply({t: 'mode', edit: editing}) }, [editing])
@@ -84,6 +116,7 @@ export function HtmlPreview({content, path, doc, slot}: {content: string; path?:
       return
     }
     if (m.t === 'undo') { doc?.undo(); return }
+    if (m.t === 'open') { if (typeof m.href === 'string' && m.href.length < 8192) follow(m.href); return }
     if (m.t === 'resync') { reload(); return }
     if (m.t === 'end') { frameEditing.current = false; scheduleReload(0); return }
     if (m.t === 'begin') {
@@ -123,6 +156,23 @@ export function HtmlPreview({content, path, doc, slot}: {content: string; path?:
     return () => window.removeEventListener('message', onMessage)
   }, [])
 
+  /** A link the page didn't handle: a page or document of the project opens in
+   *  a tab, its other files and other sites in a new window. */
+  const follow = (href: string) => {
+    let url: URL
+    try { url = new URL(href) } catch { return }
+    const own = files.current
+    if (own && href.startsWith(own.project)) {
+      let rel = ''
+      try { rel = decodeURIComponent(url.pathname.slice(new URL(own.project).pathname.length)) } catch { return }
+      if (onOpenFile && DOCS.test(rel)) { onOpenFile(`${own.root}/${rel}`); return }
+    } else if (url.origin === location.origin) {
+      useToasts.getState().push('이 링크가 가리키는 파일은 미리보기에서 열 수 없습니다.')
+      return
+    }
+    window.open(url.href, '_blank', 'noopener,noreferrer')
+  }
+
   // The file as it is on disk now, in the app as it is served now.
   const refresh = async () => {
     if (await checkForUpdate(true)) { void reloadApp(); return }
@@ -133,7 +183,7 @@ export function HtmlPreview({content, path, doc, slot}: {content: string; path?:
   return <>
     {slot && createPortal(<>
       <button className="doc-tool" onClick={() => void refresh()} title="파일을 다시 읽고 페이지 스크립트를 처음부터 다시 실행">새로고침</button>
-      <span className="doc-note" title="미리보기는 파일에 들어 있는 리소스만 불러옵니다">외부 리소스·서버 연결 제외</span>
+      <span className="doc-note" title="같은 프로젝트 폴더의 파일과 주요 CDN(jsDelivr, unpkg, cdnjs, Google Fonts, Plotly)만 불러옵니다. 다른 사이트의 그림·스크립트와 서버 연결은 막힙니다.">다른 사이트 리소스 제외</span>
     </>, slot)}
     {lib
       ? <iframe ref={iframe} className="html-preview-frame" title="HTML 미리보기" sandbox="allow-scripts" referrerPolicy="no-referrer" srcDoc={srcDoc}/>

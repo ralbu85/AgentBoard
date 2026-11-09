@@ -19,6 +19,7 @@ from .routes_notebook import router as notebook_router
 from .notebooks import manager as notebook_manager
 from .browser import manager as browser_manager
 from .routes_file import router as file_router
+from .routes_preview import router as preview_router
 from .ws import handle_ws, broadcast
 from .agent_ws import handle_agent_ws
 from .security_audit import AuditMiddleware, audit
@@ -75,6 +76,7 @@ app.include_router(browser_router)
 app.include_router(desktop_router)
 app.include_router(notebook_router)
 app.include_router(file_router)
+app.include_router(preview_router)
 app.add_api_websocket_route("/ws", handle_ws)
 app.add_api_websocket_route("/agent-ws", handle_agent_ws)
 

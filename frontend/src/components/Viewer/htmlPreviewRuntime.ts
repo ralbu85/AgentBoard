@@ -10,7 +10,10 @@
 
 export type PreviewScroll = [number, string, number, number]
 export interface PreviewRestore { x: number; y: number; hash: string; scrolls: PreviewScroll[] }
-export interface PreviewConfig { token: string; edit: boolean; restore?: PreviewRestore | null }
+export interface PreviewConfig {
+  token: string; edit: boolean; restore?: PreviewRestore | null
+  self?: string   // the page's own address when its folder's files are served
+}
 export interface PreviewPatch { kind: 'inner' | 'after' | 'remove'; i: number; html?: string; from: number; delta: number }
 type Host = { send: (message: Record<string, unknown>) => void; listen: (handler: (message: Record<string, unknown>) => void) => void }
 
@@ -343,6 +346,26 @@ button:hover,button:focus-visible{background:rgba(255,255,255,.16)}
   w.addEventListener('drop', event => { if (current) { event.preventDefault(); event.stopImmediatePropagation() } }, {capture: true})
   w.addEventListener('resize', placeBar)
   d.addEventListener('selectionchange', placeBar)
+
+  // ── Links: an srcdoc page resolves them against the app, or against its
+  // folder's <base>, so following one would load that address into the preview
+  // instead. A link within the page moves its fragment; any other goes to the
+  // app, which opens a file of the project in a tab and a site in a new window.
+  w.addEventListener('click', event => {
+    if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+    const at = event.target instanceof Element ? event.target : event.target instanceof Node ? event.target.parentElement : null
+    const link = at?.closest('a[href]')
+    if (!link || link.hasAttribute('download')) return
+    const raw = link.getAttribute('href') || ''
+    let url: URL
+    try { url = new URL(raw, d.baseURI) } catch { return }
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return
+    event.preventDefault()
+    const fragment = raw.startsWith('#') ? raw : cfg.self && url.href.split('#')[0] === cfg.self ? url.hash : null
+    if (fragment === null) { send({t: 'open', href: url.href}); return }
+    if (location.hash !== fragment) location.hash = fragment
+    else if (fragment.length > 1) { try { d.getElementById(decodeURIComponent(fragment.slice(1)))?.scrollIntoView() } catch { /* malformed escape */ } }
+  })
 
   // ── Keep the reader's place across reloads ──
   const scrolls = new Map<number, PreviewScroll>()
