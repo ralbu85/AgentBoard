@@ -214,6 +214,7 @@ cd frontend && npm run dev
 - **Don't serve static files without containing the resolved path.** `serve_spa` in `main.py` joins the URL onto `dist/`; without `resolve()` + `is_relative_to(dist)` a `/..%2f..%2fetc/passwd` reads arbitrary files **unauthenticated** (this route has no auth dep). Was a live CRITICAL bug — fixed. Mirror the file API's `_safe_path`.
 - **Don't bind the backend to `0.0.0.0`.** nginx (same host) is the only ingress; loopback bind (`AGENTBOARD_HOST`, default `127.0.0.1`) keeps `:3002` off the network so nothing bypasses the proxy. Remote agents come in via nginx→`/agent-ws`, not direct.
 - **Don't let the default password (`changeme`) boot a real server.** The token is a deterministic hash of it → auth bypass. `main.py` raises unless `AGENTBOARD_ALLOW_DEFAULT_PW=1`.
+- **Check who started a state-changing request, not just the cookie.** Every `*.<tailnet>.ts.net` node is one *site*, so the `SameSite=Lax` cookie rides along from a course site or board page served there; with only a cookie check, a script on such a page could open `/ws` and type into a terminal, or POST `/api/upload`. `auth.OriginGuard` refuses unsafe methods and WebSockets whose `Sec-Fetch-Site` isn't `same-origin` (Origin vs forwarded host when the header is missing: the desktop relay). GETs stay open — another site can't read their responses.
 - **Use `hmac.compare_digest` for every token/cookie compare** (`auth.py`, login, `agent_ws`). Plain `==` is timing-variable.
 
 ### Multi-machine (Hub + Agent)

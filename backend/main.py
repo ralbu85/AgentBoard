@@ -22,6 +22,7 @@ from .routes_file import router as file_router
 from .ws import handle_ws, broadcast
 from .agent_ws import handle_agent_ws
 from .security_audit import AuditMiddleware, audit
+from .auth import OriginGuard
 
 _frontend_dist = Path(__file__).parent.parent / "frontend" / "dist"
 
@@ -63,6 +64,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None)
+app.add_middleware(OriginGuard)       # inside the audit, so refusals are logged
 app.add_middleware(AuditMiddleware)
 
 app.include_router(session_router)

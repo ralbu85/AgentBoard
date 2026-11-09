@@ -3,13 +3,12 @@ import asyncio
 import re
 import uuid
 from dataclasses import dataclass, field
-from urllib.parse import urlsplit
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, ConfigDict, Field
 
-from .auth import verify, verify_ws
+from .auth import same_origin, verify, verify_ws
 from .security_audit import audit, destination
 
 router = APIRouter(prefix='/api/desktop')
@@ -39,18 +38,6 @@ class Desktop:
 
 
 desktops: dict[str, Desktop] = {}
-
-
-def same_origin(headers):
-    origin = headers.get('origin')
-    if not origin:
-        return True  # Non-browser agent clients authenticate with the cookie.
-    try:
-        source = urlsplit(origin)
-        target = urlsplit('//'+headers.get('x-forwarded-host', headers.get('host', '')).split(',')[0].strip())
-        return source.scheme in ('http', 'https') and source.hostname == target.hostname and (target.port is None or source.port == target.port)
-    except ValueError:
-        return False
 
 
 @router.get('/clients')
