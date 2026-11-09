@@ -730,6 +730,8 @@ body {
 }
 .toast-error { background: #5a1f1f; color: #ffd7d7; border: 1px solid #8a3030; }
 .toast-info  { background: #1f3a5a; color: #d7e7ff; border: 1px solid #305580; }
+.app-update { display: flex; align-items: center; gap: 10px; cursor: default; }
+.app-update button { flex-shrink: 0; padding: 4px 10px; border-radius: 5px; border: 0; background: var(--accent); color: #fff; font: inherit; font-weight: 600; cursor: pointer; }
 @keyframes toast-in { from { opacity: 0; transform: translateX(8px); } to { opacity: 1; transform: none; } }
 
 .full-log-btn {

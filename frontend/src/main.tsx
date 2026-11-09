@@ -1,5 +1,6 @@
 import { createRoot } from 'react-dom/client'
 import { App } from './App'
+import { watchForUpdates } from './appUpdate'
 import './index.css'
 import 'katex/dist/katex.min.css'
 
@@ -31,6 +32,7 @@ const queueVVH = () => {
   _vvhTimer = window.setTimeout(setVVH, 120)
 }
 setVVH()
+watchForUpdates()
 vv?.addEventListener('resize', queueVVH)
 window.addEventListener('orientationchange', queueVVH)
 // Keyboard dismissed / focus left the input — re-sync even if the last small

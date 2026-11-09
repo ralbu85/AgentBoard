@@ -11,8 +11,9 @@ export const SAVE_DELAY = 1000
 const RETRY_DELAY = 5000
 
 // Polling must stay quiet: a deleted file would otherwise toast every second.
+// A request that never answers (a dropped mobile link) must not stall the poll for good.
 export const quietJson = async (url: string) => {
-  const res = await fetch(url, {credentials: 'include'})
+  const res = await fetch(url, {credentials: 'include', signal: AbortSignal.timeout?.(10_000)})
   return res.ok ? res.json() : null
 }
 const findTab = (id: string, ownerKey: string) => useStore.getState()._viewerState[ownerKey]?.tabs.find(t => t.id === id)
@@ -79,6 +80,18 @@ export function useDocSync(tab: ViewerTab, ownerKey: string, opts: {paused?: () 
     useStore.getState().markTabSaved(id, content, version, ownerKey)
     setConflict(false); setError(''); setState('saved')
   }
+  // A version read from disk: take it, note that it matches the tab, or stop for a conflict.
+  const take = (file: {content: string; version: string}) => {
+    const current = findTab(id, ownerKey)
+    if (!current || file.version === current.version) return
+    if (file.content === current.content) {
+      useStore.getState().markTabSaved(id, current.content, file.version, ownerKey)
+      setConflict(false); settle()
+      return
+    }
+    if (current.dirty) { setConflict(true); return }
+    load(file.content, file.version)
+  }
   // Poll /api/file-stat (cheap) and read the file only when it changed.
   useEffect(() => {
     if (!live) return
@@ -93,15 +106,7 @@ export function useDocSync(tab: ViewerTab, ownerKey: string, opts: {paused?: () 
         const file = await quietJson(`/api/file?path=${path}`)
         if (!alive || typeof file?.version !== 'string' || typeof file.content !== 'string' || writes.current || latest.current.paused?.()) return
         signature = stat.signature
-        const current = findTab(id, ownerKey)
-        if (!current || file.version === current.version) return
-        if (file.content === current.content) {
-          useStore.getState().markTabSaved(id, current.content, file.version, ownerKey)
-          setConflict(false); settle()
-          return
-        }
-        if (current.dirty) { setConflict(true); return }
-        load(file.content, file.version)
+        take(file)
       } catch { /* offline: the next tick retries */ } finally { busy = false }
     }
     void check()
@@ -114,6 +119,12 @@ export function useDocSync(tab: ViewerTab, ownerKey: string, opts: {paused?: () 
     const file = await quietJson(`/api/file?path=${encodeURIComponent(tab.path)}`).catch(() => null)
     if (typeof file?.content !== 'string' || typeof file.version !== 'string') { toast('파일을 다시 읽지 못했습니다.'); return null }
     return file as {content: string; version: string}
+  }
+  // 새로고침: read the file now rather than waiting for the poll (which an open editor holds).
+  const reread = async () => {
+    if (!live || writes.current) return
+    const file = await readDisk()
+    if (file) take(file)
   }
   const keepDisk = async () => {
     if (!window.confirm('이 탭의 수정을 버리고 디스크의 파일을 불러올까요?')) return
@@ -129,7 +140,7 @@ export function useDocSync(tab: ViewerTab, ownerKey: string, opts: {paused?: () 
     useStore.getState().markTabSaved(id, current.content, res.version, ownerKey)
     setConflict(false); setError(''); settle()
   }
-  return {state, error, conflict, flush, keepDisk, keepMine}
+  return {state, error, conflict, flush, reread, keepDisk, keepMine}
 }
 
 /** Counts changes to a file on disk (checked once a second while visible) for

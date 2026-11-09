@@ -27,6 +27,7 @@ export interface DocEdit {
   apply: (base: string, next: string) => void           // an inline edit: an undo step, the buffer, saved at once
   undo: () => void
   setPaused: (paused: (() => boolean) | null) => void   // an inline editor is open: hold disk loads and undo
+  reread: () => Promise<void>                           // read the file from disk now (새로고침)
 }
 
 /** The ✎ toggle, shared by every format (HTML, Markdown, notebook cells). */
@@ -94,6 +95,7 @@ export function DocSurface({tab, ownerKey, memos, onContextMenu, onViewChange}: 
       sync.flush()
     },
     setPaused: fn => { paused.current = fn },
+    reread: sync.reread,
   }
   const setMode = (next: DocMode) => { setModeState(next); writePref(modePref(kind), next) }
 

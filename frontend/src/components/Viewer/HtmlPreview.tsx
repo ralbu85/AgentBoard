@@ -1,5 +1,6 @@
 import {useEffect, useRef, useState} from 'react'
 import {createPortal} from 'react-dom'
+import {checkForUpdate, reloadApp} from '../../appUpdate'
 import {useToasts} from '../../toasts'
 import {uiId} from '../../uiId'
 import type {DocEdit} from './DocSurface'
@@ -122,9 +123,16 @@ export function HtmlPreview({content, path, doc, slot}: {content: string; path?:
     return () => window.removeEventListener('message', onMessage)
   }, [])
 
+  // The file as it is on disk now, in the app as it is served now.
+  const refresh = async () => {
+    if (await checkForUpdate(true)) { void reloadApp(); return }
+    await doc?.reread()
+    reload()
+  }
+
   return <>
     {slot && createPortal(<>
-      <button className="doc-tool" onClick={reload} title="페이지 스크립트를 처음부터 다시 실행">새로고침</button>
+      <button className="doc-tool" onClick={() => void refresh()} title="파일을 다시 읽고 페이지 스크립트를 처음부터 다시 실행">새로고침</button>
       <span className="doc-note" title="미리보기는 파일에 들어 있는 리소스만 불러옵니다">외부 리소스·서버 연결 제외</span>
     </>, slot)}
     {lib

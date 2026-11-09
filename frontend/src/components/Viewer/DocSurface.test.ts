@@ -181,6 +181,19 @@ it('stops autosave and asks when the tab and the file both changed', async () =>
   expect(host.querySelector('.doc-banner')).toBeNull()
 })
 
+it('새로고침 reads an HTML file from disk at once, not the copy the tab holds', async () => {
+  localStorage.removeItem('agentboard.doc.mode.html')
+  mount('<p>old</p>', 'deck.html', 'code')
+  await vi.waitFor(() => expect(host.querySelector('iframe')?.getAttribute('srcdoc')).toContain('old'))
+  // The poll has seen nothing (an open editor holds it); only a direct read finds the agent's write.
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => url.startsWith('/api/file?')
+    ? {ok: true, json: async () => ({content: '<p>agent</p>', version: 'v9'})} : {ok: false}))
+  await act(async () => { button('새로고침').click() })
+  await flush()
+  expect(content()).toBe('<p>agent</p>')
+  expect(host.querySelector('iframe')?.getAttribute('srcdoc')).toContain('agent')
+})
+
 it('saves a dirty file tab when it closes instead of asking', async () => {
   const ask = vi.fn(() => false)
   vi.stubGlobal('confirm', ask)

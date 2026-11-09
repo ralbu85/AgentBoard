@@ -1,3 +1,4 @@
+import { checkForUpdate } from './appUpdate'
 import { useStore } from './store'
 import type { WsMessage } from './types'
 
@@ -85,6 +86,7 @@ export function initWs() {
       ws!.send(JSON.stringify(msg))
     }
     requestSessionSync()
+    void checkForUpdate(true)   // a deploy restarts the server: this page may now be the old app
   }
 
   ws.onclose = (e) => {

@@ -57,6 +57,7 @@ The hub is a pure relay for remote hosts: it never runs streamer/tmux for a remo
 - `markdown.ts` — marked + KaTeX inline rendering
 - `sanitize.ts` — DOMPurify wrapper for `dangerouslySetInnerHTML`
 - `toasts.ts` — toast helpers
+- `appUpdate.ts` — notices that a deploy replaced the build this page runs and offers a reload (saves open files first)
 - `types.ts`, `globals.d.ts` — shared types
 - `components/Terminal/`
   - `TerminalManager.ts` — xterm.js lifecycle, mobile scroll, snapshot/screen application
@@ -180,6 +181,7 @@ cd frontend && npm run dev
 - **Every save goes through `store.saveTab`.** It chains writes per tab, so autosave, Ctrl+S and closing a tab never send two writes with the same `expectedVersion` (the second would 409 against the first). A closing dirty tab saves instead of asking.
 - **A conflict stops autosave until the reader picks a version.** When the tab and the file both changed, retrying would 409 every second, and saving without the version check would erase the agent's write. The banner offers the disk version or "이 탭 내용으로 저장".
 - **Poll `/api/file-stat`, not `/api/file`.** Every open file checks once a second; re-reading the whole file each time is a lot of traffic on mobile. PDFs/images reload only once the signature holds still for a tick — a PDF being written is otherwise loaded half-finished.
+- **The HTML preview's 새로고침 reads the file from disk first (`DocEdit.reread`).** It used to re-run the page from the tab's copy, so it showed the old file whenever the poll hadn't ticked yet or was held by an open editor ("새로고침하면 바로 반영되어야"). Poll requests time out after 10 s (`quietJson`); one that never answered left the poll `busy` for good.
 - **Esc keeps the text in every inline editor; only 취소 drops it.** Autosave makes Esc-as-cancel the one way to lose typing; ↶ undoes a committed edit instead.
 - **Notebook autosave must not be an operation.** The `save` action shown as an operation disables the cells (read-only) for its round trip, eating keystrokes. `autosaveNotebook` runs it quietly in the queue, skips running cells (their outputs save once the run ends) and a changed file. A disk change auto-loads only with no unsaved work and no kernel — `reload` restarts the kernel.
 - **Markdown blocks map to source ranges; a container whose lines don't map stays read-only rather than guessing.** Each block element carries `data-mb`; `markdownBlocks` maps it to a source range (marked's token `raw`s tile the source; list items and quotes lex their children from prefix-stripped text, mapped back line by line).
@@ -191,6 +193,7 @@ cd frontend && npm run dev
 ### Mobile / UI
 - **Don't auto-reload from the client.** Slow mobile + reload script = infinite loop. Cache-bust on the server side instead.
 - **Don't asymmetrically resize fonts on keyboard show/hide.** Viewport jitters; users lose their place.
+- **An open page keeps running the old build after a deploy.** Nothing inside it (a view's 새로고침) can show the new app. `appUpdate` compares the entry chunk the served `index.html` names with its own on WS reconnect (a deploy restarts the server) and on focus, then shows a notice with a 새로고침 button; the preview's 새로고침 reloads the app instead when it is outdated. Still user-initiated, never automatic.
 - **Don't apply every `visualViewport` resize to `--vvh` (app height).** The keyboard slide fires a burst of resizes (per-frame app reflow = "화면이 보였다 안 보였다" flicker), and the Korean IME suggestion bar toggles ~50px on nearly every keystroke. `main.tsx` debounces to settle-once (120 ms) and ignores <100px wobbles while an input is focused (re-synced on `focusout`).
 - **Don't forget to re-fit the terminal on session switch and font change.** Saved scrollTop must be restored after fit.
 - **Don't shrink the mobile font to fit 80 cols — it goes to ~8px and is unreadable.** `CANONICAL_COLS` is fixed at 80 for cross-client consistency, so fitting 80 cols to a phone width forced a tiny font. Mobile now uses a FIXED readable font (`TARGET_FONT=14`; `refit` skips the width-shrink on mobile) and the 80-col grid overflows horizontally (`.xterm-wrap` `overflow-x:auto` + `touch-action:pan-x`). Bonus: a fixed font also stops the keyboard show/hide font jitter. Mobile `.input-textarea` is 16px (also stops iOS focus auto-zoom, which triggers under 16px).
