@@ -207,6 +207,19 @@ it('previews an HTML page with its project\'s files and opens a linked page in a
   await vi.waitFor(() => expect(useStore.getState()._viewerState[KEY].tabs.map(t => t.path)).toContain('/lec/decks/next.html'))
 })
 
+it('shows a Quarto file\'s includes and opens linked documents in tabs', async () => {
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => url === `/api/file?path=${encodeURIComponent('/lec/_kit.qmd')}`
+    ? {ok: true, json: async () => ({content: '## 준비물\n\nPython.\n', version: 'k1'})}
+    : url.startsWith('/api/file?') ? {ok: true, json: async () => ({content: '# 2주차\n', version: 'v5'})} : {ok: false}))
+  mount('# 1주차\n\n{{< include _kit.qmd >}}\n\n[다음 주](w2.qmd)\n')
+  await vi.waitFor(() => expect(host.querySelector('.qmd-include h2')?.textContent).toBe('준비물'))
+  act(() => host.querySelector<HTMLElement>('a[href="w2.qmd"]')!.click())
+  await vi.waitFor(() => expect(useStore.getState()._viewerState[KEY].tabs.map(t => t.path)).toContain('/lec/w2.qmd'))
+  act(() => host.querySelector<HTMLElement>('[data-open-file]')!.click())
+  await vi.waitFor(() => expect(useStore.getState()._viewerState[KEY].tabs.map(t => t.path)).toContain('/lec/_kit.qmd'))
+  expect(region()).toBeNull()   // following a link is not an edit
+})
+
 it('saves a dirty file tab when it closes instead of asking', async () => {
   const ask = vi.fn(() => false)
   vi.stubGlobal('confirm', ask)

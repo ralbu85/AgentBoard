@@ -141,7 +141,8 @@ export function DocSurface({tab, ownerKey, memos, onContextMenu, onViewChange}: 
       {showsPreview && (kind === 'html'
         ? <HtmlPreview content={tab.content} path={tab.path} local={local} doc={doc} slot={slot} onOpenFile={file => void openFileTab(file, ownerKey)}/>
         : <div ref={scroller} className="doc-scroll">
-          <MarkdownPreview content={tab.content} filePath={tab.path} doc={doc} slot={slot} delay={mode === 'split' ? 150 : 0} onContextMenu={onContextMenu}/>
+          <MarkdownPreview content={tab.content} filePath={tab.path} local={local} doc={doc} slot={slot} delay={mode === 'split' ? 150 : 0} onContextMenu={onContextMenu}
+            onOpenFile={file => void openFileTab(file, ownerKey)}/>
         </div>)}
     </div>
   </div>

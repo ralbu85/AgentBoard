@@ -53,3 +53,17 @@ def test_a_page_outside_a_project_gets_only_its_folder(tmp_path, monkeypatch):
     (tmp_path / 'loose').mkdir(); (tmp_path / 'loose' / 'deck.html').write_text('<p>x</p>')
     assert c.get('/api/preview-base', params={'path': str(tmp_path / 'loose' / 'deck.html')}).json()['root'] == str(tmp_path / 'loose')
 
+
+def test_a_quarto_document_finds_the_outputs_its_last_run_saved(tmp_path, monkeypatch):
+    import json
+    c = client(tmp_path, monkeypatch)
+    (tmp_path / 'course' / 'labs').mkdir(parents=True)
+    (tmp_path / 'course' / '_quarto.yml').write_text('project: {}')
+    doc = tmp_path / 'course' / 'labs' / 'lab1.qmd'
+    doc.write_text('```{python}\n1\n```\n')
+    assert c.get('/api/quarto-freeze', params={'path': str(doc)}).status_code == 404   # not run yet
+    results = tmp_path / 'course' / '_freeze' / 'labs' / 'lab1' / 'execute-results'
+    results.mkdir(parents=True)
+    (results / 'html.json').write_text(json.dumps({'hash': 'x', 'result': {'markdown': '::: {.cell}\n:::\n'}}))
+    body = c.get('/api/quarto-freeze', params={'path': str(doc)}).json()
+    assert body['markdown'] == '::: {.cell}\n:::\n' and body['folder'] == str(tmp_path / 'course' / '_freeze' / 'labs' / 'lab1')

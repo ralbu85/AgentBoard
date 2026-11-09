@@ -5,7 +5,9 @@ import type {DocEdit} from './DocSurface'
 import {useToasts} from '../../toasts'
 import {writeClipboard} from '../Terminal/clipboard'
 import {MOD, readPref, writePref} from './docSync'
-import {deleteBlock, insertAfter, isQuarto, locateBlock, renderBlocks, replaceBlock, toggleTask, type MdBlock} from './markdownBlocks'
+import {deleteBlock, dirOf, insertAfter, isQuarto, locateBlock, renderBlocks, replaceBlock, resolvePath, toggleTask, type MdBlock} from './markdownBlocks'
+import {enhance} from './markdownEnhance'
+import {useQuartoSources} from './quartoSources'
 import {INLINE_KINDS, inlineModel, normalize, readInline, readTyped} from './markdownInline'
 import type {Links} from 'marked'
 import type {MarkdownAttachments} from '../../markdown'
@@ -121,8 +123,12 @@ function caretFor(text: string, x: number, y: number): number | undefined {
   }
 }
 
-export function MarkdownPreview({content, filePath, attachments, doc, slot, delay = 0, zoomable = true, onContextMenu}: {
+const DOCS = /\.(html?|md|markdown|mdx|qmd)$/i
+
+export function MarkdownPreview({content, filePath, attachments, doc, slot, delay = 0, zoomable = true, local = false, onOpenFile, onContextMenu}: {
   content: string; filePath?: string; doc?: DocEdit; slot?: HTMLElement | null
+  local?: boolean                         // a file of this machine: Quarto includes and saved outputs load
+  onOpenFile?: (path: string) => void     // a link to another document, an included file
   attachments?: MarkdownAttachments   // a notebook cell's images
   delay?: number                      // side by side: re-render once typing pauses
   zoomable?: boolean                  // a notebook cell follows the notebook, not the document zoom
@@ -150,7 +156,9 @@ export function MarkdownPreview({content, filePath, attachments, doc, slot, dela
     const timer = window.setTimeout(() => setShown(content), delay)
     return () => window.clearTimeout(timer)
   }, [content, editor, delay])
-  const rendered = useMemo(() => renderBlocks(shown, {filePath, quarto, tasks: writable, attachments}), [shown, filePath, quarto, writable, attachments])
+  const sources = useQuartoSources(shown, filePath, quarto && local)
+  const rendered = useMemo(() => renderBlocks(shown, {filePath, quarto, tasks: writable, attachments, sources}), [shown, filePath, quarto, writable, attachments, sources])
+  useLayoutEffect(() => { if (bodyRef.current) enhance(bodyRef.current) }, [rendered.html])
   useEffect(() => { doc?.setPaused(() => !!editorRef.current || pending.current !== null); return () => doc?.setPaused(null) }, [])
   const toast = (text: string) => useToasts.getState().push(text)
 
@@ -279,9 +287,35 @@ export function MarkdownPreview({content, filePath, attachments, doc, slot, dela
   useEffect(() => () => { if (editorRef.current) commitRef.current(editorRef.current, readDraft(editorRef.current)) }, [])
   useEffect(() => { if (!editing && editorRef.current) commit(editorRef.current, readDraft(editorRef.current)) }, [editing])
 
+  /** A link in the document: within it scrolls, to a document opens a tab, to a site a new window. */
+  const follow = (e: React.MouseEvent, link: HTMLAnchorElement) => {
+    const href = link.getAttribute('href') || ''
+    if (href.startsWith('#')) {
+      e.preventDefault()
+      try { bodyRef.current?.querySelector(`[id="${CSS.escape(decodeURIComponent(href.slice(1)))}"]`)?.scrollIntoView({block: 'start'}) } catch { /* malformed escape */ }
+      return
+    }
+    if (/^[a-z][a-z\d+.-]*:/i.test(href) || href.startsWith('//')) {
+      if (!/^(https?:)?\/\//i.test(href)) return   // mailto: and the like: the browser's
+      e.preventDefault()
+      window.open(new URL(href, location.href).href, '_blank', 'noopener,noreferrer')
+      return
+    }
+    if (!filePath) return
+    e.preventDefault()
+    let path: string
+    try { path = resolvePath(dirOf(filePath), decodeURIComponent(href.split(/[?#]/)[0])) } catch { return }
+    if (DOCS.test(path) && onOpenFile) onOpenFile(path)
+    else window.open(`/api/file-raw?path=${encodeURIComponent(path)}`, '_blank', 'noopener')
+  }
+
   const handleClick = (e: React.MouseEvent) => {
     const target = e.target as HTMLElement
     if (!target.isConnected) return   // a commit re-rendered the document under this click
+    const opener = target.closest<HTMLElement>('[data-open-file]')
+    if (opener) { e.preventDefault(); if (opener.dataset.openFile) onOpenFile?.(opener.dataset.openFile); return }
+    const link = target.closest<HTMLAnchorElement>('a[href]')
+    if (link && bodyRef.current?.contains(link) && !link.closest('.md-inline-edit')) { follow(e, link); return }
     if (target instanceof HTMLInputElement && target.type === 'checkbox') {
       const li = target.closest<HTMLElement>('li[data-mb]'), block = li ? rendered.blocks[Number(li.dataset.mb)] : undefined
       if (editorRef.current) { e.preventDefault(); return }   // finish the open edit first

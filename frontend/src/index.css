@@ -1420,6 +1420,20 @@ details.qmd-callout > summary { cursor: pointer; }
 .qmd-cell { margin: 10px 0; }
 .qmd-cell-label { margin-bottom: 2px; color: var(--text-muted); font-size: 11px; font-family: var(--font-mono); }
 details.qmd-cell[open] > summary { margin-bottom: 4px; }
+.qmd-cell-group { margin: 10px 0; }
+.qmd-outputs { margin-top: 4px; padding-left: 10px; border-left: 2px solid var(--border); }
+.qmd-outputs::before { content: attr(data-label); display: block; color: var(--text-muted); font-size: 11px; font-family: var(--font-mono); }
+.qmd-outputs-stale { border-left-color: #d29922; }
+.qmd-outputs-stale::before { color: #d29922; }
+.qmd-output pre { margin: 4px 0; }
+.qmd-output-stderr pre, .qmd-output-error pre { color: #ffa198; }
+.qmd-output table { font-size: 13px; }
+.qmd-include { margin: 10px 0; padding-left: 10px; border-left: 2px dashed var(--border); }
+.qmd-include-label { color: var(--text-muted); font-size: 11px; font-family: var(--font-mono); }
+.qmd-include-label a { cursor: pointer; }
+.md-rendered pre.md-mermaid-pre { background: none; border: 0; padding: 0; text-align: center; }
+.md-mermaid { max-width: 100%; height: auto; margin: 0; border-radius: 0; }
+.md-rendered pre[data-note]::before { content: attr(data-note); display: block; color: #d29922; font-size: 11px; font-family: var(--font-mono); }
 .qmd-cite, .qmd-xref { color: var(--accent); }
 .qmd-short { padding: 0 4px; border: 1px solid var(--border); border-radius: 4px; color: var(--text-muted); font-family: var(--font-mono); font-size: 12px; }
 .qmd-smallcaps { font-variant: small-caps; }

@@ -183,6 +183,120 @@ function parseAttrs(spec: string): Attrs {
 const stripAttrs = (html: string) => html.replace(new RegExp(String.raw`\s*\{${ATTRS}\}(?=\s*(?:<\/h[1-6]>|$))`), '')
 const mark = (html: string, tok: Tok) => tok._mb === undefined ? html : html.replace(/^(\s*<[a-zA-Z][\w-]*)/, `$1 data-mb="${tok._mb}"`)
 
+// ── What a Quarto document draws from other files ──
+
+/** Included files (by absolute path) and the outputs Quarto saved when it last
+ *  ran the document's cells (`_freeze/…/execute-results/html.json`). */
+export interface QuartoSources { includes?: Record<string, string>; frozen?: FrozenRun | null }
+export interface FrozenCell { code: string | null; count: number | null; outputs: {kind: string; markdown: string}[] }   // count: the cell's number in the run
+export interface FrozenRun { cells: FrozenCell[]; folder: string; stem: string }   // folder: the freeze folder, which holds the figures
+const EXEC = new Set(['python', 'r', 'julia'])
+// Set for the length of one renderBlocks call: renderers have no other way to see its options.
+let context: (QuartoSources & {cell: number; executed: number; dirs: string[]}) | null = null
+
+export const dirOf = (path: string) => path.slice(0, path.lastIndexOf('/')) || '/'
+export function resolvePath(dir: string, rel: string) {
+  const parts = dir.split('/')
+  for (const seg of rel.split('/')) { if (seg === '..') { if (parts.length > 1) parts.pop() } else if (seg && seg !== '.') parts.push(seg) }
+  return parts.join('/') || '/'
+}
+const INCLUDE = /\{\{<\s*include\s+("[^"]+"|'[^']+'|[^\s>]+)\s*>\}\}/g
+const includeTarget = (spec: string) => spec.replace(/^(["'])(.*)\1$/, '$2')
+/** The files `src` includes, as absolute paths ('/…' paths are project-relative in Quarto: left out). */
+export function includedPaths(src: string, filePath: string): string[] {
+  const out: string[] = []
+  for (const m of src.matchAll(INCLUDE)) { const rel = includeTarget(m[1]); if (!rel.startsWith('/')) out.push(resolvePath(dirOf(filePath), rel)) }
+  return [...new Set(out)]
+}
+
+/** A paragraph that is only `{{< include file >}}`, rendered as that file (read-only). */
+function included(t: Tok): string | null {
+  const toks = (t.tokens as Tok[] | undefined)?.filter(k => !(k.type === 'text' && !k.raw.trim())) || []
+  const m = toks.length === 1 && toks[0].type === 'qshort' ? /^include\s+(\S+)$/.exec(toks[0].text) : null
+  if (!m || !context) return null
+  const rel = includeTarget(m[1]), path = rel.startsWith('/') ? '' : resolvePath(context.dirs[context.dirs.length - 1], rel)
+  const content = path ? context.includes?.[path] : undefined
+  if (content === undefined || context.dirs.length > 4) return null
+  context.dirs.push(dirOf(path))
+  try {
+    const md = instance(true), tokens = md.lexer(content)
+    if (md.defaults.walkTokens) md.walkTokens(tokens, md.defaults.walkTokens)
+    return `<div class="qmd-include"><div class="qmd-include-label">포함된 파일 <a data-open-file="${esc(path)}" title="이 파일 열기">${esc(rel)}</a></div>${md.parser(tokens)}</div>\n`
+  } finally { context.dirs.pop() }
+}
+
+/** The outputs Quarto saved for the document's next cell. Cells pair up by
+ *  number: the run numbers every cell in order (`execution_count`, `eval: false`
+ *  ones too) and leaves out a cell that shows nothing (code hidden, no output)
+ *  or has `include: false`, which leaves a gap. Without numbers (knitr) they
+ *  pair up in order. */
+function frozenOutputs(code: string, opts: Record<string, string>): string {
+  if (!context) return ''
+  const run = context.frozen
+  const number = ++context.executed
+  const order = opts.include === 'false' ? null : context.cell++
+  if (!run || opts.include === 'false') return ''
+  const cell = run.cells.some(c => c.count !== null) ? run.cells.find(c => c.count === number) : run.cells[order!]
+  if (!cell?.outputs.length) return ''
+  const mine = code.split('\n').filter(l => !/^\s*(#|\/\/|%%)\|/.test(l)).join('\n').trim()
+  const stale = cell.code !== null && cell.code.trim() !== mine
+  const md = instance(true), figures = new RegExp(`(\\]\\(|src=["'])${run.stem.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}_files/`, 'g')
+  const body = cell.outputs.map(o => `<div class="qmd-output qmd-output-${esc(o.kind)}">${md.parse(o.markdown.replace(figures, `$1${run.folder}/`)) as string}</div>`).join('')
+  const label = stale ? '실행 결과 · 원문 코드가 바뀌어 이전 결과일 수 있습니다' : '실행 결과 · Quarto가 저장한 결과'
+  return `<div class="qmd-outputs${stale ? ' qmd-outputs-stale' : ''}" data-label="${label}">${body}</div>`
+}
+
+/** The cells of a frozen run, in document order: each cell's code (null when not
+ *  echoed) and its output divs' markdown. */
+export function frozenCells(markdown: string): FrozenCell[] {
+  const cells: FrozenCell[] = []
+  let fence = '', depth = 0, cellDepth = 0, cell: FrozenCell | null = null
+  let output: {kind: string; lines: string[]} | null = null, code: string[] | null = null
+  for (const line of markdown.split('\n')) {
+    if (fence) {
+      const close = /^ {0,3}(`{3,}|~{3,})[ \t]*$/.exec(line)
+      if (close && close[1][0] === fence[0] && close[1].length >= fence.length) {
+        fence = ''
+        if (code && cell) { cell.code = code.join('\n'); code = null }
+      } else code?.push(line)
+      output?.lines.push(line)
+      continue
+    }
+    const f = FENCE.exec(line)
+    if (f) {
+      fence = f[1]
+      if (cell && !output && /\.cell-code\b/.test(line)) code = []
+      output?.lines.push(line)
+      continue
+    }
+    const open = DIV_OPEN.exec(line)
+    if (open) {
+      depth++
+      const classes = parseAttrs(open[1]).classes
+      if (!cell && classes.includes('cell')) {
+        const count = Number(parseAttrs(open[1]).kv.execution_count)
+        cell = {code: null, count: Number.isInteger(count) ? count : null, outputs: []}; cellDepth = depth
+        continue
+      }
+      if (cell && !output && depth === cellDepth + 1 && classes.some(c => c.startsWith('cell-output'))) {
+        output = {kind: classes.find(c => c.startsWith('cell-output-'))?.slice(12) || 'display', lines: []}
+        continue
+      }
+      output?.lines.push(line)
+      continue
+    }
+    if (DIV_CLOSE.test(line) && depth) {
+      if (output && depth === cellDepth + 1) { cell!.outputs.push({kind: output.kind, markdown: output.lines.join('\n')}); output = null }
+      else if (cell && depth === cellDepth) { cells.push(cell); cell = null }
+      else output?.lines.push(line)
+      depth--
+      continue
+    }
+    output?.lines.push(line)
+  }
+  return cells
+}
+
 const fencedDiv: TokenizerAndRendererExtension = {
   name: 'qdiv', level: 'block',
   start(src) { return /^ {0,3}:{3,}/m.exec(src)?.index },
@@ -297,7 +411,7 @@ function build(quarto: boolean): Marked {
   md.use({gfm: true, breaks: !quarto})
   md.use({extensions: quarto ? [fencedDiv, span, cite, xref, shortcode] : [fencedDiv]})
   const renderer: MarkedExtension['renderer'] = {
-    paragraph(t) { return mark(Renderer.prototype.paragraph.call(this, t), t as Tok) },
+    paragraph(t) { return mark(included(t as Tok) ?? Renderer.prototype.paragraph.call(this, t), t as Tok) },
     heading(t) { return mark(stripAttrs(Renderer.prototype.heading.call(this, t)), t as Tok) },
     blockquote(t) { return mark(Renderer.prototype.blockquote.call(this, t), t as Tok) },
     table(t) { return mark(Renderer.prototype.table.call(this, t), t as Tok) },
@@ -309,13 +423,17 @@ function build(quarto: boolean): Marked {
       if (!cell) return mark(Renderer.prototype.code.call(this, t), t as Tok)
       const engine = cell[1].toLowerCase(), lang = engine.replace(/^=/, '')
       if (engine === '=html') return mark(`<div class="qmd-raw-html">${t.text}</div>\n`, t as Tok)
+      // Quarto draws a diagram cell: so does the preview (markdownEnhance).
+      if (engine === 'mermaid') return mark(Renderer.prototype.code.call(this, {...t, lang} as Tokens.Code), t as Tok)
       const opts = cellOptions(t.text), pre = Renderer.prototype.code.call(this, {...t, lang} as Tokens.Code)
       const hidden = engine.startsWith('=') || engine === 'ojs' || opts.echo === 'false' || opts.include === 'false'
       const label = engine.startsWith('=') ? `${lang} 원본 블록 · Quarto 렌더 결과에만 들어갑니다`
         : engine === 'ojs' ? 'OJS 대화형 셀 · 결과는 Quarto 렌더에서 보입니다'
         : `${lang} 셀${hidden ? ' · 코드 숨김' : ''}${opts['fig-cap'] ? ' · ' + opts['fig-cap'] : ''}`
-      return mark(hidden ? `<details class="qmd-cell"><summary>${esc(label)}</summary>${pre}</details>\n`
-        : `<div class="qmd-cell"><div class="qmd-cell-label">${esc(label)}</div>${pre}</div>\n`, t as Tok)
+      const out = EXEC.has(engine) ? frozenOutputs(t.text, opts) : ''
+      const shown = hidden ? `<details class="qmd-cell"><summary>${esc(label)}</summary>${pre}</details>` : ''
+      return mark(hidden ? (out ? `<div class="qmd-cell-group">${shown}${out}</div>\n` : shown + '\n')
+        : `<div class="qmd-cell"><div class="qmd-cell-label">${esc(label)}</div>${pre}${out}</div>\n`, t as Tok)
     },
   }
   md.use({renderer})
@@ -366,7 +484,7 @@ export function inlineAttrs(html: string): string {
 }
 
 /** `tasks`: task boxes in editable items can be clicked (the caller saves). */
-export function renderBlocks(src: string, {filePath, quarto, tasks = true, attachments}: {filePath?: string; quarto: boolean; tasks?: boolean; attachments?: MarkdownAttachments}): MdRender {
+export function renderBlocks(src: string, {filePath, quarto, tasks = true, attachments, sources}: {filePath?: string; quarto: boolean; tasks?: boolean; attachments?: MarkdownAttachments; sources?: QuartoSources}): MdRender {
   const md = instance(quarto), b = new Builder(src)
   // marked rewrites CRLF, so offsets would drift: such files render read-only.
   const editable = !src.includes('\r')
@@ -382,7 +500,10 @@ export function renderBlocks(src: string, {filePath, quarto, tasks = true, attac
   const body = src.slice(base), tokens = md.lexer(body) as Tok[]
   if (md.defaults.walkTokens) md.walkTokens(tokens, md.defaults.walkTokens)   // Quarto's smart dashes
   if (editable) walk(b, tokens, body, {abs: o => base + o, local: o => o, cont: ''})
-  const html = finishHtml(inlineAttrs(head + md.parser(tokens)), filePath, attachments, root => {
+  context = {...sources, cell: 0, executed: 0, dirs: [filePath ? dirOf(filePath) : '/']}
+  let parsed: string
+  try { parsed = md.parser(tokens) } finally { context = null }
+  const html = finishHtml(inlineAttrs(head + parsed), filePath, attachments, root => {
     if (tasks) for (const box of root.querySelectorAll('input[type="checkbox"]')) if (box.closest('li')?.hasAttribute('data-mb')) box.removeAttribute('disabled')
   })
   return {html, blocks: editable ? b.blocks : [], links: (tokens as Token[] & {links?: Links}).links || {}}

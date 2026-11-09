@@ -6,6 +6,7 @@ folder the page may read instead; the token, not the cookie, is the grant."""
 import base64
 import hashlib
 import hmac
+import json
 import mimetypes
 import time
 from pathlib import Path
@@ -93,3 +94,36 @@ async def preview_file(token: str, rest: str):
         return JSONResponse({'error': 'Not found'}, 404, headers=HEADERS)
     return FileResponse(file, media_type=mimetypes.guess_type(file.name)[0] or 'application/octet-stream', headers=HEADERS)
 
+
+FREEZE_MAX = 32 * 1024 * 1024
+
+
+@router.get('/quarto-freeze')
+async def quarto_freeze(path: str = Query(..., max_length=4096), _=Depends(verify)):
+    """The outputs Quarto saved when it last ran a document's cells (`freeze`),
+    so the Markdown preview can show them under the cells."""
+    file = _safe_path(path)
+    if file is None or not file.is_file() or file.suffix.lower() != '.qmd':
+        return JSONResponse({'error': 'Not a Quarto document'}, 404)
+    project = None
+    for folder in [file.parent, *file.parent.parents]:
+        if not _allowed(folder):
+            break
+        if (folder / '_quarto.yml').is_file() or (folder / '_quarto.yaml').is_file():
+            project = folder
+            break
+    if project is None:
+        return JSONResponse({'error': 'No Quarto project'}, 404)
+    folder = project / '_freeze' / file.relative_to(project).with_suffix('')
+    results = folder / 'execute-results' / 'html.json'
+    if not results.is_file():
+        return JSONResponse({'error': 'Not run yet'}, 404)
+    if results.stat().st_size > FREEZE_MAX:
+        return JSONResponse({'error': 'Too large'}, 413)
+    try:
+        markdown = json.loads(results.read_text(encoding='utf-8'))['result']['markdown']
+    except (OSError, ValueError, KeyError, TypeError):
+        return JSONResponse({'error': 'Unreadable'}, 422)
+    if not isinstance(markdown, str):
+        return JSONResponse({'error': 'Unreadable'}, 422)
+    return {'markdown': markdown, 'folder': str(folder), 'results': str(results)}
