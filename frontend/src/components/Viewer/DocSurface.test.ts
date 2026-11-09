@@ -4,6 +4,7 @@ import {afterEach, beforeEach, expect, it, vi} from 'vitest'
 import {DocSurface} from './DocSurface'
 import {useStore, type ViewerTab} from '../../store'
 import {api} from '../../api'
+import {EditorView} from '@codemirror/view'
 
 const KEY = JSON.stringify(['local', '/lec'])
 const SRC = '# Week 1\n\nIntro **text** here.\n\n- one\n- [ ] two\n'
@@ -218,6 +219,21 @@ it('shows a Quarto file\'s includes and opens linked documents in tabs', async (
   act(() => host.querySelector<HTMLElement>('[data-open-file]')!.click())
   await vi.waitFor(() => expect(useStore.getState()._viewerState[KEY].tabs.map(t => t.path)).toContain('/lec/_kit.qmd'))
   expect(region()).toBeNull()   // following a link is not an edit
+})
+
+it('원문 in the HTML preview shows that element in the source, selected', async () => {
+  localStorage.removeItem('agentboard.doc.mode.html')
+  const page = '<h1>Title</h1>\n<p>Some <b>text</b></p>\n'
+  mount(page, 'deck.html', 'code')
+  const frame = () => host.querySelector('iframe')!
+  await vi.waitFor(() => expect(frame().getAttribute('srcdoc')).toContain('Title'))
+  const token = /"token":"([^"]+)"/.exec(frame().getAttribute('srcdoc')!)![1]
+  act(() => { window.dispatchEvent(new MessageEvent('message', {source: frame().contentWindow, data: {t: 'source', i: 1, tag: 'p', __ab: token}})) })
+  await vi.waitFor(() => expect(host.querySelector('.cm-editor')).not.toBeNull())
+  expect(button('나란히').getAttribute('aria-pressed')).toBe('true')
+  const view = EditorView.findFromDOM(host.querySelector<HTMLElement>('.cm-editor')!)!
+  const {from, to} = view.state.selection.main
+  expect(page.slice(from, to)).toBe('<p>Some <b>text</b></p>')
 })
 
 it('saves a dirty file tab when it closes instead of asking', async () => {

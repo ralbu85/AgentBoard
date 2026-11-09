@@ -116,6 +116,11 @@ export function HtmlPreview({content, path, local = false, doc, slot, onOpenFile
       return
     }
     if (m.t === 'undo') { doc?.undo(); return }
+    if (m.t === 'source') {
+      const el = typeof m.i === 'number' ? lib.parseElements(current())[m.i] : undefined
+      doc?.showSource?.(el && el.tag === m.tag ? {from: el.start, to: el.end} : null)
+      return
+    }
     if (m.t === 'open') { if (typeof m.href === 'string' && m.href.length < 8192) follow(m.href); return }
     if (m.t === 'resync') { reload(); return }
     if (m.t === 'end') { frameEditing.current = false; scheduleReload(0); return }

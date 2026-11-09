@@ -18,6 +18,7 @@ let root: Root, host: HTMLDivElement, server: Record<string, any>, calls: string
 beforeEach(() => {
   ;(globalThis as any).IS_REACT_ACT_ENVIRONMENT = true
   localStorage.setItem('agentboard.doc.edit', '1')
+  localStorage.removeItem('agentboard.doc.mode.notebook')
   useNotebooks.setState({records: {}})
   server = {id: 'nb', path: PATH, content: SRC, version: 'v1', revision: 1, dirty: false, state: 'stopped', cell: null, error: '', kernel: false, python: 'python'}
   fileVersion = 'v1'
@@ -92,3 +93,14 @@ it('loads an agent write to the notebook only once the open cell editor closes',
   act(() => button('취소').click())
   await vi.waitFor(() => expect(calls).toContain('reload'), {timeout: 2500})
 }, 10_000)
+
+it('shows every markdown cell as markdown in 소스 and remembers it', async () => {
+  await mount()
+  act(() => button('소스').click())
+  const cells = [...host.querySelectorAll<HTMLElement>('.nb-markdown-cell')]
+  expect(cells.map(c => !!c.querySelector('.cm-editor'))).toEqual([true, true])
+  expect(host.querySelector('.nb-markdown-preview')).toBeNull()
+  expect(localStorage.getItem('agentboard.doc.mode.notebook')).toBe('source')
+  act(() => button('미리보기').click())
+  expect(block('Some')).toBeTruthy()
+})

@@ -13,7 +13,7 @@ import {CodeEditor} from './CodeEditor'
 import {NotebookKernels,kernelStateLabel} from './NotebookKernels'
 import {useNotebooks, openNotebook, editNotebook, refreshNotebook, notebookAction, notebookBusy, loadServerNotebook, checkNotebookFile, autosaveNotebook} from './notebookRuntime'
 import {DocBanner, EditToggle, SaveBadge, useEditToggle, type DocEdit} from './DocSurface'
-import {MOD, SAVE_DELAY, type SaveState} from './docSync'
+import {MOD, readPref, SAVE_DELAY, writePref, type SaveState} from './docSync'
 import {writeClipboard} from '../Terminal/clipboard'
 
 // Read-only Jupyter notebook renderer (nbformat 4; minimal v3 fallback).
@@ -37,6 +37,7 @@ interface NbCell {
   prompt_number?: number | null              // nbformat 3
 }
 
+const MODE_PREF = 'agentboard.doc.mode.notebook'
 const joinSrc = (s: unknown): string => Array.isArray(s) ? s.join('') : typeof s === 'string' ? s : ''
 // Jupyter tracebacks/streams carry ANSI color codes — strip for plain rendering
 const stripAnsi = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, '')
@@ -59,6 +60,9 @@ export function NotebookView({tab,ownerKey}:{tab:ViewerTab;ownerKey:string}) {
   const [environmentOpen,setEnvironmentOpen]=useState(false)
   const [now,setNow]=useState(Date.now())
   const [editing,toggleEditing]=useEditToggle(true)
+  // 소스: every markdown cell shows its markdown, as a file's source view does.
+  const [raw,setRawState]=useState(()=>readPref(MODE_PREF)==='source')
+  const setRaw=(on:boolean)=>{setRawState(on);writePref(MODE_PREF,on?'source':'view')}
   useEffect(()=>{if(!record?.operation&&!notebookBusy(record?.server.state))return;const timer=setInterval(()=>setNow(Date.now()),1000);return()=>clearInterval(timer)},[record?.operation,record?.server.state])
   const local=JSON.parse(ownerKey)[0]==='local'
   const supported=useMemo(()=>{try{const nb=JSON.parse(tab.content);return nb.nbformat===4&&Array.isArray(nb.cells)}catch{return false}},[tab.content])
@@ -224,8 +228,14 @@ export function NotebookView({tab,ownerKey}:{tab:ViewerTab;ownerKey:string}) {
   }}>
     <div className="nb-head">
     <div className="doc-toolbar">
-      <EditToggle on={editing} onToggle={toggleEditing}/>
-      <button className="doc-tool" disabled={!undoCount||disabled} onClick={undo} title={`마크다운 셀에서 한 수정 되돌리기 (${MOD}+Z)`}>↶ 되돌리기</button>
+      <div className="doc-modes" role="group" aria-label="보기 방식">
+        <button aria-pressed={!raw} onClick={()=>setRaw(false)}>미리보기</button>
+        <button aria-pressed={raw} onClick={()=>setRaw(true)} title="마크다운 셀을 모두 원문으로">소스</button>
+      </div>
+      {!raw&&<>
+        <EditToggle on={editing} onToggle={toggleEditing}/>
+        <button className="doc-tool" disabled={!undoCount||disabled} onClick={undo} title={`마크다운 셀에서 한 수정 되돌리기 (${MOD}+Z)`}>↶ 되돌리기</button>
+      </>}
       <div className="doc-extras">
         <div className="nb-live-status" role="status" aria-live="polite" aria-busy={busy||!!operation||copying}>
           <span className={`nb-spinner ${busy||operation||copying?'':'nb-spinner-idle'}`} aria-hidden="true"/>
@@ -264,7 +274,7 @@ export function NotebookView({tab,ownerKey}:{tab:ViewerTab;ownerKey:string}) {
     {kernels&&<NotebookKernels onClose={()=>setKernels(false)}/>}
     <div className="nb-wrap">
       {notebook.cells.length===0&&<div className="nb-cell-actions"><button disabled={disabled} onClick={()=>add('code')}>＋ 코드</button><button disabled={disabled} onClick={()=>add('markdown')}>＋ 마크다운</button></div>}
-      {notebook.cells.map((cell:NbCell,index:number)=>cell.cell_type==='markdown'?<NotebookMarkdownCell key={(cell as NbCell&{id?:string}).id||index} insertControl={<NotebookCellInsert index={index} disabled={disabled} onInsert={add}/>} content={joinSrc(cell.source)} filePath={tab.path} attachments={cell.attachments} index={index} doc={cellDoc(cell,index)} onChange={source=>change(index,source)} onSave={()=>void autosaveNotebook(tab.path)} onDelete={()=>{if(!confirm(`셀 ${index+1}을 삭제할까요?`))return;const nb=JSON.parse(record.content);nb.cells.splice(index,1);editNotebook(tab.path,JSON.stringify(nb,null,1)+'\n')}}/>:<section className={`nb-edit-cell ${record.server.cell===index?'nb-cell-running':''}`} key={(cell as NbCell&{id?:string}).id||index}>
+      {notebook.cells.map((cell:NbCell,index:number)=>cell.cell_type==='markdown'?<NotebookMarkdownCell key={(cell as NbCell&{id?:string}).id||index} insertControl={<NotebookCellInsert index={index} disabled={disabled} onInsert={add}/>} content={joinSrc(cell.source)} filePath={tab.path} attachments={cell.attachments} index={index} doc={cellDoc(cell,index)} raw={raw} onChange={source=>change(index,source)} onSave={()=>void autosaveNotebook(tab.path)} onDelete={()=>{if(!confirm(`셀 ${index+1}을 삭제할까요?`))return;const nb=JSON.parse(record.content);nb.cells.splice(index,1);editNotebook(tab.path,JSON.stringify(nb,null,1)+'\n')}}/>:<section className={`nb-edit-cell ${record.server.cell===index?'nb-cell-running':''}`} key={(cell as NbCell&{id?:string}).id||index}>
         <div className="nb-cell-actions"><span>{cell.cell_type==='code'?`In [${record.server.cell===index?'*':cell.execution_count??' '}]`:'Markdown'} · 셀 {index+1}</span>
           {cell.cell_type==='code'&&<button disabled={disabled} title="셀 실행 (Ctrl+Enter / Shift+Enter)" onClick={()=>void run('execute',index)}>{operation?.action==='execute'&&operation.cell===index?'실행 준비 중…':state.cell===index&&busy?'실행 중…':'▶ 셀 실행'}</button>}
           {cell.cell_type==='code'&&<button disabled={disabled} title={`첫 코드 셀부터 셀 ${index+1}까지 순서대로 실행합니다. 이미 실행한 셀도 다시 실행합니다.`} onClick={()=>void run('run-to-cell',index)}>여기까지 실행</button>}

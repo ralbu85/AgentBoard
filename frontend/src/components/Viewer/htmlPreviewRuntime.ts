@@ -112,13 +112,15 @@ button:hover,button:focus-visible{background:rgba(255,255,255,.16)}
 .hint{opacity:.65;padding:0 6px}
 .note{position:fixed;display:none;max-width:320px;padding:7px 10px;border-radius:8px;background:#7f1d1d;color:#fff;font:12px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif;box-shadow:0 6px 18px rgba(0,0,0,.28)}
 .note.on{display:block}
-</style><div class="bar" role="toolbar" aria-label="텍스트 편집"><button class="primary" data-act="commit" title="Enter">저장</button><button data-act="add" title="${mac ? '⌘' : 'Ctrl'}+Enter">＋ 아래에 추가</button><button data-act="delete">삭제</button><button data-act="cancel" title="이번 수정을 버립니다">취소</button><span class="hint">Enter 저장 · Shift+Enter 줄바꿈 · Esc 닫기</span></div><div class="note" role="status"></div>`
+</style><div class="bar" role="toolbar" aria-label="텍스트 편집"><button class="primary" data-act="commit" title="Enter">저장</button><button data-act="add" title="${mac ? '⌘' : 'Ctrl'}+Enter">＋ 아래에 추가</button><button data-act="delete">삭제</button><button data-act="source" title="이 부분의 HTML 원문을 소스에서 엽니다">원문</button><button data-act="cancel" title="이번 수정을 버립니다">취소</button><span class="hint">Enter 저장 · Shift+Enter 줄바꿈 · Esc 닫기</span></div><div class="note" role="status"></div>`
     const bar = root.querySelector('.bar') as HTMLElement, note = root.querySelector('.note') as HTMLElement
     // Keep focus (and the caret) in the text while a toolbar button is pressed.
     bar.addEventListener('mousedown', event => event.preventDefault())
     bar.addEventListener('click', event => {
       const act = (event.target as Element).closest('button')?.getAttribute('data-act')
       if (act === 'commit' || act === 'add' || act === 'delete' || act === 'cancel') finish(act)
+      // 원문: keep what was typed, then show this element in the source.
+      if (act === 'source' && current) { const i = currentI, tag = current.localName; finish('commit'); send({t: 'source', i, tag}) }
     })
     d.documentElement.appendChild(hostEl)
     ui = {host: hostEl, bar, note}

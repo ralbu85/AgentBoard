@@ -29,6 +29,7 @@ export interface DocEdit {
   undo: () => void
   setPaused: (paused: (() => boolean) | null) => void   // an inline editor is open: hold disk loads and undo
   reread: () => Promise<void>                           // read the file from disk now (새로고침)
+  showSource?: (range: {from: number; to: number} | null) => void   // 원문: this part of the file in the source
 }
 
 /** The ✎ toggle, shared by every format (HTML, Markdown, notebook cells). */
@@ -75,6 +76,7 @@ export function DocSurface({tab, ownerKey, memos, onContextMenu, onViewChange}: 
     onLoad: value => { undoStack.current = []; setUndoCount(0); contentRef.current = value },   // undo must not revert the agent's write
   })
   const [slot, setSlot] = useState<HTMLDivElement | null>(null)
+  const [reveal, setReveal] = useState<{from: number; to: number; seq: number} | undefined>()
 
   const change = (value: string) => { contentRef.current = value; useStore.getState().updateTab(tab.id, value, ownerKey) }
   const doc: DocEdit = {
@@ -98,6 +100,10 @@ export function DocSurface({tab, ownerKey, memos, onContextMenu, onViewChange}: 
     },
     setPaused: fn => { paused.current = fn },
     reread: sync.reread,
+    showSource: range => {
+      if (mode === 'view') setMode(writable ? 'split' : 'source')
+      if (range) setReveal(r => ({...range, seq: (r?.seq || 0) + 1}))
+    },
   }
   const setMode = (next: DocMode) => { setModeState(next); writePref(modePref(kind), next) }
 
@@ -137,7 +143,7 @@ export function DocSurface({tab, ownerKey, memos, onContextMenu, onViewChange}: 
     </DocBanner>}
     <div className={`doc-body doc-${mode}`}>
       {mode !== 'view' && <CodeEditor content={tab.content} lang={kind === 'code' ? tab.lang : kind} memos={memos} readOnly={!writable}
-        onChange={change} onSave={sync.flush} onContextMenu={onContextMenu} viewState={tab.viewState} onViewChange={onViewChange}/>}
+        onChange={change} onSave={sync.flush} onContextMenu={onContextMenu} viewState={tab.viewState} onViewChange={onViewChange} reveal={reveal}/>}
       {showsPreview && (kind === 'html'
         ? <HtmlPreview content={tab.content} path={tab.path} local={local} doc={doc} slot={slot} onOpenFile={file => void openFileTab(file, ownerKey)}/>
         : <div ref={scroller} className="doc-scroll">

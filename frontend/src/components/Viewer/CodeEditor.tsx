@@ -91,6 +91,7 @@ interface Props {
   memos?: Memo[]
   onChange: (value: string) => void
   viewState?: { editorScroll?: number; cursor?: number }
+  reveal?: { from: number; to: number; seq: number }   // select this range and scroll it into view (a new seq each time)
   onViewChange?: (view: {editorScroll: number; cursor: number}) => void
   onSave: () => void
   onContextMenu?: (info: SelectionInfo) => void
@@ -100,7 +101,7 @@ interface Props {
   ariaLabel?: string
 }
 
-export function CodeEditor({ content, lang, memos, onChange, onSave, onContextMenu, viewState, onViewChange, readOnly=false, onRun, compact=false, ariaLabel }: Props) {
+export function CodeEditor({ content, lang, memos, onChange, onSave, onContextMenu, viewState, onViewChange, readOnly=false, onRun, compact=false, ariaLabel, reveal }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const viewRef = useRef<EditorView | null>(null)
   const readonlyComp=useRef(new Compartment())
@@ -210,6 +211,13 @@ export function CodeEditor({ content, lang, memos, onChange, onSave, onContextMe
   }, [content])
 
   useEffect(()=>{viewRef.current?.dispatch({effects:readonlyComp.current.reconfigure(EditorState.readOnly.of(readOnly))})},[readOnly])
+  useEffect(() => {
+    const view = viewRef.current
+    if (!view || !reveal) return
+    const end = view.state.doc.length, from = Math.min(reveal.from, end), to = Math.min(reveal.to, end)
+    view.dispatch({ selection: { anchor: from, head: to }, effects: EditorView.scrollIntoView(from, { y: 'center' }) })
+    view.focus()
+  }, [reveal?.seq])
 
   // Update memo highlights
   useEffect(() => {
