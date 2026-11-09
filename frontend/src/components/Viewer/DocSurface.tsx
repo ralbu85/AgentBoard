@@ -7,23 +7,23 @@ import {HtmlPreview} from './HtmlPreview'
 import {MarkdownPreview} from './MarkdownPreview'
 import {openFileTab} from './openFile'
 
-/** Every text file tab is a DocSurface: one toolbar (preview / side by side /
- *  source, click-to-edit, undo, save state), one disk banner and one save
- *  policy (docSync). A format only supplies its rendered view, which edits
- *  through `DocEdit`. Notebooks reuse the toolbar pieces and the edit toggle. */
+/** Every text file tab is a DocSurface: one toolbar (보기 / 편집 / 나란히 /
+ *  소스, undo, save state), one disk banner and one save policy (docSync). A
+ *  format only supplies its rendered view, which edits through `DocEdit`.
+ *  Notebooks reuse the toolbar pieces and the modes. */
 
-export type DocMode = 'view' | 'split' | 'source'
+// 보기 never edits on a click; 편집 edits where it is rendered; 나란히 adds the source.
+export type DocMode = 'view' | 'edit' | 'split' | 'source'
 type Kind = 'html' | 'markdown' | 'code'
 const kindOf = (tab: ViewerTab): Kind => tab.type === 'markdown' ? 'markdown' : tab.type === 'code' && /\.html?$/i.test(tab.name) ? 'html' : 'code'
-const modePref = (kind: Kind) => `agentboard.doc.mode.${kind}`
-const EDIT_PREF = 'agentboard.doc.edit'
+const EDIT_PREF = 'agentboard.doc.edit'   // the old ✎ switch: who had it on starts in 편집
 const UNDO_LIMIT = 50
 export const EDIT_HINT = `글자를 클릭해 그 자리에서 고칩니다. Enter 저장 · Shift+Enter 줄바꿈 · ${MOD}+Enter 같은 수준에 추가 · Esc 닫기`
 
 /** What a rendered view gets from the surface around it. */
 export interface DocEdit {
   writable: boolean
-  editing: boolean                                      // ✎ 텍스트 편집 is on
+  editing: boolean                                      // a click edits (편집, 나란히)
   current: () => string                                 // the buffer, ahead of the prop while an edit travels the store
   apply: (base: string, next: string) => void           // an inline edit: an undo step, the buffer, saved at once
   undo: () => void
@@ -32,23 +32,36 @@ export interface DocEdit {
   showSource?: (range: {from: number; to: number} | null) => void   // 원문: this part of the file in the source
 }
 
-/** The ✎ toggle, shared by every format (HTML, Markdown, notebook cells). */
-export function useEditToggle(writable: boolean) {
-  const [on, setOn] = useState(() => {
-    const saved = readPref(EDIT_PREF)
-    return writable && (saved === null ? readPref('agentboard.htmlView.edit') === '1' || readPref('agentboard.mdView.edit') === '1' : saved === '1')
+/** The mode a kind of document was last shown in, among `allowed` (the first is the fallback). */
+export function useDocMode(name: string, allowed: DocMode[]) {
+  const key = `agentboard.doc.view.${name}`
+  const [mode, setState] = useState<DocMode>(() => {
+    const saved = readPref(key) as DocMode | null
+    if (saved && allowed.includes(saved)) return saved
+    const old = readPref(`agentboard.doc.mode.${name}`)   // from before 편집 was a mode
+    const was: DocMode = old === 'source' || old === 'split' ? old : readPref(EDIT_PREF) === '1' ? 'edit' : 'view'
+    return allowed.includes(was) ? was : allowed[0]
   })
-  const toggle = () => { setOn(!on); writePref(EDIT_PREF, on ? '0' : '1') }
-  return [writable && on, toggle] as const
+  const setMode = (next: DocMode) => { setState(next); writePref(key, next) }
+  return [allowed.includes(mode) ? mode : allowed[0], setMode] as const
 }
+
+const MODES: Record<DocMode, [string, string]> = {
+  view: ['보기', '읽기만 합니다. 클릭해도 고쳐지지 않습니다'],
+  edit: ['편집', EDIT_HINT],
+  split: ['나란히', '원문과 미리보기를 나란히 봅니다. 미리보기에서도 고칠 수 있습니다'],
+  source: ['소스', '원문만 봅니다'],
+}
+export const ModeSwitch = ({modes, mode, onChange, titles = {}}: {modes: DocMode[]; mode: DocMode; onChange: (mode: DocMode) => void; titles?: Partial<Record<DocMode, string>>}) =>
+  <div className="doc-modes" role="group" aria-label="보기 방식">
+    {modes.map(m => <button key={m} aria-pressed={mode === m} onClick={() => onChange(m)} title={titles[m] ?? MODES[m][1]}>{MODES[m][0]}</button>)}
+  </div>
 
 const SAVE_TEXT: Record<SaveState, string> = {saved: '저장됨', pending: '수정됨', saving: '저장 중…', error: '저장 실패 · 다시 시도 중', conflict: '저장 멈춤'}
 export function SaveBadge({state, error}: {state: SaveState; error?: string}) {
   return <span className={`doc-save doc-save-${state}`} role="status"
     title={error || '편집은 자동으로 저장되고, 에이전트가 파일을 바꾸면 1초 안에 반영됩니다.'}>{SAVE_TEXT[state]}</span>
 }
-export const EditToggle = ({on, onToggle, title = EDIT_HINT}: {on: boolean; onToggle: () => void; title?: string}) =>
-  <button className="doc-tool" aria-pressed={on} onClick={onToggle} title={title}>✎ 텍스트 편집</button>
 export const DocBanner = ({children}: {children: ReactNode}) => <div className="doc-banner" role="status">{children}</div>
 
 export function DocSurface({tab, ownerKey, memos, onContextMenu, onViewChange}: {
@@ -58,12 +71,8 @@ export function DocSurface({tab, ownerKey, memos, onContextMenu, onViewChange}: 
 }) {
   const kind = kindOf(tab), rendered = kind !== 'code', writable = isEditableFile(tab)
   const local = JSON.parse(ownerKey)[0] === 'local'
-  const [mode, setModeState] = useState<DocMode>(() => {
-    if (!rendered) return 'source'
-    const saved = readPref(modePref(kind))
-    return saved === 'source' || saved === 'split' && writable ? saved : 'view'
-  })
-  const [editing, toggleEditing] = useEditToggle(writable)
+  const [mode, setMode] = useDocMode(kind, !rendered ? ['source'] : writable ? ['view', 'edit', 'split', 'source'] : ['view', 'source'])
+  const editing = writable && (mode === 'edit' || mode === 'split')
   const [undoCount, setUndoCount] = useState(0)
   const undoStack = useRef<string[]>([])
   // The latest buffer, ahead of the prop while an edit travels the store.
@@ -101,11 +110,10 @@ export function DocSurface({tab, ownerKey, memos, onContextMenu, onViewChange}: 
     setPaused: fn => { paused.current = fn },
     reread: sync.reread,
     showSource: range => {
-      if (mode === 'view') setMode(writable ? 'split' : 'source')
+      if (mode === 'view' || mode === 'edit') setMode(writable ? 'split' : 'source')
       if (range) setReveal(r => ({...range, seq: (r?.seq || 0) + 1}))
     },
   }
-  const setMode = (next: DocMode) => { setModeState(next); writePref(modePref(kind), next) }
 
   // The rendered markdown keeps its scroll position across tab switches.
   const scroller = useRef<HTMLDivElement>(null)
@@ -120,19 +128,12 @@ export function DocSurface({tab, ownerKey, memos, onContextMenu, onViewChange}: 
 
   const showsPreview = rendered && mode !== 'source'
   return <div className="doc-surface" tabIndex={-1} onKeyDown={e => {
-    if (!showsPreview || !(e.ctrlKey || e.metaKey) || e.shiftKey || e.key.toLowerCase() !== 'z' || (e.target as HTMLElement).closest('textarea, input, .cm-editor, [contenteditable]')) return
+    if (!showsPreview || !editing || !(e.ctrlKey || e.metaKey) || e.shiftKey || e.key.toLowerCase() !== 'z' || (e.target as HTMLElement).closest('textarea, input, .cm-editor, [contenteditable]')) return
     e.preventDefault(); doc.undo()
   }}>
     {(rendered || writable) && <div className="doc-toolbar">
-      {rendered && <div className="doc-modes" role="group" aria-label="보기 방식">
-        <button aria-pressed={mode === 'view'} onClick={() => setMode('view')}>미리보기</button>
-        {writable && <button aria-pressed={mode === 'split'} onClick={() => setMode('split')} title="소스와 미리보기를 나란히">나란히</button>}
-        <button aria-pressed={mode === 'source'} onClick={() => setMode('source')}>소스</button>
-      </div>}
-      {showsPreview && writable && <>
-        <EditToggle on={editing} onToggle={toggleEditing}/>
-        <button className="doc-tool" disabled={!undoCount} onClick={doc.undo} title={`미리보기에서 한 수정 되돌리기 (${MOD}+Z)`}>↶ 되돌리기</button>
-      </>}
+      {rendered && <ModeSwitch modes={writable ? ['view', 'edit', 'split', 'source'] : ['view', 'source']} mode={mode} onChange={setMode}/>}
+      {showsPreview && editing && <button className="doc-tool" disabled={!undoCount} onClick={doc.undo} title={`미리보기에서 한 수정 되돌리기 (${MOD}+Z)`}>↶ 되돌리기</button>}
       <div className="doc-extras" ref={setSlot}/>
       {writable && <SaveBadge state={sync.state} error={sync.error}/>}
     </div>}
@@ -142,7 +143,7 @@ export function DocSurface({tab, ownerKey, memos, onContextMenu, onViewChange}: 
       <button className="doc-tool" onClick={sync.keepMine}>이 탭 내용으로 저장</button>
     </DocBanner>}
     <div className={`doc-body doc-${mode}`}>
-      {mode !== 'view' && <CodeEditor content={tab.content} lang={kind === 'code' ? tab.lang : kind} memos={memos} readOnly={!writable}
+      {(mode === 'split' || mode === 'source') && <CodeEditor content={tab.content} lang={kind === 'code' ? tab.lang : kind} memos={memos} readOnly={!writable}
         onChange={change} onSave={sync.flush} onContextMenu={onContextMenu} viewState={tab.viewState} onViewChange={onViewChange} reveal={reveal}/>}
       {showsPreview && (kind === 'html'
         ? <HtmlPreview content={tab.content} path={tab.path} local={local} doc={doc} slot={slot} onOpenFile={file => void openFileTab(file, ownerKey)}/>

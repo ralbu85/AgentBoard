@@ -16,8 +16,8 @@ beforeEach(() => {
   let n = 0
   saves = vi.fn(async () => ({ok: true, version: `v${++n}`}))
   vi.spyOn(api, 'saveFile').mockImplementation(saves as typeof api.saveFile)
-  localStorage.setItem('agentboard.doc.edit', '1')
-  localStorage.removeItem('agentboard.doc.mode.markdown')
+  localStorage.clear()
+  localStorage.setItem('agentboard.doc.edit', '1')   // the old ✎ on: documents open in 편집
   host = document.createElement('div'); document.body.append(host); root = createRoot(host)
 })
 afterEach(() => { unsubscribe(); act(() => root.unmount()); host.remove(); vi.restoreAllMocks(); vi.unstubAllGlobals() })
@@ -47,7 +47,8 @@ const wait = (ms: number) => act(() => new Promise(r => setTimeout(r, ms)))
 
 it('edits a paragraph where it is rendered, keeps its markup, saves at once and undoes', async () => {
   mount()
-  expect([...host.querySelectorAll('.doc-modes button')].map(b => b.textContent)).toEqual(['미리보기', '나란히', '소스'])
+  expect([...host.querySelectorAll('.doc-modes button')].map(b => b.textContent)).toEqual(['보기', '편집', '나란히', '소스'])
+  expect(button('편집').getAttribute('aria-pressed')).toBe('true')
   act(() => block('Intro').click())
   expect(region()?.localName).toBe('p')
   expect(region()?.getAttribute('contenteditable')).toBe('plaintext-only')
@@ -234,6 +235,21 @@ it('원문 in the HTML preview shows that element in the source, selected', asyn
   const view = EditorView.findFromDOM(host.querySelector<HTMLElement>('.cm-editor')!)!
   const {from, to} = view.state.selection.main
   expect(page.slice(from, to)).toBe('<p>Some <b>text</b></p>')
+})
+
+it('reads only in 보기: a click opens no editor and a checkbox stays as it is', async () => {
+  mount()
+  act(() => button('보기').click())
+  expect(localStorage.getItem('agentboard.doc.view.markdown')).toBe('view')
+  expect(host.querySelector('.doc-tool')?.textContent ?? '').not.toContain('되돌리기')
+  act(() => block('Intro').click())
+  expect(region()).toBeNull()
+  expect(editorText()).toBeNull()
+  expect(host.querySelector<HTMLInputElement>('input[type="checkbox"]')!.disabled).toBe(true)
+  act(() => button('편집').click())
+  act(() => block('Intro').click())
+  expect(region()?.localName).toBe('p')
+  act(() => button('취소').click())
 })
 
 it('saves a dirty file tab when it closes instead of asking', async () => {

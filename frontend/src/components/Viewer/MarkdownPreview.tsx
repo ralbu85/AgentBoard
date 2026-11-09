@@ -157,7 +157,7 @@ export function MarkdownPreview({content, filePath, attachments, doc, slot, dela
     return () => window.clearTimeout(timer)
   }, [content, editor, delay])
   const sources = useQuartoSources(shown, filePath, quarto && local)
-  const rendered = useMemo(() => renderBlocks(shown, {filePath, quarto, tasks: writable, attachments, sources}), [shown, filePath, quarto, writable, attachments, sources])
+  const rendered = useMemo(() => renderBlocks(shown, {filePath, quarto, tasks: writable && editing, attachments, sources}), [shown, filePath, quarto, writable, editing, attachments, sources])
   useLayoutEffect(() => { if (bodyRef.current) enhance(bodyRef.current) }, [rendered.html])
   useEffect(() => { doc?.setPaused(() => !!editorRef.current || pending.current !== null); return () => doc?.setPaused(null) }, [])
   const toast = (text: string) => useToasts.getState().push(text)
@@ -319,7 +319,7 @@ export function MarkdownPreview({content, filePath, attachments, doc, slot, dela
     if (target instanceof HTMLInputElement && target.type === 'checkbox') {
       const li = target.closest<HTMLElement>('li[data-mb]'), block = li ? rendered.blocks[Number(li.dataset.mb)] : undefined
       if (editorRef.current) { e.preventDefault(); return }   // finish the open edit first
-      if (!writable || !block || target.disabled) return
+      if (!writable || !editing || !block || target.disabled) return
       const base = current(), at = locateBlock(base, block)
       if (!at) { e.preventDefault(); toast('파일이 바뀌어 체크 상자를 찾지 못했습니다.'); return }
       apply(base, toggleTask(base, at))

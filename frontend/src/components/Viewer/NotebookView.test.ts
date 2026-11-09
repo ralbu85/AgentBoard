@@ -17,8 +17,8 @@ let root: Root, host: HTMLDivElement, server: Record<string, any>, calls: string
 
 beforeEach(() => {
   ;(globalThis as any).IS_REACT_ACT_ENVIRONMENT = true
-  localStorage.setItem('agentboard.doc.edit', '1')
-  localStorage.removeItem('agentboard.doc.mode.notebook')
+  localStorage.clear()
+  localStorage.setItem('agentboard.doc.edit', '1')   // the old ✎ on: notebooks open in 편집
   useNotebooks.setState({records: {}})
   server = {id: 'nb', path: PATH, content: SRC, version: 'v1', revision: 1, dirty: false, state: 'stopped', cell: null, error: '', kernel: false, python: 'python'}
   fileVersion = 'v1'
@@ -100,7 +100,17 @@ it('shows every markdown cell as markdown in 소스 and remembers it', async () 
   const cells = [...host.querySelectorAll<HTMLElement>('.nb-markdown-cell')]
   expect(cells.map(c => !!c.querySelector('.cm-editor'))).toEqual([true, true])
   expect(host.querySelector('.nb-markdown-preview')).toBeNull()
-  expect(localStorage.getItem('agentboard.doc.mode.notebook')).toBe('source')
-  act(() => button('미리보기').click())
+  expect(localStorage.getItem('agentboard.doc.view.notebook')).toBe('source')
+  act(() => button('편집').click())
   expect(block('Some')).toBeTruthy()
+})
+
+it('only reads markdown cells in 보기: a click opens no editor and there is no 원문', async () => {
+  await mount()
+  act(() => button('보기').click())
+  act(() => block('Some').click())
+  expect(region()).toBeNull()
+  expect(host.querySelector('.md-block-editor-text')).toBeNull()
+  expect([...host.querySelectorAll('.nb-markdown-cell button')].map(b => b.textContent)).not.toContain('원문')
+  expect(host.querySelector('.nb-markdown-cell .cm-editor')).toBeNull()
 })
