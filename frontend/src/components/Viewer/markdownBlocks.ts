@@ -1,6 +1,6 @@
 import {Marked, Renderer, type Links, type MarkedExtension, type Token, type TokenizerAndRendererExtension, type Tokens} from 'marked'
 import markedKatex from 'marked-katex-extension'
-import {finishHtml, toggleTaskLine} from '../../markdown'
+import {finishHtml, toggleTaskLine, type MarkdownAttachments} from '../../markdown'
 
 // Click-to-edit for rendered Markdown and Quarto. Each block element carries
 // data-mb="k" and blocks[k] names the source range it came from. Editing shows
@@ -366,7 +366,7 @@ export function inlineAttrs(html: string): string {
 }
 
 /** `tasks`: task boxes in editable items can be clicked (the caller saves). */
-export function renderBlocks(src: string, {filePath, quarto, tasks = true}: {filePath?: string; quarto: boolean; tasks?: boolean}): MdRender {
+export function renderBlocks(src: string, {filePath, quarto, tasks = true, attachments}: {filePath?: string; quarto: boolean; tasks?: boolean; attachments?: MarkdownAttachments}): MdRender {
   const md = instance(quarto), b = new Builder(src)
   // marked rewrites CRLF, so offsets would drift: such files render read-only.
   const editable = !src.includes('\r')
@@ -382,7 +382,7 @@ export function renderBlocks(src: string, {filePath, quarto, tasks = true}: {fil
   const body = src.slice(base), tokens = md.lexer(body) as Tok[]
   if (md.defaults.walkTokens) md.walkTokens(tokens, md.defaults.walkTokens)   // Quarto's smart dashes
   if (editable) walk(b, tokens, body, {abs: o => base + o, local: o => o, cont: ''})
-  const html = finishHtml(inlineAttrs(head + md.parser(tokens)), filePath, undefined, root => {
+  const html = finishHtml(inlineAttrs(head + md.parser(tokens)), filePath, attachments, root => {
     if (tasks) for (const box of root.querySelectorAll('input[type="checkbox"]')) if (box.closest('li')?.hasAttribute('data-mb')) box.removeAttribute('disabled')
   })
   return {html, blocks: editable ? b.blocks : [], links: (tokens as Token[] & {links?: Links}).links || {}}

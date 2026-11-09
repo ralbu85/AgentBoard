@@ -1,5 +1,5 @@
 import type {Links, Token} from 'marked'
-import {finishHtml} from '../../markdown'
+import {finishHtml, type MarkdownAttachments} from '../../markdown'
 import {ATTRS, esc, inlineAttrs, instance, type MdBlock} from './markdownBlocks'
 
 // Editing a paragraph, heading or list item where it is rendered. The block's
@@ -76,7 +76,7 @@ function frame(b: MdBlock): {prefix: string; content: string; suffix: string} | 
   return content.trim() ? {prefix, content, suffix} : null
 }
 
-export function inlineModel(b: MdBlock, {quarto, filePath, links}: {quarto: boolean; filePath?: string; links?: Links}): InlineModel | null {
+export function inlineModel(b: MdBlock, {quarto, filePath, links, attachments}: {quarto: boolean; filePath?: string; links?: Links; attachments?: MarkdownAttachments}): InlineModel | null {
   const f = frame(b)
   if (!f) return null
   const md = instance(quarto), lexer = new md.Lexer(md.defaults)
@@ -142,7 +142,7 @@ export function inlineModel(b: MdBlock, {quarto, filePath, links}: {quarto: bool
 
   const body = pieces(tokens)
   if (body === null) return null
-  const html = finishHtml(body, filePath)
+  const html = finishHtml(body, filePath, attachments)
   const model: InlineModel = {prefix: f.prefix, suffix: f.suffix, html, text: plain(html), segs, wraps, atoms, nbsp: f.content.includes('\u00a0')}
   // Opened and closed untouched, the block must read back as its own source, byte for byte.
   const probe = document.createElement('div')

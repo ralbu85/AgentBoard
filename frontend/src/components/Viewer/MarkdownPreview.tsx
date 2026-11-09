@@ -8,6 +8,7 @@ import {MOD, readPref, writePref} from './docSync'
 import {deleteBlock, insertAfter, isQuarto, locateBlock, renderBlocks, replaceBlock, toggleTask, type MdBlock} from './markdownBlocks'
 import {INLINE_KINDS, inlineModel, normalize, readInline, readTyped} from './markdownInline'
 import type {Links} from 'marked'
+import type {MarkdownAttachments} from '../../markdown'
 
 /** Rendered Markdown / Quarto (Notion-style), editable block by block: a click
  *  on a paragraph, heading or list item edits its text where it is rendered;
@@ -43,7 +44,7 @@ const makeEditable = (region: HTMLElement) => {
 
 /** Make the block's own text editable where it is shown; null when the text
  *  on screen can't be mapped back to its markdown (the caller opens that). */
-function editInPlace(block: MdBlock, el: HTMLElement, opts: {quarto: boolean; filePath?: string; links: Links}): InlineEdit | null {
+function editInPlace(block: MdBlock, el: HTMLElement, opts: {quarto: boolean; filePath?: string; links: Links; attachments?: MarkdownAttachments}): InlineEdit | null {
   const model = inlineModel(block, opts)
   if (!model) return null
   const snapshot = el.innerHTML
@@ -120,9 +121,11 @@ function caretFor(text: string, x: number, y: number): number | undefined {
   }
 }
 
-export function MarkdownPreview({content, filePath, doc, slot, delay = 0, onContextMenu}: {
+export function MarkdownPreview({content, filePath, attachments, doc, slot, delay = 0, zoomable = true, onContextMenu}: {
   content: string; filePath?: string; doc?: DocEdit; slot?: HTMLElement | null
-  delay?: number   // side by side: re-render once typing pauses
+  attachments?: MarkdownAttachments   // a notebook cell's images
+  delay?: number                      // side by side: re-render once typing pauses
+  zoomable?: boolean                  // a notebook cell follows the notebook, not the document zoom
   onContextMenu?: (info: SelectionInfo) => void
 }) {
   const writable = !!doc?.writable
@@ -147,7 +150,7 @@ export function MarkdownPreview({content, filePath, doc, slot, delay = 0, onCont
     const timer = window.setTimeout(() => setShown(content), delay)
     return () => window.clearTimeout(timer)
   }, [content, editor, delay])
-  const rendered = useMemo(() => renderBlocks(shown, {filePath, quarto, tasks: writable}), [shown, filePath, quarto, writable])
+  const rendered = useMemo(() => renderBlocks(shown, {filePath, quarto, tasks: writable, attachments}), [shown, filePath, quarto, writable, attachments])
   useEffect(() => { doc?.setPaused(() => !!editorRef.current || pending.current !== null); return () => doc?.setPaused(null) }, [])
   const toast = (text: string) => useToasts.getState().push(text)
 
@@ -175,7 +178,7 @@ export function MarkdownPreview({content, filePath, doc, slot, delay = 0, onCont
   }
   /** Edit the block's text where it is rendered; false when it has to be edited as markdown. */
   const openInline = (mode: Editor['mode'], block: MdBlock, el: HTMLElement, x?: number, y?: number) => {
-    const inline = mode === 'edit' ? editInPlace(block, el, {quarto, filePath, links: rendered.links}) : addInPlace(block, el)
+    const inline = mode === 'edit' ? editInPlace(block, el, {quarto, filePath, links: rendered.links, attachments}) : addInPlace(block, el)
     if (!inline) return false
     for (let d = el.closest('details'); d; d = d.parentElement?.closest('details') ?? null) d.open = true
     const host = document.createElement(inline.region.localName === 'li' || el.localName === 'li' ? 'li' : 'div')
@@ -339,7 +342,7 @@ export function MarkdownPreview({content, filePath, doc, slot, delay = 0, onCont
       <span className="md-zoom-label" onClick={() => setZoom(1)} title="100%로">{Math.round(zoom * 100)}%</span>
       <button className="md-zoom-btn" onClick={zoomIn} title="확대">+</button>
     </>, slot)}
-    <div ref={bodyRef} className={`md-rendered ${editing ? 'md-editable' : ''}`} style={{ zoom }} dangerouslySetInnerHTML={{ __html: rendered.html }}
+    <div ref={bodyRef} className={`md-rendered ${editing ? 'md-editable' : ''}`} style={zoomable ? {zoom} : undefined} dangerouslySetInnerHTML={{ __html: rendered.html }}
       onContextMenu={handleContextMenu} onClick={handleClick} onPointerOver={handleHover} onPointerLeave={handleHover} />
     {editor && createPortal(editor.inline
       ? <InlineBar mode={editor.mode} onCommit={then => commit(editor, editor.inline!.read(), then)} onCancel={() => cancel(editor)} onDelete={() => remove(editor)} onSource={() => toSource(editor)}/>

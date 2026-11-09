@@ -1830,6 +1830,7 @@ html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 .nb-environment-folder { overflow-wrap:anywhere; }
 .nb-markdown-cell { margin:12px 0; padding:0 10px; min-width:0; }
 .nb-markdown-preview { padding:8px 0; min-height:36px; outline:none; }
+.nb-markdown-preview > .md-rendered { padding:0; height:auto; overflow:visible; }
 .nb-markdown-preview:focus-visible { outline:1px solid var(--border); outline-offset:4px; border-radius:4px; }
 .nb-markdown-cell.editing { padding:10px; border:1px solid var(--border); border-radius:6px; }
 .nb-markdown-cell .cm-cell-editor { height:auto; min-height:60px; }
