@@ -2,9 +2,9 @@ import { Terminal } from '@xterm/xterm'
 import { SearchAddon } from '@xterm/addon-search'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import { Unicode11Addon } from '@xterm/addon-unicode11'
-import { loadTerminalPreferences, terminalPreferenceKey, desktopColumns, viewportRows, viewportScale, type TerminalPreferences } from './readability'
+import { loadTerminalPreferences, terminalPreferenceKey, desktopColumns, settledColumns, viewportRows, viewportScale, type TerminalPreferences } from './readability'
 import {handleCopyKey, writeClipboard} from './clipboard'
-import {reflowFrame, replaceFrameScreen, mobileHistoryTail, type SourceFrame} from './reflow'
+import {reflowFrame, replaceFrameScreen, mobileHistoryTail, fitHistoryTables, type SourceFrame} from './reflow'
 import {NativeTerminalSelection} from './nativeSelection'
 import {MobileTerminalView} from './MobileTerminalView'
 import {useToasts} from '../../toasts'
@@ -77,6 +77,8 @@ interface TermInstance {
   nativeMeasure?: boolean
   followOnReveal?: boolean
   scrollEpoch?: number
+  fitCell?: string
+  fitCols?: number
 }
 
 // Only explicit navigation/reading changes this generation. A queued xterm
@@ -304,14 +306,18 @@ function receiveGrid(id:string,cols=CANONICAL_COLS,rows=CANONICAL_ROWS,fullRows=
 const CLAIM_MS=5500
 let lastInteraction=Date.now()
 const claiming=()=>Date.now()-lastInteraction<CLAIM_MS
-let sharedWidth:{cols:number;sent:number}|undefined
+// A new font size or browser zoom is asked for, so it gets its own width
+// rather than the 10% margin that absorbs layout changes.
+const cellKey=(cellW:number)=>`${cellW}@${window.devicePixelRatio}`
+let sharedWidth:{cols:number;sent:number;cell:string}|undefined
 function reportSharedWidth(container:HTMLElement,cellW:number){
   if(document.hidden)return
   // A split pane or grid tile is narrow only while shown; other sessions keep the full width.
   const full=container.closest('.workbench-split,.grid-tile')?container.closest<HTMLElement>('.main-area'):container
-  const cols=desktopColumns((full||container).clientWidth,cellW)
+  const fit=desktopColumns((full||container).clientWidth,cellW),cell=cellKey(cellW)
+  const cols=sharedWidth?.cell===cell?settledColumns(fit,sharedWidth.cols):fit
   if(sharedWidth?.cols===cols&&Date.now()-sharedWidth.sent<5000)return
-  sharedWidth={cols,sent:Date.now()}
+  sharedWidth={cols,sent:Date.now(),cell}
   send({type:'desktop-width',cols,claim:claiming()})
 }
 
@@ -330,14 +336,14 @@ function requestViewport(id:string,cols:number){
     if(!t.el.isConnected||t.el.style.display==='none'||document.hidden)return
     viewportRequests.set(id,{device,cols,sent:Date.now()})
     send({type:'viewport',id,device,cols,claim:claiming()})
-  },180))
+  },isMobile?180:400))   // a dragged divider resizes the session once, where it stops
 }
 export function releaseViewport(id:string){
   clearTimeout(viewportTimers.get(id));viewportTimers.delete(id)
   if(viewportRequests.delete(id))send({type:'viewport-release',id})
 }
 export function refreshViewports(){
-  sharedWidth=undefined
+  if(sharedWidth)sharedWidth.sent=0   // renew, keeping the width it settled on
   for(const [id,t] of terminals){
     if(t.opened&&t.el.isConnected&&t.el.style.display!=='none'&&!document.hidden){
       const previous=viewportRequests.get(id)
@@ -399,7 +405,11 @@ export function refit(id: string) {
   const followOutput=!!t.followOnReveal||!isScrolledUp(id),scrollPosition=t.term.buffer.active.viewportY
   const preserveZoomScroll=scaleChanged&&!t.needsSnapshot
   if(grid.dynamic){
-    requestViewport(id,desktopColumns(container.clientWidth,cellW))
+    const fit=desktopColumns(container.clientWidth,cellW),cell=cellKey(cellW)
+    if(t.fitCell!==undefined&&t.fitCell!==cell)t.fitCols=fit
+    t.fitCell=cell
+    if(t.fitCols===grid.cols)t.fitCols=undefined
+    requestViewport(id,settledColumns(fit,t.fitCols??grid.cols))
     reportSharedWidth(container,cellW)
   }
   const rows=viewportRows(container.clientHeight,cell.height,scale,grid.rows,!isMobile&&!!grid.fullRows)
@@ -517,12 +527,12 @@ export function isScrolledUp(id?: string) {
 // is async, so a fast resync that triggers two snapshots in flight
 // could otherwise stack their contents.)
 function _applySnapshot(t: TermInstance, frame: SourceFrame,follow=true) {
-  const data=frame.data
   t.needsSnapshot=false
   t.snapshot=frame
   t.screen=undefined
   if(isMobile){_renderMobileSnapshot(t,frame,follow);return}
   const grid=grids.get(t.id)
+  const data=fitHistoryTables(frame,t.term.cols,grid?.rows||CANONICAL_ROWS)
   t.sourceTop=grid?.fullRows?Math.max(0,Math.min(t.term.rows-grid.rows,data.split('\n').length-grid.rows)):0
   const epoch=t.scrollEpoch
   t.term.write('\x1b[0m\x1b[3J\x1b[2J\x1b[H' + data, () => {

@@ -1,7 +1,7 @@
 import {expect,it} from 'vitest'
 import {Terminal} from '@xterm/xterm'
 import {Unicode11Addon} from '@xterm/addon-unicode11'
-import {reflowFrame,replaceSourceScreen,replaceFrameScreen,mobileHistoryTail} from './reflow'
+import {reflowFrame,replaceSourceScreen,replaceFrameScreen,mobileHistoryTail,fitHistoryTables} from './reflow'
 import {plainText,textWidth,wrapText} from './terminalText'
 
 async function render(data:string,cols:number,sourceRows:number){
@@ -109,4 +109,113 @@ it('cached history plus a live tail matches full reflow across tables, soft wrap
   const projected=reflowFrame(snapshot.data,25,2,snapshot.wrappedRows),cache=mobileHistoryTail(snapshot,2,projected)
   const live={data:'a delta changed\r\nprompt'},tail=replaceFrameScreen(cache.source,live,2),merged=replaceFrameScreen(snapshot,live,2)
   expect([...cache.prefix,...reflowFrame(tail.data,25,2,tail.wrappedRows).lines].map(plainText)).toEqual(reflowFrame(merged.data,25,2,merged.wrappedRows).lines.map(plainText))
+})
+
+// What tmux does to a row when the pane narrows: hard-wrap by cell width; a wide
+// glyph that misses the last column starts the next row.
+function tmuxWrap(row:string,cols:number){
+  const rows:string[]=[];let current='',used=0
+  for(const char of Array.from(row)){
+    const size=textWidth(char)
+    if(used+size>cols){rows.push(current);current='';used=0}
+    current+=char;used+=size
+  }
+  return [...rows,current]
+}
+function narrowed(history:string[],screen:string[],cols:number){
+  const lines:string[]=[],wrappedRows:number[]=[]
+  for(const row of history){
+    const pieces=tmuxWrap(row,cols)
+    pieces.forEach((piece,i)=>{if(i<pieces.length-1)wrappedRows.push(lines.length);lines.push(piece)})
+  }
+  return {data:[...lines,...screen].join('\r\n')+'\r\x1b[2A\x1b[2C\x1b[?25h',wrappedRows}
+}
+const border=(l:string,j:string,r:string,w:number[])=>'  '+l+w.map(n=>'─'.repeat(n+2)).join(j)+r
+const cells=(values:string[],w:number[])=>'  │'+values.map((v,i)=>' '+v+' '.repeat(w[i]-textWidth(v))+' │').join('')
+
+it('desktop draws a history table a narrower width broke so it fits again, and leaves the rest of the grid alone',async()=>{
+  const w=[20,46,30,16,24,12]   // six columns, printed 169 cells wide
+  const table=[border('┌','┬','┐',w),cells(['파일','미리보기에서 바로 고치기','클릭하면','원문','되돌리기','상태'],w),border('├','┼','┤',w),
+    cells(['Markdown·Quarto','문장·제목·목록 글자가 그 자리에서 입력 상태로','코드 블록은 그 블록 원문만','소스','↶ / Ctrl+Z','✅'],w),border('└','┴','┘',w)]
+  const prose='  '+'화면 폭이 바뀔 때 다시 그려지는지 보려고 넣은 긴 문장입니다. '.repeat(4)
+  const screen=['❯ prompt','','status']
+  const frame=narrowed(['● 답',prose,...table,'끝'],screen,120)
+  const fitted=fitHistoryTables(frame,120,screen.length)
+  const tail=fitted.match(/\r\x1b\[2A\x1b\[2C\x1b\[\?25h$/)
+  expect(tail).not.toBeNull()
+  const lines=fitted.slice(0,tail!.index).split('\r\n')
+  // Prose keeps tmux's rows; the screen the app draws on is untouched.
+  const source=frame.data.split('\r\n'),head=1+tmuxWrap(prose,120).length
+  expect(head).toBeGreaterThan(2)
+  expect(lines.slice(0,head)).toEqual(source.slice(0,head))
+  expect(lines.slice(-screen.length)).toEqual(screen)
+  const drawn=lines.slice(head,-screen.length-1).map(plainText)
+  expect(drawn.every(line=>textWidth(line)<=120)).toBe(true)
+  expect(drawn.filter(line=>line.startsWith('  │')).every(line=>line.trimEnd().endsWith('│'))).toBe(true)
+  const column=(rows:string[],c:number)=>rows.filter(line=>line.startsWith('  │')).map(line=>line.split('│')[c+1]).join('').replace(/\s/g,'')
+  expect(w.map((_,c)=>column(drawn,c))).toEqual(w.map((_,c)=>column(table,c)))
+  expect(lines[lines.length-screen.length-1]).toBe('끝')
+  // xterm draws every row on a line of its own: nothing wraps at 120 columns.
+  const term=new Terminal({cols:120,rows:10,scrollback:200,allowProposedApi:true})
+  term.loadAddon(new Unicode11Addon());term.unicode.activeVersion='11'
+  try{
+    await new Promise<void>(resolve=>term.write(fitted,resolve))
+    const buffer=term.buffer.active
+    expect(buffer.length).toBe(lines.length)
+    expect(Array.from({length:buffer.length},(_,i)=>buffer.getLine(i)!.isWrapped)).not.toContain(true)
+  }finally{term.dispose()}
+  // Without tmux's wrap marks nothing is joined or redrawn.
+  expect(fitHistoryTables({data:frame.data},120,screen.length)).toBe(frame.data)
+  // A table that fits keeps the source grid exactly, aligned or not.
+  const narrow=narrowed(['  │ a │ b │','  ├───┼───┤','  │ ccc │ d │'],screen,120)
+  expect(fitHistoryTables(narrow,120,screen.length)).toBe(narrow.data)
+  // A wide pipe table is usually source text (a file, code in a command): left as tmux wrapped it.
+  const markdown=narrowed(['    | 번호 | 자료 |','    |---|---|','    | 참고 1 | '+'긴 링크 텍스트 '.repeat(20)+'|'],screen,120)
+  expect(markdown.wrappedRows.length).toBeGreaterThan(0)
+  expect(fitHistoryTables(markdown,120,screen.length)).toBe(markdown.data)
+})
+
+it('separates the redrawn table from the cut-off old copy a resize joined it to, then and after a later reflow',()=>{
+  // Claude Code redraws from the screen top after a resize; the row above keeps
+  // its wrap mark, so the redraw's first table row hangs off the old copy's rule.
+  const old=[20,46,30,16,24,12],now=[18,18,14,14,14,12]   // 169 and 111 cells wide
+  const redrawn=[cells(['PDF·이미지','❌ 보기 전용','—','—','—','—'],now),border('└','┴','┘',now)]
+  const history=['● 답 4',border('┌','┬','┐',old),cells(['파일','미리보기에서 바로 고치기','클릭하면','원문','되돌리기','상태'],old),
+    tmuxWrap(border('├','┼','┤',old),120)[0]+redrawn[0],redrawn[1],'','  중간 문단 3.']
+  const screen=['❯ prompt','','status']
+  // 200: a wider reflow puts both on one row, with no wrap mark left.
+  for(const cols of [120,100,200]){
+    const frame=narrowed(history,screen,cols)
+    if(cols===200)expect(frame.data.split('\r\n').filter(line=>line.includes('┼')&&line.includes('PDF'))).toHaveLength(1)
+    const lines=fitHistoryTables(frame,cols,screen.length).split('\r\n').map(plainText)
+    const pdf=lines.filter(line=>line.includes('PDF·이미지'))
+    expect(pdf).toHaveLength(1)
+    expect(pdf[0]).toMatch(/^ {2}│ PDF·이미지 +│.*│$/)
+    expect(lines.every(line=>textWidth(line)<=cols)).toBe(true)
+    // The phone reads it as a table row too, not as text after a border.
+    const phone=reflowFrame(frame.data,44,screen.length,frame.wrappedRows).lines.map(plainText)
+    expect(phone).toContain('  PDF·이미지 · ❌ 보기 전용 · — · — · — · —')
+  }
+})
+
+it('joins the table rows Claude Code redraws broken where a narrower width ended',()=>{
+  // Widening from 150 (or 140): each row of the new 197-cell table is written as
+  // two rows, the second indented, with no wrap mark. At 150 every piece ends on
+  // a divider and looks like a whole, narrower row.
+  const w=[24,24,39,48,30,11]
+  const table=[border('┌','┬','┐',w),cells(['파일','미리보기에서 바로 고치기','클릭하면','그 자리에서 안 되는 부분','원문 보기','되돌리기'],w),
+    border('├','┼','┤',w),cells(['PDF·이미지','❌ 보기 전용','—','—','—','—'],w),border('└','┴','┘',w)]
+  const screen=['❯ prompt','','status']
+  for(const old of [150,140]){
+    const broken=table.flatMap(row=>{const [head,...rest]=tmuxWrap(row,old);return [head.trimEnd(),'  '+rest.join('')]})
+    const frame={data:['  끝 문단 3.','',...broken,'','  중간 문단 4.',...screen].join('\r\n')}
+    const lines=fitHistoryTables(frame,200,screen.length).split('\r\n').map(plainText)
+    expect(lines.slice(2,2+table.length)).toEqual(table)
+    expect(lines.slice(2+table.length)).toEqual(['','  중간 문단 4.',...screen])
+    const phone=reflowFrame(frame.data,44,screen.length).lines.map(plainText)
+    expect(phone).toContain('  파일: PDF·이미지')
+  }
+  // Rows of a table that are whole are never joined, even to an indented line.
+  const whole=[...table,'  ───']
+  expect(fitHistoryTables({data:[...whole,...screen].join('\r\n')},200,screen.length)).toBe([...whole,...screen].join('\r\n'))
 })

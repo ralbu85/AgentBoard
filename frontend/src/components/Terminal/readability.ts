@@ -27,3 +27,10 @@ export function viewportRows(height:number,cellHeight:number,scale:number,source
 export function desktopColumns(width:number,cellWidth:number) {
   return cellWidth>0?Math.max(80,Math.min(240,Math.floor(width/cellWidth))):80
 }
+
+// Every width change makes the app redraw: Claude Code prints its last answer
+// again below the old copy, and tmux re-wraps the tables above it. A pane within
+// 10% of the current width keeps it; the display scales or leaves a margin.
+export function settledColumns(fit:number,current?:number) {
+  return current!==undefined&&fit>=current*0.9&&fit<=current*1.1?current:fit
+}

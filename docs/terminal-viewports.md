@@ -20,6 +20,32 @@ A resize makes the application redraw, so state detection pauses for 4 seconds
 and the redraw counts as neither activity nor a state change. Sessions attached
 from outside AgentBoard are not moved. With no desktop connected, nothing moves.
 
+Each resize costs the reader something. Claude Code clears the screen and draws
+the end of the conversation again from its top, so the rows above keep a cut-off
+old copy. tmux re-wraps every row wider than the new width, so the tables above
+break apart. A desktop pane that stays within 10% of the session's width
+therefore keeps it: the grid scales down or leaves a margin. The shared width
+follows the same rule. A new font size or browser zoom changes the cell size and
+gets its exact width instead. Desktop viewport requests wait 400 ms, so a dragged
+divider resizes once, where it stops.
+
+When a narrower width does break a box-drawn table in history, the desktop joins
+its rows back where tmux marked them soft-wrapped and draws the table again at
+the current width, using the phone's projection with columns kept side by side.
+Prose, pipe tables (usually source text there) and the source screen keep their
+rows. The soft-wrap check accepts two things a reflow leaves behind: a wide glyph
+moved off the last column with no padding cell, and an empty continuation row
+that `-J` folds away. Either one used to drop the whole frame's wrap metadata.
+
+Two more repairs apply to the desktop's history and to phones. The row above the
+redraw keeps its wrap mark, so the first redrawn table row is joined to the old
+copy (on one row once a wider reflow joins them); it is split off where a row
+with the next row's indent and column widths starts. After widening, Claude Code
+writes its first redrawn table rows broken where the old width ended, the second
+piece indented and with no wrap mark. Such a pair is joined only when the result
+has the column widths of a neighbouring row. One cut-off row per resize and the
+duplicate copy remain; they are what the application wrote.
+
 A split pane or grid tile is the one exception: a session visible there fits that
 pane for as long as it is shown, while the shared width still comes from the full
 terminal area. It rejoins 30 seconds after leaving, so flipping tabs does not
@@ -52,7 +78,8 @@ font changes reflow this source again, never already-wrapped output. Live screen
 updates replace the original source rows before reflow; if wrapping changes the
 screen height, the client rebuilds with the original history so stale screen
 rows do not become history. Trailing unused source padding is omitted on mobile,
-but content and the cursor row are kept. Desktop retains the source grid layout.
+but content and the cursor row are kept. Desktop retains the source grid layout,
+except for history tables a narrower width broke (above).
 Table projection uses the complete cached history plus the latest source screen,
 so a table spanning that boundary keeps consistent column widths. Projection
 never replaces the cached source. Phone text uses a single native scroll surface. Enter in the mobile input card

@@ -1,5 +1,5 @@
 import {AnsiStyle,plainText,textWidth,wrapText} from './terminalText'
-import {mobileTables} from './mobileTables'
+import {brokenTableRows,mobileTables,splitRedrawSeam} from './mobileTables'
 import {mobileChrome} from './mobileChrome'
 
 const cursorTail = /\r(?:\x1b\[(\d+)([AB]))?(?:\x1b\[(\d+)C)?\x1b\[\?25([hl])$/
@@ -26,6 +26,25 @@ export function replaceFrameScreen(snapshot:SourceFrame,screen:SourceFrame,sourc
     ...(snapshot.wrappedRows||[]).filter(row=>row<history),
     ...(screen.wrappedRows||[]).map(row=>row+history),
   ]}
+}
+
+// Undo what a resize does to the rows an app draws again (brokenTableRows,
+// splitRedrawSeam). `from` is each returned line's index in `lines`; the line
+// at `keep` (the cursor's) is left alone.
+function repairRedraw(lines:string[],keep?:number){
+  const broken=brokenTableRows(lines)
+  const out:string[]=[],from:number[]=[]
+  for(let i=0;i<lines.length;i++){
+    const joined=i!==keep&&i+1!==keep?broken.get(i):undefined
+    out.push(joined??lines[i]);from.push(i)
+    if(joined!==undefined)i++
+  }
+  let changed=out.length<lines.length
+  for(let i=out.length-2;i>=0;i--){
+    const split=from[i]!==keep&&splitRedrawSeam(out[i],out[i+1])
+    if(split){out.splice(i,1,...split);from.splice(i,0,from[i]);changed=true}
+  }
+  return {lines:out,from,changed}
 }
 
 export function reflowFrame(data:string, cols:number, sourceRows:number,wrappedRows:number[]=[] ) {
@@ -63,12 +82,20 @@ export function reflowFrame(data:string, cols:number, sourceRows:number,wrappedR
     }
     lines=logical;sourceIndices=indices;screenStart=newStart;cursor=newCursor
   }
+  const repaired=repairRedraw(lines,cursor?.row)
+  if(repaired.changed){
+    const from=repaired.from,start=from.findIndex(row=>row>=screenStart)
+    sourceIndices=from.map(row=>sourceIndices[row])
+    screenStart=start<0?from.length:start
+    if(cursor)cursor={...cursor,row:from.indexOf(cursor.row)}
+    lines=repaired.lines
+  }
   const tables=mobileTables(lines,cols,cursor)
   const chrome=mobileChrome(lines,cols,cursor)
   const style=new AnsiStyle()
   let historyRows=0, cursorRow=0, cursorCol=0
   for(let row=0;row<lines.length;row++) {
-    sourceRowStarts[sourceIndices[row]]=wrapped.length
+    sourceRowStarts[sourceIndices[row]]??=wrapped.length
     if(row===screenStart)historyRows=wrapped.length
     const chromeRow=chrome.get(row)
     if(chromeRow&&!tables.has(row)){
@@ -100,6 +127,33 @@ export function reflowFrame(data:string, cols:number, sourceRows:number,wrappedR
   }
   return {data:output, lines:wrapped, copyRows, sourceRowStarts, cursor:cursor?{row:cursorRow,col:cursorCol,visible:cursor.visible}:undefined, rows:wrapped.length-historyRows, historyRows, hasLayout:tables.size>0||chrome.size>0,
     screenHasLayout:[...tables.keys(),...chrome.keys()].some(row=>row>=screenStart),historySeam}
+}
+
+// Desktop shows the source grid, except where a narrower width broke it: tmux
+// re-wraps every row of a table printed wider than the terminal is now, and the
+// app redraws only its latest output. Such a table in history is joined back
+// (only where tmux marked a soft wrap) and drawn again to fit, as on a phone,
+// and the table rows a redraw broke or stuck to the old copy are repaired.
+// Everything else, and the screen rows the app still draws on, stays as is.
+export function fitHistoryTables(frame:SourceFrame,cols:number,sourceRows:number):string{
+  const tail=frame.data.match(cursorTail)
+  const lines=(tail?frame.data.slice(0,tail.index):frame.data).split('\r\n')
+  const history=lines.length-sourceRows
+  const joins=new Set((frame.wrappedRows||[]).filter(row=>row>=0&&row<history-1))
+  const chains:string[]=[],spans:[number,number][]=[]
+  for(let row=0;row<history;row++){
+    const first=row
+    let text=lines[row]
+    while(joins.has(row))text+=lines[++row]
+    chains.push(text);spans.push([first,row])
+  }
+  const {lines:logical,from,changed}=repairRedraw(chains)
+  // Only a wrapped row that starts with a box border can be part of a table to fit.
+  const tables=changed||[...joins].some(row=>/^ *[│┃║┌├└╭╰┏┣┗╔╠╚]/.test(plainText(lines[row])))?mobileTables(logical,cols,undefined,true):new Map<number,string[]>()
+  if(!tables.size&&!changed)return frame.data
+  // A repaired line is drawn from its text; any other keeps tmux's rows.
+  const out=logical.flatMap((text,i)=>tables.get(i)||(text===chains[from[i]]?lines.slice(spans[from[i]][0],spans[from[i]][1]+1):wrapText(text,cols).lines))
+  return [...out,...lines.slice(history)].join('\r\n')+(tail?.[0]||'')
 }
 
 // Keep only the source block that can affect the next screen projection.

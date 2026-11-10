@@ -59,3 +59,43 @@ it('claims only for a window with recent input', () => {
     expect(lastSharedReport()).toMatchObject({ claim: true })
   } finally { clock.mockRestore() }
 })
+
+it('keeps a session at its width through a small layout change, so the app does not redraw', () => {
+  vi.useFakeTimers()
+  try {
+    const sent = () => send.mock.calls.map(([m]) => m)
+    const viewport = (id: string) => sent().filter(m => m.type === 'viewport' && m.id === id).pop()
+    const { inst } = display('wide', 1344)   // 168 columns at 8px
+    TM.writeSnapshot(inst.id, 'x', 168, 40, true, 1, true)
+    expect(lastSharedReport()).toMatchObject({ cols: 168 })
+    const { inst: jiggle } = display('jiggle', 1280)   // 160: within 10%, scaled instead
+    TM.writeSnapshot(jiggle.id, 'x', 168, 40, true, 1, true)
+    vi.advanceTimersByTime(400)
+    expect(viewport('jiggle')).toMatchObject({ cols: 168 })
+    expect(sent().some(m => m.cols === 160)).toBe(false)
+    const { inst: narrow } = display('narrow', 800)   // 100: too small to scale
+    TM.writeSnapshot(narrow.id, 'x', 168, 40, true, 1, true)
+    vi.advanceTimersByTime(400)
+    expect(viewport('narrow')).toMatchObject({ cols: 100 })
+    expect(lastSharedReport()).toMatchObject({ cols: 100 })
+  } finally { vi.useRealTimers() }
+})
+
+it('gives a bigger font its own width instead of scaling it back down', () => {
+  vi.useFakeTimers()
+  try {
+    const viewport = () => send.mock.calls.map(([m]) => m).filter(m => m.type === 'viewport' && m.id === 'font').pop()
+    const { inst } = display('font', 1344)   // 168 columns at 8px
+    TM.writeSnapshot(inst.id, 'x', 168, 40, true, 1, true)
+    vi.advanceTimersByTime(400)
+    expect(viewport()).toMatchObject({ cols: 168 })
+    ;(inst.term as any)._core._renderService.dimensions.css.cell.width = 8.5   // A+: 158 columns, within 10%
+    TM.refit(inst.id)
+    vi.advanceTimersByTime(400)
+    expect(viewport()).toMatchObject({ cols: 158 })
+    expect(lastSharedReport()).toMatchObject({ cols: 158 })
+    TM.refit(inst.id)   // still waiting for the new grid: keeps asking for it
+    vi.advanceTimersByTime(400)
+    expect(viewport()).toMatchObject({ cols: 158 })
+  } finally { vi.useRealTimers() }
+})

@@ -92,10 +92,18 @@ def _with_soft_wraps(body: str, joined: str, cols: int) -> FrameText:
             if size and used == cols:
                 chunks.append(current); current, used = '', 0
             if used + size > cols:
-                return FrameText(body)
+                # A wide glyph that didn't fit the last column starts the next
+                # row. After a resize, tmux's reflow leaves that cell out of -J.
+                if size != 2 or used != cols - 1:
+                    return FrameText(body)
+                chunks.append(current); current, used = '', 0
             current += char; used += size
         chunks.append(current)
         for offset, chunk in enumerate(chunks):
+            # -J folds an empty soft-wrapped row into the line above it (an
+            # app's redraw after a resize leaves these behind).
+            while offset == 0 and index and index < len(rows) and not plain[index] and chunk.strip(' '):
+                wrapped.append(index - 1); index += 1
             if index >= len(rows) or chunk.rstrip(' ') != plain[index].rstrip(' '):
                 return FrameText(body)
             if offset < len(chunks)-1:

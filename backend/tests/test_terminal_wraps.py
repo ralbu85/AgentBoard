@@ -24,6 +24,21 @@ def test_cjk_wraps_and_inconsistent_capture_fail_closed():
     assert failed.wrapped_rows is None and str(failed)==original
 
 
+def test_rows_a_resize_rewrapped_still_verify():
+    # After a resize tmux's reflow moves a wide glyph that missed the last column
+    # to the next row with no padding cell in -J, and -J folds an empty
+    # continuation row (left by an app's redraw) into the line above. Either
+    # used to drop every wrap in the frame, so tables there couldn't be refitted.
+    frame=tmux._with_soft_wraps('한글A\n끝\n','한글A끝\n',6)
+    assert frame.wrapped_rows == [0]
+    assert str(frame)=='한글A\n끝\n'
+    frame=tmux._with_soft_wraps('│ a │ b\n\nnext\n','│ a │ b \nnext\n',8)
+    assert frame.wrapped_rows == [0]
+    assert str(frame)=='│ a │ b\n\nnext\n'
+    # An empty row -J does keep is an explicit blank line, not a continuation.
+    assert tmux._with_soft_wraps('text\n\nnext\n','text\n\nnext\n',8).wrapped_rows == []
+
+
 def test_ambiguous_margin_spaces_are_preserved_instead_of_changing_words():
     # Older tmux exports both a written space and an unused cell before a wide
     # glyph as ' '. There is no evidence allowing us to delete either one.
