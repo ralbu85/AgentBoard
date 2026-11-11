@@ -24,7 +24,7 @@ describe('HTML preview runtime', () => {
     let pageSawClick = false
     document.body.addEventListener('click', () => { pageSawClick = true })
     click(el(4).firstChild!.parentElement!)
-    expect(last()).toEqual({t: 'begin', i: 4, tag: 'li', before: '둘째 <strong>강조</strong>'})
+    expect(last()).toEqual({t: 'begin', i: 4, tag: 'li', before: '둘째 <strong>강조</strong>', text: '둘째 강조'})
     expect(pageSawClick).toBe(false)
     expect(el(4).hasAttribute('contenteditable')).toBe(false)
     deliver({t: 'begin-ok', i: 4})
@@ -41,7 +41,7 @@ describe('HTML preview runtime', () => {
     expect(last().t).toBe('begin')
     key(el(4), {key: 'Enter'})
     // Typed spaces arrive as &nbsp; from contenteditable; the source keeps plain spaces.
-    expect(last()).toEqual({t: 'commit', i: 4, tag: 'li', before: '둘째 <strong>강조</strong>', after: '둘째! <strong>강조</strong>', add: false})
+    expect(last()).toEqual({t: 'commit', i: 4, tag: 'li', before: '둘째 <strong>강조</strong>', after: '둘째! <strong>강조</strong>', add: false, text: '둘째 강조', textAfter: '둘째!\u00a0강조'})
     expect(el(4).hasAttribute('contenteditable')).toBe(false)
   })
 
@@ -56,7 +56,7 @@ describe('HTML preview runtime', () => {
 
   it('drops an untouched new sibling instead of saving placeholder text', () => {
     key(el(5), {key: 'Enter'})
-    expect(last()).toEqual({t: 'delete', i: 5, tag: 'li', before: '새 텍스트'})
+    expect(last()).toEqual({t: 'delete', i: 5, tag: 'li', before: '새 텍스트', text: '새 텍스트'})
     deliver({t: 'patch', patches: [{kind: 'remove', i: 5, from: 6, delta: -1}]})
     expect(el(5).textContent).toBe('끝')
   })
@@ -69,7 +69,7 @@ describe('HTML preview runtime', () => {
     deliver({t: 'begin-ok', i: 1})
     el(1).textContent = '바뀜'
     key(el(1), {key: 'Escape'})
-    expect(last()).toEqual({t: 'commit', i: 1, tag: 'h2', before: '목표', after: '바뀜', add: false})
+    expect(last()).toEqual({t: 'commit', i: 1, tag: 'h2', before: '목표', after: '바뀜', add: false, text: '목표', textAfter: '바뀜'})
     expect(el(1).hasAttribute('contenteditable')).toBe(false)
   })
 

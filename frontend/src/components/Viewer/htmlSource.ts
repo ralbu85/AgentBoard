@@ -45,17 +45,24 @@ export interface SourceElement {
   end: number
   id?: [number, number]
 }
-export interface PreviewOp { t: 'commit' | 'add' | 'delete'; i: number; tag: string; before: string; after?: string; add?: boolean }
+// `text`/`textAfter`: the element's text as the page shows it (`BR` for <br>),
+// used when page scripts changed its markup (see editText).
+export interface PreviewOp { t: 'commit' | 'add' | 'delete'; i: number; tag: string; before: string; after?: string; add?: boolean; text?: string; textAfter?: string }
 export type PreviewResult = { content: string; patches: PreviewPatch[] | null; focus?: number } | { error: string }
 type Normalize = (html: string) => string
 
 // A leading BOM would end the head early; a space keeps every offset.
 const withoutBom = (src: string) => src.charCodeAt(0) === 0xfeff ? ' ' + src.slice(1) : src
 
-/** Every element that has a start tag in `src`, in source order (index = ordinal). */
-export function parseElements(src: string): SourceElement[] {
+type Tree = { text: string; doc: ParentNode }
+const parseTree = (src: string): Tree => {
   const text = withoutBom(src)
-  const doc = parse(SHAPE + text, {sourceCodeLocationInfo: true})
+  return {text, doc: parse(SHAPE + text, {sourceCodeLocationInfo: true})}
+}
+
+/** Every element that has a start tag in `src`, in source order (index = ordinal). */
+export function parseElements(src: string, tree = parseTree(src)): SourceElement[] {
+  const {text, doc} = tree
   const out: SourceElement[] = []
   const seen = new Set<number>()
   const at = (offset: number) => offset - SHAPE.length
@@ -104,16 +111,131 @@ export function buildDocument(src: string, cfg: PreviewConfig, files?: PreviewFi
   return `${head(files)}<script>${RUNTIME}(${json(cfg)})</script>${annotate(src, parseElements(src))}`
 }
 
-/** The element a preview message names, verified against the current source. */
-export function locate(src: string, op: { i: number; tag: string; before: string }, normalize: Normalize): { els: SourceElement[]; el: SourceElement } | { error: string } {
-  const els = parseElements(src), el = els[op.i]
+// The text a page shows, piece by piece with the source range each piece comes
+// from: a character (an entity or CRLF is one piece), or BR for a <br>. Script
+// and style text isn't shown. Editing through these pieces leaves every tag and
+// attribute of the source as it is.
+export const BR = '\0'
+const HIDDEN = new Set(['script', 'style', 'template', 'noscript'])
+const RAW = /\r\n?|&(?:#\d+;?|#[xX][\da-fA-F]+;?|[A-Za-z][A-Za-z\d]*;?)/g
+const references = new Map<string, string>()
+const decode = (ref: string) => {
+  let value = references.get(ref)
+  if (value === undefined) {
+    const t = document.createElement('template'); t.innerHTML = ref
+    value = t.content.textContent || ''; references.set(ref, value)
+  }
+  return value
+}
+interface Piece { from: number; to: number; text: string }
+
+function textPieces({text, doc}: Tree, el: SourceElement): Piece[] | null {
+  const at =(offset: number) => offset - SHAPE.length
+  let target: ParentNode | undefined
+  const find = (node: ParentNode) => {
+    for (const child of node.childNodes) {
+      if (target) return
+      if (!('tagName' in child)) continue
+      const open = child.sourceCodeLocation?.startTag
+      if (open && at(open.startOffset) === el.start) { target = child; return }
+      find(child)
+      if ('content' in child) find(child.content)
+    }
+  }
+  find(doc)
+  const pieces: Piece[] = []
+  const walk = (node: ParentNode): boolean => node.childNodes.every(child => {
+    const loc = child.sourceCodeLocation
+    if (child.nodeName === '#text') {
+      if (!loc) return false
+      const from = at(loc.startOffset), raw = text.slice(from, at(loc.endOffset))
+      let pos = 0, shown = ''
+      const push = (a: number, b: number, value: string) => { pieces.push({from: from + a, to: from + b, text: value}); shown += value }
+      for (const m of raw.matchAll(RAW)) {
+        for (; pos < m.index; pos++) push(pos, pos + 1, raw[pos])
+        push(m.index, m.index + m[0].length, m[0][0] === '\r' ? '\n' : decode(m[0]))
+        pos = m.index + m[0].length
+      }
+      for (; pos < raw.length; pos++) push(pos, pos + 1, raw[pos])
+      // Only trust the pieces when they read exactly as the parser read the text.
+      return shown === (child as DefaultTreeAdapterMap['textNode']).value
+    }
+    if (!('tagName' in child)) return true
+    if (child.tagName === 'br') {
+      if (!loc) return false
+      pieces.push({from: at(loc.startOffset), to: at(loc.endOffset), text: BR})
+      return true
+    }
+    return HIDDEN.has(child.tagName) || walk(child)
+  })
+  return target && walk(target) ? pieces : null
+}
+
+/** Where the page's text changed from `before` to `after`, in `shown` (the source's text). */
+function findChange(shown: string, before: string, after: string) {
+  let p = 0, s = 0
+  while (p < before.length && p < after.length && before[p] === after[p]) p++
+  while (s < before.length - p && s < after.length - p && before[before.length - 1 - s] === after[after.length - 1 - s]) s++
+  const q = before.length - s, removed = before.slice(p, q), inserted = after.slice(p, after.length - s)
+  if (shown === before) return {a: p, b: q, inserted}
+  // Scripts changed some of the text too (rendered math, labels): find the
+  // change by the text around it, only where that text occurs once.
+  for (const n of [40, 20, 10, 5]) for (const [l, r] of [[n, n], [n, 0], [0, n]]) {
+    const left = before.slice(Math.max(0, p - l), p), right = before.slice(q, q + r)
+    if (left.length + right.length < 3) continue
+    const needle = left + removed + right, first = shown.indexOf(needle)
+    if (first >= 0 && shown.indexOf(needle, first + 1) < 0) return {a: first + left.length, b: first + left.length + removed.length, inserted}
+  }
+  return null
+}
+
+/** The source with the page's text edit written into its text; null when it can't be placed. */
+function editText(src: string, pieces: Piece[], before: string, after: string): string | null {
+  // Editing leaves &nbsp; for typed spaces and a <br> in an emptied block; neither belongs in the source unless it was there.
+  if (!before.includes(' ')) after = after.replace(/ /g, ' ')
+  if (!before.endsWith(BR)) after = after.replace(/\0+$/, '')
+  const shown = pieces.map(piece => piece.text).join('')
+  const change = findChange(shown, before, after)
+  if (!change) return null
+  const starts: number[] = []
+  let k = 0
+  for (const piece of pieces) { starts.push(k); k += piece.text.length }
+  const index = (x: number) => x === shown.length ? pieces.length : starts.indexOf(x)
+  const i = index(change.a), j = index(change.b)
+  if (i < 0 || j < 0) return null   // inside one entity
+  const cut = pieces.slice(i, j)
+  // Typing where two pieces meet continues the text before (the end of a bold word).
+  const point = cut.length ? cut[0].from
+    : i > 0 && pieces[i - 1].text !== BR ? pieces[i - 1].to
+    : i < pieces.length ? pieces[i].from
+    : i > 0 ? pieces[i - 1].to : -1
+  if (point < 0) return null
+  const html = change.inserted.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/ /g, '&nbsp;').replace(/\0/g, '<br>')
+  // A removed run may cross tags: each piece's source goes, the tags stay.
+  let out = src
+  for (let n = cut.length - 1; n >= 0; n--) out = out.slice(0, cut[n].from) + out.slice(cut[n].to)
+  return out.slice(0, point) + html + out.slice(point)
+}
+
+/** The element a preview message names, verified against the current source.
+ *  `pieces` is set when page scripts changed its markup: only its text can be edited then. */
+export function locate(src: string, op: { i: number; tag: string; before: string; text?: string }, normalize: Normalize, stale = false):
+  { els: SourceElement[]; el: SourceElement; pieces?: Piece[] } | { error: string } {
+  const tree = parseTree(src), els = parseElements(src, tree), el = els[op.i]
   if (!el || !el.html || el.tag !== op.tag || LOCKED.has(el.tag)) {
     return {error: '원본에서 이 부분을 찾지 못했습니다. 미리보기를 새로고침한 뒤 다시 시도하세요.'}
   }
-  if (normalize(src.slice(el.openEnd, el.closeStart)) !== op.before) {
-    return {error: '페이지 스크립트가 바꾼 내용이라 미리보기에서 고칠 수 없습니다. HTML 소스에서 수정하세요.'}
+  if (normalize(src.slice(el.openEnd, el.closeStart)) === op.before) return {els, el}
+  // Page scripts add to the markup (heading anchors, classes, rendered math),
+  // so the element's text is what identifies the edit. That needs a preview of
+  // the current source: a stale one could name another element.
+  if (stale) return {error: '파일이 바뀌어 미리보기를 다시 불러옵니다. 잠시 뒤 다시 눌러 주세요.'}
+  const pieces = typeof op.text === 'string' ? textPieces(tree, el) : null
+  if (!pieces) return {error: '페이지 스크립트가 바꾼 내용이라 미리보기에서 고칠 수 없습니다. HTML 소스에서 수정하세요.'}
+  if (!pieces.some(piece => piece.text !== BR && piece.text.trim())) {
+    return {error: '페이지 스크립트가 채운 글자라 원본에 없습니다. HTML 소스에서 수정하세요.'}
   }
-  return {els, el}
+  return {els, el, pieces}
 }
 
 function replaceRegion(src: string, els: SourceElement[], a: number, b: number, text: string, kind: PreviewPatch['kind'], i: number, normalize: Normalize) {
@@ -155,8 +277,9 @@ function sibling(src: string, el: SourceElement) {
   return {text: nl + indent + outer, offset: nl.length + indent.length}
 }
 
-export function applyPreviewOp(src: string, op: PreviewOp, normalize: Normalize): PreviewResult {
-  const found = locate(src, op, normalize)
+/** `stale`: the preview shows an older source than `src`. */
+export function applyPreviewOp(src: string, op: PreviewOp, normalize: Normalize, stale = false): PreviewResult {
+  const found = locate(src, op, normalize, stale)
   if ('error' in found) return found
   let {els, el} = found
   if (op.t === 'delete') {
@@ -169,21 +292,31 @@ export function applyPreviewOp(src: string, op: PreviewOp, normalize: Normalize)
     const step = replaceRegion(src, els, a, b, '', 'remove', op.i, normalize)
     return {content: step.content, patches: step.patch && [step.patch]}
   }
-  let content = src
-  const patches: (PreviewPatch | null)[] = []
+  let content = src, reload = false
+  const patches: PreviewPatch[] = []
   if (op.t === 'commit') {
     if (typeof op.after !== 'string') return {error: '수정 내용을 읽지 못했습니다.'}
-    const step = replaceRegion(content, els, el.openEnd, el.closeStart, op.after, 'inner', op.i, normalize)
-    content = step.content; els = step.els
-    patches.push(step.patch)
-    if (!op.add) return {content, patches: step.patch && [step.patch]}
+    if (!found.pieces) {
+      const step = replaceRegion(content, els, el.openEnd, el.closeStart, op.after, 'inner', op.i, normalize)
+      content = step.content; els = step.els
+      if (step.patch) patches.push(step.patch); else reload = true
+    } else {
+      // The page already shows the new text with the script's markup; only the
+      // source's text changes. A typed line break adds a <br> the page's
+      // ordinals don't have, so that one reloads.
+      const next = typeof op.text === 'string' && typeof op.textAfter === 'string' ? editText(content, found.pieces, op.text, op.textAfter) : null
+      if (next === null) return {error: '페이지 스크립트가 바꾼 글자 사이라 원본에서 이 부분을 찾지 못했습니다. 원문에서 수정하세요.'}
+      const nextEls = parseElements(next)
+      reload = nextEls.length !== els.length || nextEls.some((e, k) => e.tag !== els[k].tag)
+      content = next; els = nextEls
+    }
+    if (!op.add) return {content, patches: reload ? null : patches}
     el = els[op.i]
     if (!el || el.tag !== op.tag) return {content, patches: null}
   }
   const {text, offset} = sibling(content, el)
   const step = replaceRegion(content, els, el.end, el.end, text, 'after', op.i, normalize)
-  patches.push(step.patch)
+  if (step.patch) patches.push(step.patch); else reload = true
   const focus = step.els.findIndex(e => e.start === el.end + offset)
-  const complete = patches.every((patch): patch is PreviewPatch => patch !== null)
-  return {content: step.content, patches: complete ? patches as PreviewPatch[] : null, focus: complete && focus >= 0 ? focus : undefined}
+  return {content: step.content, patches: reload ? null : patches, focus: !reload && focus >= 0 ? focus : undefined}
 }

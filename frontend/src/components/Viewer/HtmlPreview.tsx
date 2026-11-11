@@ -7,6 +7,7 @@ import type {DocEdit} from './DocSurface'
 import type {PreviewRestore} from './htmlPreviewRuntime'
 import type {PreviewFiles, PreviewOp} from './htmlSource'
 import {quietJson} from './docSync'
+import {writeClipboard} from '../Terminal/clipboard'
 
 // parse5 is only needed once an HTML file is previewed.
 type SourceLib = typeof import('./htmlSource')
@@ -33,7 +34,8 @@ const viewState = (m: Record<string, unknown>): PreviewRestore | null => {
 const previewOp = (m: Record<string, unknown>): PreviewOp | null => {
   if ((m.t !== 'commit' && m.t !== 'add' && m.t !== 'delete') || typeof m.i !== 'number' || typeof m.tag !== 'string' || typeof m.before !== 'string') return null
   if (m.t === 'commit' && typeof m.after !== 'string') return null
-  return {t: m.t, i: m.i, tag: m.tag, before: m.before, after: typeof m.after === 'string' ? m.after : undefined, add: m.add === true}
+  const text = (v: unknown) => typeof v === 'string' ? v : undefined
+  return {t: m.t, i: m.i, tag: m.tag, before: m.before, after: text(m.after), add: m.add === true, text: text(m.text), textAfter: text(m.textAfter)}
 }
 
 /** The rendered side of an HTML file: a sandboxed iframe that follows the
@@ -126,9 +128,14 @@ export function HtmlPreview({content, path, local = false, doc, slot, onOpenFile
     if (m.t === 'end') { frameEditing.current = false; scheduleReload(0); return }
     if (m.t === 'begin') {
       if (typeof m.i !== 'number' || typeof m.tag !== 'string' || typeof m.before !== 'string') return
-      const target = {i: m.i, tag: m.tag, before: m.before}
-      const found = !writable || !editingRef.current ? {error: '텍스트 편집이 꺼져 있습니다.'} : lib.locate(current(), target, normalizeHtml)
-      if ('error' in found) { reply({t: 'begin-deny', i: target.i, reason: found.error}); return }
+      const target = {i: m.i, tag: m.tag, before: m.before, text: typeof m.text === 'string' ? m.text : undefined}
+      const stale = synced.current !== current()
+      const found = !writable || !editingRef.current ? {error: '텍스트 편집이 꺼져 있습니다.'} : lib.locate(current(), target, normalizeHtml, stale)
+      if ('error' in found) {
+        reply({t: 'begin-deny', i: target.i, reason: found.error})
+        if (stale) scheduleReload(0)
+        return
+      }
       frameEditing.current = true
       reply({t: 'begin-ok', i: target.i})
       return
@@ -138,9 +145,12 @@ export function HtmlPreview({content, path, local = false, doc, slot, onOpenFile
     frameEditing.current = false
     const base = current()
     // Not gated on the toggle: switching editing off commits the open block.
-    const result = doc?.writable ? lib.applyPreviewOp(base, op, normalizeHtml) : {error: '읽기 전용 미리보기입니다.'}
+    const result = doc?.writable ? lib.applyPreviewOp(base, op, normalizeHtml, synced.current !== base) : {error: '읽기 전용 미리보기입니다.'}
     if ('error' in result) {
-      useToasts.getState().push(result.error)
+      // The reload below drops what was typed; keep it on the clipboard.
+      const typed = op.textAfter?.replace(/\0/g, '\n').trim()
+      void (typed && op.textAfter !== op.text ? writeClipboard(typed).then(() => true, () => false) : Promise.resolve(false))
+        .then(copied => useToasts.getState().push(copied ? `${result.error} 입력한 글은 클립보드에 복사해 두었습니다.` : result.error))
       reload()   // show the source as it really is
       return
     }

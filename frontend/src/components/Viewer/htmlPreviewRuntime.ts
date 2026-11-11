@@ -33,7 +33,7 @@ export function previewRuntime(cfg: PreviewConfig, host?: Host) {
 
   let edit = cfg.edit
   let current: HTMLElement | null = null
-  let currentI = -1, before = '', original = '', fresh = false
+  let currentI = -1, before = '', beforeText = '', original = '', fresh = false
   let pending: { i: number; el: HTMLElement; x: number; y: number } | null = null
   let queued: { el: HTMLElement; x: number; y: number } | null = null
   let busy = false
@@ -53,7 +53,24 @@ export function previewRuntime(cfg: PreviewConfig, host?: Host) {
     }
     return copy.innerHTML
   }
-  const inline = (el: Element) => /^(inline|contents)/.test(getComputedStyle(el).display)
+  // The text the element shows, "\0" for a <br>. When page scripts changed its
+  // markup, the source's text is edited with this instead (htmlSource.editText).
+  const textOf = (el: Element) => {
+    let out = ''
+    const walk = (node: Node) => {
+      for (const child of Array.from(node.childNodes)) {
+        if (child.nodeType === 3) out += (child as Text).data
+        else if (child.nodeType === 1) {
+          const name = (child as Element).localName
+          if (name === 'br') out += '\0'
+          else if (!/^(script|style|template|noscript)$/.test(name)) walk(child)
+        }
+      }
+    }
+    walk(el)
+    return out
+  }
+  const inline =(el: Element) => /^(inline|contents)/.test(getComputedStyle(el).display)
   // The nearest block that holds text directly: a heading, paragraph, list
   // item or cell — never a container of other blocks such as a whole slide.
   const candidate = (target: EventTarget | null): HTMLElement | null => {
@@ -162,7 +179,7 @@ button:hover,button:focus-visible{background:rgba(255,255,255,.16)}
   const startEditing = (el: HTMLElement, at: { x?: number; y?: number; selectAll?: boolean; fresh?: boolean }) => {
     setHover(null)
     current = el; currentI = ordinal(el); fresh = !!at.fresh
-    before = serialize(el); original = el.innerHTML
+    before = serialize(el); beforeText = textOf(el); original = el.innerHTML
     el.setAttribute(EDITING, '')
     el.setAttribute('contenteditable', 'plaintext-only')
     // Browsers without plaintext-only ignore the value; fall back to rich editing.
@@ -201,7 +218,7 @@ button:hover,button:focus-visible{background:rgba(255,255,255,.16)}
     el.removeAttribute('contenteditable'); el.removeAttribute(EDITING)
     ui?.bar.classList.remove('on')
     w.getSelection()?.removeAllRanges()
-    const base = {i: currentI, tag: el.localName, before}
+    const base = {i: currentI, tag: el.localName, before, text: beforeText}
     if (kind === 'cancel') {
       el.innerHTML = original
       if (fresh) operate({...base, t: 'delete'})
@@ -215,7 +232,7 @@ button:hover,button:focus-visible{background:rgba(255,255,255,.16)}
       if (kind === 'add') return operate({...base, t: 'add'})
       return send({t: 'end'})
     }
-    operate({...base, t: 'commit', after, add: kind === 'add'})
+    operate({...base, t: 'commit', after, textAfter: textOf(el), add: kind === 'add'})
   }
   const request = (el: HTMLElement, x: number, y: number) => {
     if (busy || pending) { queued = {el, x, y}; return }
@@ -225,7 +242,7 @@ button:hover,button:focus-visible{background:rgba(255,255,255,.16)}
       return
     }
     pending = {i, el, x, y}
-    send({t: 'begin', i, tag: el.localName, before: serialize(el)})
+    send({t: 'begin', i, tag: el.localName, before: serialize(el), text: textOf(el)})
   }
   const nextQueued = () => {
     const next = queued

@@ -100,6 +100,60 @@ describe('HTML source mapping', () => {
     expect(applyPreviewOp(deck, {t: 'delete', i: ordinalOf(deck, 'body'), tag: 'body', before: ''}, normalize)).toHaveProperty('error')
   })
 
+  it('edits the text of an element page scripts added to, and nothing else', () => {
+    // Quarto/anchor.js append a link to every heading; the page shows it, the source doesn't have it.
+    const h2 = ordinalOf(deck, 'h2'), anchor = '<a class="anchorjs-link" href="#t" aria-label="Anchor"></a>'
+    const heading = applyPreviewOp(deck, {t: 'commit', i: h2, tag: 'h2', before: '목표' + anchor, after: '목적' + anchor, text: '목표', textAfter: '목적'}, normalize)
+    if ('error' in heading) throw Error(heading.error)
+    expect(heading.content).toBe(deck.replace('<h2 id="t">목표</h2>', '<h2 id="t">목적</h2>'))
+    expect(heading.patches).toEqual([])   // the page already shows it, with its anchor
+    // A class a script put on a child stays out of the source; entities and typed markup characters are kept as text.
+    const li = ordinalOf(deck, 'li', 1)
+    const inner = applyPreviewOp(deck, {t: 'commit', i: li, tag: 'li', before: '둘째 <strong class="hl">강조</strong>', after: '둘째 <strong class="hl">a<b & 핵심</strong>',
+      text: '둘째 강조', textAfter: '둘째 a<b & 핵심'}, normalize)
+    if ('error' in inner) throw Error(inner.error)
+    expect(inner.content).toBe(deck.replace('<strong>강조</strong>', '<strong>a&lt;b &amp; 핵심</strong>'))
+    const first = applyPreviewOp(deck, {t: 'commit', i: ordinalOf(deck, 'li'), tag: 'li', before: '첫째 &amp; 하나<span class="x"></span>', after: 'x',
+      text: '첫째 & 하나', textAfter: '첫째 & 둘'}, normalize)
+    if ('error' in first) throw Error(first.error)
+    expect(first.content).toBe(deck.replace('첫째 &amp; 하나', '첫째 &amp; 둘'))
+  })
+
+  it('removes text across tags but keeps the tags', () => {
+    const src = '<p>하나 <b>둘</b> 셋</p>'
+    const result = applyPreviewOp(src, {t: 'commit', i: 0, tag: 'p', before: '하나 <b class="s">둘</b> 셋', after: '하 셋', text: '하나 둘 셋', textAfter: '하 셋'}, normalize)
+    if ('error' in result) throw Error(result.error)
+    expect(result.content).toBe('<p>하<b></b> 셋</p>')
+  })
+
+  it('finds the edit by its surroundings when scripts changed some of the text', () => {
+    // MathJax replaces \(x^2\) with its own rendering: the page shows other text there.
+    const src = '<p>값은 \\(x^2\\) 이고\r\n결과는 크다</p>'
+    const before = '값은 <mjx-container>x2</mjx-container> 이고\n결과는 크다'
+    const op = (text: string, textAfter: string) => ({t: 'commit' as const, i: 0, tag: 'p', before, after: 'x', text, textAfter})
+    const result = applyPreviewOp(src, op('값은 x2 이고\n결과는 크다', '값은 x2 이고\n결과는 작다'), normalize)
+    if ('error' in result) throw Error(result.error)
+    expect(result.content).toBe('<p>값은 \\(x^2\\) 이고\r\n결과는 작다</p>')
+    // A change inside what the script drew has no place in the source.
+    expect(applyPreviewOp(src, op('값은 x2 이고\n결과는 크다', '값은 x3 이고\n결과는 크다'), normalize)).toHaveProperty('error')
+  })
+
+  it('writes a typed line break as <br> and reloads, since the page has no ordinal for it', () => {
+    const src = '<p>앞뒤</p><p>끝</p>'
+    const result = applyPreviewOp(src, {t: 'commit', i: 0, tag: 'p', before: '앞뒤<i class="s"></i>', after: 'x', text: '앞뒤', textAfter: '앞\0뒤\0'}, normalize)
+    if ('error' in result) throw Error(result.error)
+    expect(result.content).toBe('<p>앞<br>뒤</p><p>끝</p>')
+    expect(result.patches).toBeNull()
+  })
+
+  it('refuses text edits it cannot place safely', () => {
+    const changed = {t: 'commit' as const, i: 0, tag: 'p', before: '<span class="s">x</span>', after: 'y'}
+    // The preview shows an older source: the ordinal could name another element.
+    expect(applyPreviewOp('<p>x</p>', {...changed, text: 'x', textAfter: 'y'}, normalize, true)).toHaveProperty('error')
+    // Text a script filled in isn't in the source at all.
+    expect(applyPreviewOp('<p></p>', {...changed, text: 'x', textAfter: 'y'}, normalize)).toHaveProperty('error')
+  })
+
   it('falls back to a reload when the edit changes how the rest parses', () => {
     const src = '<p>a</p><p>b</p>'
     const result = applyPreviewOp(src, {t: 'commit', i: 0, tag: 'p', before: 'a', after: 'a<table><tr><td>x</td></tr></table>'}, normalize)
