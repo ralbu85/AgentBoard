@@ -1,7 +1,7 @@
 import {WorkspaceTabs} from './WorkspaceTabs'
-import {useDrafts} from '../Terminal/drafts'
+import {MemoChatButton} from './memoChat'
 import { useState, useRef, useCallback, useEffect, useMemo, useLayoutEffect, Fragment } from 'react'
-import { isEditableFile, useStore, viewerKey, sessionLabel, type ViewerTab } from '../../store'
+import { isEditableFile, useStore, viewerKey, type ViewerTab } from '../../store'
 import { useToasts } from '../../toasts'
 import { notifyActive } from '../../ws'
 import { api } from '../../api'
@@ -106,10 +106,7 @@ function LeafPane({ node, tabs, activeTabId, split, onClose, onSelect, onMove, o
   const contentRef = useRef<HTMLDivElement>(null)
   const updateTab = useStore(s => s.updateTab)
   const markTabSaved = useStore(s => s.markTabSaved)
-  const sessionState = useStore(s => s.sessions)
-  const titles = useStore(s => s.titles)
   const ownerKey = useStore(viewerKey)
-  const activeSessionId = useStore(s => s.activeId)
   const activeTab = tabs.find(t => t.id === node.activeTabId) || tabs.find(t => node.tabIds.includes(t.id))
 
   const isTextTab = activeTab && (activeTab.type === 'code' || activeTab.type === 'markdown' || activeTab.type === 'latex' || activeTab.type === 'notebook')
@@ -120,10 +117,7 @@ function LeafPane({ node, tabs, activeTabId, split, onClose, onSelect, onMove, o
   // ── Memo state ──
   const [memos, setMemos] = useState<Memo[]>([])
   const [notesBusy,setNotesBusy]=useState(false)
-  const [noteTarget,setNoteTarget]=useState('')
   const notePath=useRef(activeTab?.path);notePath.current=activeTab?.path
-  const noteSessions=Object.values(sessionState).filter(s=>JSON.stringify([s.host||'local',s.cwd||'~'])===ownerKey && s.status==='running' && s.online!==false)
-  const targetId=noteSessions.some(s=>s.id===noteTarget)?noteTarget:noteSessions.some(s=>s.id===activeSessionId)?activeSessionId||'':noteSessions.length===1?noteSessions[0].id:''
   const [selInfo, setSelInfo] = useState<{ startLine: number; startCol: number; endLine: number; endCol: number; selectedText: string } | null>(null)
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null)
   const pendingSelRef = useRef<{ startLine: number; startCol: number; endLine: number; endCol: number; text: string } | null>(null)
@@ -181,17 +175,13 @@ function LeafPane({ node, tabs, activeTabId, split, onClose, onSelect, onMove, o
   }
   const deleteMemo=(idx:number)=>saveMemoList(memos.filter((_,i)=>i!==idx))
 
-  const sendMemosToAgent=()=>{
-    if(!activeTab||!targetId||notesBusy||!memos.length)return
-    const session=sessionState[targetId]
-    const parts=[`파일: ${activeTab.path}`, '다음 메모에 따라 수정해 주세요. 선택 문장을 기준으로 위치를 확인해 주세요.']
+  const memoRequest=()=>{
+    const parts=[`파일: ${activeTab?.path}`, '다음 메모에 따라 수정해 주세요. 선택 문장을 기준으로 위치를 확인해 주세요.']
     for(const m of [...memos].sort((a,b)=>a.startLine-b.startLine)){
       parts.push(`\n${m.startLine>0?`[L${m.startLine}${m.endLine!==m.startLine?'-'+m.endLine:''}] `:''}요청: ${m.text}`)
       if(m.selectedText)parts.push('선택 문장:\n'+m.selectedText.split('\n').map(line=>'> '+line).join('\n'))
     }
-    const key=JSON.stringify([session.host||'local',session.id,session.cwd||'~'])
-    useDrafts.getState().write(key,previous=>[previous,parts.join('\n')].filter(Boolean).join('\n\n'))
-    useStore.getState().setActive(targetId)
+    return parts.join('\n')
   }
 
   // Open files follow the disk by themselves; ↻ is for anything that doesn't.
@@ -258,7 +248,7 @@ function LeafPane({ node, tabs, activeTabId, split, onClose, onSelect, onMove, o
           {activeTab?.type !== 'terminal' && activeTab?.type !== 'browser' && <button className="vtab-action" onClick={downloadTab} title="Download">↓</button>}
           {activeTab?.type !== 'terminal' && activeTab?.type !== 'browser' && !followsDisk && <button className="vtab-action" onClick={refreshTab} title="Refresh">↻</button>}
           {isTextTab && memos.length > 0 && (
-            <><select className="memo-target-select" aria-label="메모를 받을 세션" value={targetId} onChange={e=>setNoteTarget(e.target.value)}><option value="">대상 세션 선택</option>{noteSessions.map(s=><option key={s.id} value={s.id}>{sessionLabel(s,titles)}</option>)}</select><button className="vtab-action vtab-send" disabled={notesBusy||!targetId} onClick={sendMemosToAgent} title="기존 입력에 메모를 추가합니다. 전송 전 내용을 확인하세요.">채팅에 넣기 · {memos.length}</button></>
+            <MemoChatButton ownerKey={ownerKey} count={memos.length} disabled={notesBusy} compose={memoRequest} />
           )}
         </div>
       } />
@@ -273,7 +263,7 @@ function LeafPane({ node, tabs, activeTabId, split, onClose, onSelect, onMove, o
           : activeTab.type === 'terminal' ? <TerminalTab key={activeTab.sessionId} sessionId={activeTab.sessionId!} />
           : activeTab.type === 'browser' ? <BrowserPane key={activeTab.id} tab={activeTab} ownerKey={ownerKey} />
           : activeTab.type === 'diff' ? <DiffView diff={activeTab.content} />
-          : activeTab.type === 'pdf' ? <PdfViewer key={activeTab.id} url={activeTab.content} viewState={activeTab.viewState} onViewChange={rememberView} reloadSignal={fileChanges} />
+          : activeTab.type === 'pdf' ? <PdfViewer key={activeTab.id} url={activeTab.content} path={activeTab.path.startsWith('/') ? activeTab.path : undefined} viewState={activeTab.viewState} onViewChange={rememberView} reloadSignal={fileChanges} />
           : activeTab.type === 'image' ? <FileContent content={fileChanges ? `${activeTab.content}&_v=${fileChanges}` : activeTab.content} type="image" lang="" />
           : isNb ? <NotebookView key={activeTab.path} tab={activeTab} ownerKey={ownerKey} />
           : <DocSurface key={activeTab.id} tab={activeTab} ownerKey={ownerKey} memos={memos} onContextMenu={handleCtxMenu} onViewChange={rememberView} />

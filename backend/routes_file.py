@@ -308,7 +308,11 @@ async def save_notes(req: NotesSaveRequest, _=Depends(verify)):
         return _forbidden()
     NOTES_DIR.mkdir(parents=True, exist_ok=True)
     nf = _notes_file(str(p))
-    nf.write_text(json.dumps({"filePath": str(p), "notes": req.notes, "updatedAt": int(time.time())}, ensure_ascii=False))
+    # PDF memos save on every pause in typing: a write cut off halfway would
+    # leave a file that loads as no memos at all, so swap a finished one in.
+    with tempfile.NamedTemporaryFile('w', dir=NOTES_DIR, prefix=nf.stem, suffix='.tmp', delete=False, encoding='utf-8') as f:
+        json.dump({"filePath": str(p), "notes": req.notes, "updatedAt": int(time.time())}, f, ensure_ascii=False)
+    os.replace(f.name, nf)
     return {"ok": True}
 
 

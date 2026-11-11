@@ -1,5 +1,4 @@
 import { useToasts } from './toasts'
-import type { Memo } from './components/Viewer/FileContent'
 
 const BASE = ''
 // Endpoints whose failures the caller handles (we do not auto-toast).
@@ -94,7 +93,8 @@ export const api = {
   delete: (path: string) => post('/api/delete', { path }),
   mkdir: (path: string) => post('/api/mkdir', { path }),
   loadNotes: (path: string) => get(`/api/notes?path=${encodeURIComponent(path)}`),
-  saveNotes: (path: string, notes: Memo[]) => post('/api/notes', { path, notes }),
+  /** A file's memos: line memos of a text file (FileContent's `Memo`), or a PDF's (pdfMemos). */
+  saveNotes: (path: string, notes: object[]) => post('/api/notes', { path, notes }),
   deleteNote: (path: string, startLine: number, endLine: number) => post('/api/notes/delete', { path, startLine, endLine }),
   upload: (dir: string, file: File, signal?: AbortSignal, onProgress?: (percent: number) => void): Promise<{ ok: boolean; path?: string; error?: string }> => new Promise(resolve => {
     const xhr = new XMLHttpRequest()

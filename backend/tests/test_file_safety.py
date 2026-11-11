@@ -4,7 +4,7 @@ from pathlib import Path
 
 from starlette.requests import Request
 from backend import routes_file, config
-from backend.models import FileWriteRequest
+from backend.models import FileWriteRequest, NotesSaveRequest
 from backend.streamer import _background_stability
 from backend.state_detector import detect_state
 
@@ -50,6 +50,19 @@ def upload_request(body):
     async def receive():
         return {'type': 'http.request', 'body': body, 'more_body': False}
     return Request({'type': 'http', 'method': 'POST', 'path': '/'}, receive)
+
+
+def test_pdf_memos_are_kept_beside_the_file_and_replaced_whole(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, 'ALLOWED_ROOTS', [tmp_path])
+    monkeypatch.setattr(routes_file, 'NOTES_DIR', tmp_path / 'notes')
+    pdf = tmp_path / 'paper.pdf'
+    pdf.write_bytes(b'%PDF-1.7')
+    memo = {'id': 'a', 'kind': 'text', 'page': 2, 'rects': [[0.1, 0.2, 0.3, 0.02]], 'text': '수정', 'quote': 'the model', 'created': 1}
+    for notes in ([memo], [memo, {**memo, 'id': 'b'}]):
+        assert asyncio.run(routes_file.save_notes(NotesSaveRequest(path=str(pdf), notes=notes))) == {'ok': True}
+    assert asyncio.run(routes_file.get_notes(str(pdf)))['notes'] == [memo, {**memo, 'id': 'b'}]
+    assert pdf.read_bytes() == b'%PDF-1.7'                                   # the PDF itself is untouched
+    assert [f.suffix for f in (tmp_path / 'notes').iterdir()] == ['.json']   # no temporary left behind
 
 
 def test_upload_collision_and_temporary_cleanup(tmp_path, monkeypatch):
