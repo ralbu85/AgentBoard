@@ -44,6 +44,7 @@ The hub is a pure relay for remote hosts: it never runs streamer/tmux for a remo
 - `routes_session.py` — REST: login, workers, spawn, kill, input, key, health
 - `routes_file.py` — REST: browse, files, read / write / upload (path-traversal safe)
 - `routes_preview.py` — read-only files of a previewed HTML page's project, under a signed expiring token (the sandboxed iframe has no cookie)
+- `routes_transcribe.py` + `transcribe.py` — voice input: the recording is written out by one Whisper worker (`whisper_worker.py`, run with another Python), loaded on first use and stopped when idle
 - `tunnel.py` — Cloudflare tunnel (optional)
 - `push.py` — Web Push (VAPID): fires an OS notification when a session goes
   `waiting`/`completed`; subscriptions persisted, deduped per session
@@ -63,7 +64,7 @@ The hub is a pure relay for remote hosts: it never runs streamer/tmux for a remo
 - `components/Terminal/`
   - `TerminalManager.ts` — xterm.js lifecycle, mobile scroll, snapshot/screen application
   - `TerminalPane.tsx` — terminal container + scroll-to-bottom button
-  - `InputCard.tsx` — input textarea + quick keys
+  - `InputCard.tsx` — input textarea + quick keys, and 🎤 on desktop (`voiceInput.ts`: records, sends to `/api/transcribe`, puts the words at the caret)
 - `components/Sidebar/` — session list with filter, mobile overlay
 - `components/Viewer/` — split layout, code editor, file content, PDF, Jupyter notebook (runs cells; markdown cells edit where they are rendered), resizer
   - `DocSurface.tsx` — every text file tab (code, LaTeX, HTML, Markdown/Quarto): one toolbar (보기 / 편집 / 나란히 / 소스, ↶, save state), one disk banner; a format only supplies its rendered view through `DocEdit`. Notebooks reuse its toolbar pieces and modes
@@ -200,6 +201,13 @@ cd frontend && npm run dev
 - **Code colours and Mermaid diagrams are added after the document renders (`markdownEnhance`) and change no text or block.** A diagram is an `<img>` of the SVG (it can't run script or reach the page), inside the block's `<pre>`, so a click still opens its source; a diagram that doesn't parse keeps its source with a note. `mermaid` loads only when a document has one.
 - **Quarto is rendered approximately, in the browser.** marked plus extensions for front matter, fenced divs (callouts, columns, conditional content), cells, spans, citations and smart dashes. Cells aren't executed and OJS doesn't run; Quarto's own render is the reference. Running `quarto render` per edit would take seconds and gives no source map. CRLF files render read-only (marked rewrites line endings).
 
+### Voice input
+- **Speech is written out on this server, never by a browser service.** Web Speech API sends audio to Google/Microsoft and doesn't work in Electron; the lab keeps such data on-premises (MeetingRecorder exists for that reason). The browser records (MediaRecorder, Opus) and `/api/transcribe` hands the file to a local Whisper worker.
+- **Run the worker with `-I` in its own Python.** faster-whisper lives in a conda env, not the backend venv; started as a script from `backend/`, the folder's `config.py`/`models.py` would shadow its imports. It speaks JSON lines; library prints are moved to stderr so they can't corrupt the protocol.
+- **Keep one worker loaded, stop it when idle.** Loading large-v3-turbo takes ~8 s, a short clip then ~0.3 s; recording start calls `/api/transcribe/warm`, so the load happens while the user speaks. After 10 idle minutes the process exits and the shared GPU gets its ~1.6 GB back; it picks the GPU with the most free memory (CPU int8 if CUDA fails). A dead or stuck worker is replaced on the next request.
+- **The microphone needs a secure page.** `getUserMedia` is undefined over plain-HTTP LAN; the button explains instead of failing silently. The desktop app grants audio capture to its own page's origin only — web tabs (other sessions) keep every permission denied.
+- **Phones have no 🎤 button.** Their keyboards already dictate into the input card.
+
 ### Mobile / UI
 - **Don't auto-reload from the client.** Slow mobile + reload script = infinite loop. Cache-bust on the server side instead.
 - **An open page keeps running the old build after a deploy.** Nothing inside it (a view's 새로고침) can show the new app. `appUpdate` compares the entry chunk the served `index.html` names with its own on WS reconnect (a deploy restarts the server) and on focus, then shows a notice with a 새로고침 button; the preview's 새로고침 reloads the app instead when it is outdated. Still user-initiated, never automatic.
@@ -294,6 +302,7 @@ cd frontend && npm run dev
   - Docker: `Dockerfile` (multi-stage: node build → python3.12-slim + tmux) + `docker-compose.yml` (binds `0.0.0.0` inside, port mapping is the boundary; `/workspace` mount; `agentboard-state` volume). CI (`.github/workflows/ci.yml`) builds the image and boot-smoke-tests both bare and containerized servers on every push.
   - Multi-machine / security knobs: `AGENT_TOKEN` (remote-agent secret; defaults to `AUTH_TOKEN`), `AGENTBOARD_HOST` (bind addr, default `127.0.0.1`), `AGENTBOARD_COOKIE_SECURE=1` (HTTPS-only cookie), `AGENTBOARD_ALLOW_DEFAULT_PW=1` (allow the `changeme` default — dev only; the server otherwise refuses to start)
   - Terminal knobs: `AGENTBOARD_NO_ALT_SCREEN` (default `1`) — sets tmux `alternate-screen off` globally (on spawn + recover), so full-screen apps (Claude Code, vim, less) render into the normal buffer and xterm gets real scrollback; set to `0` to restore native alt-screen behavior. Panes already inside an alt-screen are auto-unstuck by the streamer at their app's next exit (window-local override — see Pitfalls). `AGENTBOARD_HISTORY_LIMIT` (default `50000`) — tmux scrollback depth for new panes (tmux's own default 2000 fills in minutes). `AGENTBOARD_SNAPSHOT_MIN_INTERVAL` (default `0.5`) — min seconds between history-growth re-snapshots.
+  - Voice input: `AGENTBOARD_WHISPER_PYTHON` — a Python with `faster-whisper` (unset = no 🎤; this box: `/opt/conda/envs/env_pytorch/bin/python`, set in `/root/TermHub/.env`), `AGENTBOARD_WHISPER_MODEL` (default `large-v3-turbo`), `AGENTBOARD_WHISPER_LANGUAGE` (default `ko`; empty = detect).
 - nginx config: `/etc/nginx/gateway.d/port_12019.conf` → proxy to `:3002` (backend binds loopback only; nginx is the sole ingress)
 - Python venv: `backend/.venv` (Python 3.12 via conda)
 - Node: system node with npm
@@ -323,6 +332,7 @@ cd frontend && npm run dev
 - `POST /api/push/unsubscribe` — `{endpoint}`
 - `GET  /api/capture?id=` — full scrollback of a local session as plain text (for "전체 로그"; remote returns an error)
 - `GET  /api/health` — readiness probe (used by `deploy.sh`)
+- `GET  /api/transcribe` — `{available}`: whether this server has voice input; `POST /api/transcribe/warm` — load the model while someone speaks; `POST /api/transcribe` — raw audio body (≤25 MiB) → `{text}`
 
 ### WebSocket (`/ws`)
 - Client → server: `resize`, `active`, `resync`, `viewport`, `viewport-release`, `desktop-width`, `title`, `key`, `terminal-input`, `input`

@@ -92,7 +92,14 @@ app.whenReady().then(async()=>{
   win.webContents.on('will-navigate',(e,url)=>{if(!server||new URL(url).origin!==new URL(server).origin)e.preventDefault()})
   win.webContents.on('will-redirect',(e,url)=>{if(!server||new URL(url).origin!==new URL(server).origin)e.preventDefault()})
   win.webContents.setWindowOpenHandler(({url})=>{try{void shell.openExternal(webUrl(url))}catch{}return {action:'deny'}})
-  win.webContents.session.setPermissionRequestHandler((_wc,_p,callback)=>callback(false))
+  // The app's own page may record audio (voice input, transcribed on the server);
+  // nothing else is granted. Web tabs live in other sessions and stay denied.
+  win.webContents.session.setPermissionRequestHandler((wc,permission,callback,details)=>{
+    let own=false
+    try{own=!!server&&wc===win.webContents&&new URL(details.requestingUrl).origin===new URL(server).origin}catch{}
+    const types=details.mediaTypes||[]
+    callback(own&&permission==='media'&&types.length>0&&types.every(type=>type==='audio'))
+  })
   win.webContents.on('did-start-navigation',(_e,_url,inPlace,main)=>{if(main&&!inPlace)browser?.hideAll()})
   win.webContents.on('render-process-gone',()=>{browser?.hideAll();stopRelay()})
   win.webContents.on('will-prevent-unload',event=>{

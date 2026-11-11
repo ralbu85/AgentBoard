@@ -81,6 +81,12 @@ VAPID_SUBJECT = os.getenv("AGENTBOARD_VAPID_SUBJECT", "mailto:agentboard@localho
 
 FIFO_DIR = Path("/tmp")
 
+# Voice input (🎤): a Python with faster-whisper runs `whisper_worker.py` on this
+# server, so speech never leaves it. Unset = the button is hidden.
+WHISPER_PYTHON = os.getenv("AGENTBOARD_WHISPER_PYTHON", "")
+WHISPER_MODEL = os.getenv("AGENTBOARD_WHISPER_MODEL", "large-v3-turbo")
+WHISPER_LANGUAGE = os.getenv("AGENTBOARD_WHISPER_LANGUAGE", "ko")   # empty = detect
+
 # Where mutable state lives (session titles, push subscriptions, VAPID keypair,
 # spawn profiles). Defaults to the repo root — containers point this at a
 # volume so state survives image rebuilds.

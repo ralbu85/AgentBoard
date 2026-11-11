@@ -118,6 +118,18 @@ export const api = {
     signal?.addEventListener('abort', abort, { once: true })
     xhr.send(file)
   }),
+  transcribeAvailable: (): Promise<boolean> => fetch('/api/transcribe', { credentials: 'include' })
+    .then(res => res.ok ? res.json() : null).then(data => data?.available === true, () => false),
+  transcribeWarm: () => { void fetch('/api/transcribe/warm', { method: 'POST', credentials: 'include' }).catch(() => {}) },
+  /** Speech → text on this server (voiceInput.ts); the caller reports failures. */
+  transcribe: async (audio: Blob): Promise<{ ok: true; text: string } | { ok: false; error: string }> => {
+    try {
+      const res = await fetch('/api/transcribe', { method: 'POST', credentials: 'include', body: audio, headers: { 'Content-Type': audio.type || 'application/octet-stream' } })
+      const data = await res.json().catch(() => null)
+      if (res.ok && data?.ok === true) return { ok: true, text: String(data.text || '') }
+      return { ok: false, error: data?.error || `음성 인식 실패 (HTTP ${res.status})` }
+    } catch { return { ok: false, error: '서버에 연결하지 못해 음성을 보내지 못했습니다.' } }
+  },
   uploadMany: async (dir: string, files: File[] | FileList): Promise<string[]> => {
     const arr = Array.from(files)
     const results: string[] = []

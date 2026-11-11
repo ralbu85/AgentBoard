@@ -6,6 +6,7 @@ import { useStore } from '../../store'
 import { FilePanel } from '../FilePanel'
 import * as TM from './TerminalManager'
 import { isMobileInputDevice } from './inputDevice'
+import { inserters, startVoice, stopVoice, useVoice, voiceAvailable } from './voiceInput'
 
 interface Props {
   sessionId: string
@@ -40,6 +41,43 @@ export function InputCard({ sessionId }: Props) {
 
   // Close file panel on session switch
   useEffect(() => { setShowFiles(false) }, [sessionId])
+
+  // Voice input (desktop): spoken text goes in at the caret, else at the end.
+  const voice = useVoice()
+  const [voiceReady, setVoiceReady] = useState(false)
+  const [, setTick] = useState(0)
+  useEffect(() => { if (!isMobile()) void voiceAvailable().then(setVoiceReady) }, [])
+  useEffect(() => {
+    if (voice.phase !== 'recording') return
+    const timer = window.setInterval(() => setTick(n => n + 1), 1000)
+    return () => window.clearInterval(timer)
+  }, [voice.phase])
+  useEffect(() => {
+    const insert = (spoken: string) => {
+      const el = textareaRef.current
+      if (!el) return false
+      const focused = document.activeElement === el
+      const start = focused ? el.selectionStart : el.value.length, end = focused ? el.selectionEnd : el.value.length
+      const before = el.value.slice(0, start), after = el.value.slice(end)
+      const head = before + (before && !/\s$/.test(before) ? ' ' : '') + spoken
+      const value = head + (after && !/^\s/.test(after) ? ' ' : '') + after
+      useDrafts.getState().write(draftKey, value)
+      el.value = value
+      el.focus()
+      el.setSelectionRange(head.length, head.length)
+      return true
+    }
+    inserters.set(draftKey, insert)
+    return () => {
+      if (inserters.get(draftKey) === insert) inserters.delete(draftKey)
+      // A card closed mid-recording still gets its words, in its draft.
+      const now = useVoice.getState()
+      if (now.phase === 'recording' && now.draftKey === draftKey) stopVoice()
+    }
+  }, [draftKey])
+  const myVoice = voice.draftKey === draftKey
+  const recording = voice.phase === 'recording' && myVoice
+  const elapsed = recording ? Math.floor((Date.now() - voice.started) / 1000) : 0
 
   const onDragOver = (e: DragEvent) => {
     if (e.dataTransfer.types.includes('Files')) {
@@ -99,6 +137,7 @@ export function InputCard({ sessionId }: Props) {
   }
 
   const onKeyDown = (e: KeyboardEvent) => {
+    if (recording && e.key === 'Escape') { e.preventDefault(); stopVoice(true); return }
     if (isMobile() || e.key !== 'Enter' || !e.ctrlKey || e.altKey || e.shiftKey || e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229) return
     e.preventDefault()
     if (!e.repeat) doSend()
@@ -160,6 +199,17 @@ export function InputCard({ sessionId }: Props) {
           autoComplete="off"
           spellCheck={false}
         />
+        {voiceReady && !isMobile() && <>
+          {/* pointerdown keeps the caret in the text box, where the words will go */}
+          <button className={`btn voice-btn${recording ? ' recording' : ''}`} onPointerDown={e => e.preventDefault()}
+            disabled={voice.phase === 'transcribing' || (voice.phase !== 'idle' && !myVoice)}
+            onClick={() => recording ? stopVoice() : void startVoice(draftKey)}
+            title={recording ? '녹음을 끝내고 입력창에 넣기 (Esc: 취소)' : voice.phase === 'transcribing' && myVoice ? '받아쓰는 중…' : '말로 입력 — 이 서버에서 받아씁니다'}
+            aria-label={recording ? '녹음 끝내기' : '말로 입력'}>
+            {recording ? `■ ${Math.floor(elapsed / 60)}:${String(elapsed % 60).padStart(2, '0')}` : voice.phase === 'transcribing' && myVoice ? '받아쓰는 중…' : '🎤'}
+          </button>
+          {recording && <button className="btn voice-cancel" onPointerDown={e => e.preventDefault()} onClick={() => stopVoice(true)} title="녹음 취소" aria-label="녹음 취소">✕</button>}
+        </>}
         <button className="btn send-btn" disabled={sending} onClick={doSend} title={isMobile()?'작성한 내용 전송':'작성한 내용 전송 (Ctrl+Enter)'} aria-keyshortcuts={isMobile()?undefined:'Control+Enter'}>Send</button>
       </div>
       <div className="quick-keys">

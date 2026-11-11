@@ -890,6 +890,11 @@ body {
 .quick-key { padding: 3px 8px; font-size: 11px; font-family: var(--font-mono); }
 
 .send-btn { padding: 6px 16px; }
+.voice-btn { padding: 6px 10px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.voice-btn.recording { color: #fff; background: #b91c1c; border-color: #b91c1c; animation: voice-pulse 1.4s ease-in-out infinite; }
+@keyframes voice-pulse { 50% { opacity: .72; } }
+@media (prefers-reduced-motion: reduce) { .voice-btn.recording { animation: none; } }
+.voice-cancel { padding: 6px 8px; }
 .file-browse-btn {
   padding: 4px 6px; line-height: 1;
   display: flex; align-items: center; justify-content: center;
